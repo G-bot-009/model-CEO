@@ -329,6 +329,43 @@ def set_settings(d: dict) -> None:
                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(k), str(v)))
 
 
+# --- Per-agent detail + summaries (day / week / month) ----------------------
+def _period_expr(group: str, col: str) -> str:
+    expr = f"replace({col},'T',' ')"
+    if group == "week":  return f"strftime('%Y-W%W', {expr})"
+    if group == "month": return f"substr({col},1,7)"
+    return f"substr({col},1,10)"   # day
+
+def agent_summary(agent_id: str, group: str = "day") -> list[dict]:
+    limit = {"day": 14, "week": 8, "month": 6}.get(group, 14)
+    pe_tok = _period_expr(group, "timestamp")
+    pe_tsk = _period_expr(group, "created_at")
+    with _conn() as c:
+        tok = {r["p"]: (r["i"], r["o"]) for r in c.execute(
+            f"SELECT {pe_tok} p, SUM(input_tokens) i, SUM(output_tokens) o "
+            f"FROM token_usage WHERE agent_name=? GROUP BY p", (agent_id,)).fetchall()}
+        tsk = {r["p"]: r["n"] for r in c.execute(
+            f"SELECT {pe_tsk} p, COUNT(*) n FROM tasks WHERE agent_name=? GROUP BY p",
+            (agent_id,)).fetchall()}
+    periods = sorted(set(tok) | set(tsk))
+    rows = [{"period": p, "tasks": tsk.get(p, 0),
+             "input": tok.get(p, (0, 0))[0], "output": tok.get(p, (0, 0))[1]} for p in periods]
+    return rows[-limit:]
+
+def agent_works(agent_id: str, limit: int = 25) -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT task, status, result, created_at FROM tasks WHERE agent_name=? "
+            "ORDER BY id DESC LIMIT ?", (agent_id, limit)).fetchall()]
+
+def agent_totals(agent_id: str) -> dict:
+    with _conn() as c:
+        tasks = c.execute("SELECT COUNT(*) n FROM tasks WHERE agent_name=?", (agent_id,)).fetchone()["n"]
+        tok = c.execute("SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o "
+                        "FROM token_usage WHERE agent_name=?", (agent_id,)).fetchone()
+    return {"tasks": tasks, "input": tok["i"], "output": tok["o"]}
+
+
 # --- Workforce (tasks per agent, last 7 days) -------------------------------
 def workforce() -> dict:
     cutoff = (datetime.now() - timedelta(days=7)).isoformat(timespec="seconds")

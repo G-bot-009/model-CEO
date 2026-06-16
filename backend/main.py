@@ -137,6 +137,24 @@ async def api_connector(p: dict) -> dict:
     return {"ok": True, "connectors": db.list_connectors()}
 
 
+@app.get("/api/agent/{agent_id}")
+async def agent_detail(agent_id: str, period: str = "day") -> dict:
+    if agent_id not in AGENTS:
+        return {"error": "unknown agent"}
+    a = AGENTS[agent_id]
+    s = db.get_settings()
+    return {
+        "id": agent_id,
+        "name": s.get(f"agent_name_{agent_id}") or a.name,
+        "title": a.title,
+        "emoji": a.emoji,
+        "period": period,
+        "summary": db.agent_summary(agent_id, period),
+        "works": db.agent_works(agent_id),
+        "totals": db.agent_totals(agent_id),
+    }
+
+
 @app.get("/api/settings")
 async def get_settings() -> dict:
     return db.get_settings()

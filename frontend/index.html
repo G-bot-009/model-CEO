@@ -219,6 +219,7 @@
   .quick { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
   .qbtn { background:#1b2742; color:#cbd5e1; border:none; padding:6px 12px; border-radius:999px; font-weight:700; font-size:12px; cursor:pointer; }
   .qbtn:hover { background:#27355a; color:#fff; }
+  .qbtn.active { background:#a855f7; color:#fff; }
   .chat-input { display:flex; gap:8px; }
   .chat-input input { flex:1; background:#0b1220; color:#e2e8f0; border:1px solid #27355a; border-radius:12px; padding:11px 14px; outline:none; }
   .chat-input input:focus { border-color:#3b82f6; }
@@ -345,6 +346,26 @@
       <section class="view" id="view-agents">
         <h2 style="color:#fff; margin:0 0 14px">ทีมเอเจนต์</h2>
         <div id="agentCards" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;"></div>
+      </section>
+
+      <!-- AGENT DETAIL -->
+      <section class="view" id="view-agent">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px">
+          <button class="qbtn" id="agentBack">← กลับ</button>
+          <span id="adEmoji" style="font-size:28px"></span>
+          <div><div id="adName" style="font-weight:800; color:#fff; font-size:20px"></div>
+            <div id="adTitle" style="font-size:13px; color:#94a3b8"></div></div>
+        </div>
+        <div class="statgrid" id="adStats"></div>
+        <div class="panel"><h3>สรุปการทำงาน <span style="flex:1"></span>
+          <span id="adFilter" style="display:flex; gap:6px">
+            <button class="qbtn ad-f active" data-p="day">รายวัน</button>
+            <button class="qbtn ad-f" data-p="week">รายสัปดาห์</button>
+            <button class="qbtn ad-f" data-p="month">รายเดือน</button>
+          </span></h3>
+          <div class="bars" id="adBars"></div>
+        </div>
+        <div class="panel"><h3>ผลงานล่าสุด</h3><div id="adWorks"></div></div>
       </section>
 
       <!-- TASKS -->
@@ -973,10 +994,11 @@ async function loadAgents() {
   const list = $("agentList"), cards = $("agentCards");
   data.agents.forEach(a => {
     AGENTS[a.id] = a;
-    // sidebar row
+    // sidebar row (click → per-agent detail)
     const row = document.createElement("div");
-    row.className = "agent-row";
+    row.className = "agent-row"; row.style.cursor = "pointer";
     row.innerHTML = `<span class="sdot" data-dot="${a.id}"></span><span class="nm">${a.emoji} ${a.name}</span>`;
+    row.addEventListener("click", () => openAgentDetail(a.id));
     list.appendChild(row);
     // agents view card (role card styled like the reference)
     const chips = (a.tags || []).map(t => `<span class="chip">${t}</span>`).join("");
@@ -1194,6 +1216,37 @@ function handle(e) {
   }
 }
 
+/* ---------- per-agent detail (work + daily/weekly/monthly summary) ---------- */
+let adAgentId = null, adPeriod = "day";
+function openAgentDetail(id){
+  adAgentId = id; adPeriod = "day";
+  document.querySelectorAll(".ad-f").forEach(b => b.classList.toggle("active", b.dataset.p === "day"));
+  showView("agent"); loadAgentDetail();
+}
+async function loadAgentDetail(){
+  if (!adAgentId) return;
+  let d; try { d = await (await fetch(`/api/agent/${adAgentId}?period=${adPeriod}`)).json(); } catch(e){ return; }
+  if (d.error) return;
+  $("adEmoji").textContent = d.emoji; $("adName").textContent = d.name; $("adTitle").textContent = d.title;
+  const t = d.totals || {};
+  $("adStats").innerHTML = [
+    ["งานทั้งหมด", fmt(t.tasks||0)], ["โทเค็นเข้า", fmt(t.input||0)],
+    ["โทเค็นออก", fmt(t.output||0)], ["ค่าใช้จ่าย", "$"+costUSD(t.input||0,t.output||0).toFixed(3)],
+  ].map(([l,v]) => `<div class="statcard"><div class="lab">${l}</div><div class="val" style="font-size:22px">${v}</div></div>`).join("");
+  const sum = d.summary || [];
+  const max = Math.max(1, ...sum.map(s => s.tasks));
+  $("adBars").innerHTML = sum.length ? sum.map(s =>
+    `<div class="bar-col"><div class="bar" style="height:${s.tasks/max*100}%;background:${color(adAgentId)}" title="${s.tasks} งาน · ${fmt(s.input+s.output)} tokens"></div>
+      <div style="font-size:10px;color:#64748b">${s.period.replace(/^\d{4}-/,"")}</div></div>`).join("")
+    : '<div style="color:#64748b">ยังไม่มีข้อมูลในช่วงนี้</div>';
+  $("adWorks").innerHTML = (d.works||[]).length ? d.works.map(w =>
+    `<div class="wf-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+      <div style="font-weight:700;color:#fff">${w.task} <span class="tag" style="background:#1e293b;color:#94a3b8">${w.status}</span></div>
+      <div style="font-size:12px;color:#cbd5e1;white-space:pre-wrap">${(w.result||"").slice(0,400)}</div>
+      <div style="font-size:11px;color:#64748b">${w.created_at}</div></div>`).join("")
+    : '<div style="color:#64748b">ยังไม่มีผลงาน — ลองสั่งงานเอเจนต์นี้ดู</div>';
+}
+
 /* ---------- direct per-agent command ---------- */
 function openAgentCmd(id){
   const m = meta(id);
@@ -1226,7 +1279,7 @@ function send(text) {
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", agents:"Agents", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
   if (v === "console") loadConsole();
   if (v === "connectors") loadConnectors();
   if (v === "automation") loadAutomation();
@@ -1491,6 +1544,14 @@ $("saveNames").addEventListener("click", async () => {
   toastNote("บันทึกชื่อแล้ว กำลังโหลดใหม่…", "#22c55e");
   setTimeout(() => location.reload(), 700);
 });
+
+/* agent detail filter + back */
+document.querySelectorAll(".ad-f").forEach(b => b.addEventListener("click", () => {
+  adPeriod = b.dataset.p;
+  document.querySelectorAll(".ad-f").forEach(x => x.classList.toggle("active", x === b));
+  loadAgentDetail();
+}));
+$("agentBack").addEventListener("click", () => showView("dashboard"));
 
 /* room mode switch */
 document.querySelectorAll(".modebtn").forEach(b => b.addEventListener("click", () => {
