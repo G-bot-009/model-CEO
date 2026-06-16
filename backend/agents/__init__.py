@@ -1,3 +1,3 @@
-from .registry import AGENTS, SUB_AGENTS, Agent, get_agent
+from .registry import AGENTS, JARVIS, SUB_AGENTS, Agent, get_agent
 
-__all__ = ["AGENTS", "SUB_AGENTS", "Agent", "get_agent"]
+__all__ = ["AGENTS", "JARVIS", "SUB_AGENTS", "Agent", "get_agent"]

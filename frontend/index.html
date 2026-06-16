@@ -267,6 +267,7 @@
     <nav class="menu" id="menu">
       <div class="menu-item active" data-view="dashboard"><span class="ico">🗺️</span><span class="label">Dashboard</span></div>
       <div class="menu-item" data-view="console"><span class="ico">🏠</span><span class="label">CEO Console</span></div>
+      <div class="menu-item" data-view="jarvis"><span class="ico">🤖</span><span class="label">Jarvis</span></div>
       <div class="menu-item" data-view="agents"><span class="ico">🧑‍💼</span><span class="label">Agents</span></div>
       <div class="menu-item" data-view="tasks"><span class="ico">📋</span><span class="label">Tasks</span></div>
       <div class="menu-item" data-view="connectors"><span class="ico">🔌</span><span class="label">Connectors</span></div>
@@ -358,6 +359,31 @@
             <button class="qbtn" id="addSop">+ เพิ่ม SOP</button></h3><div id="sops"></div></div>
         <div class="panel"><h3>บันทึกการตัดสินใจ · <span id="decCount">0</span></h3><div id="decisions"></div></div>
         <div style="text-align:center;color:#475569;font-size:12px;margin:6px 0 16px">เอเจนต์เสนอ · เจ้าของอนุมัติ · บันทึกทุกอย่าง // TOONOFFICE</div>
+      </section>
+
+      <!-- JARVIS -->
+      <section class="view" id="view-jarvis">
+        <div class="panel" style="border-color:#22d3ee">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="mochi-av" style="background:linear-gradient(135deg,#22d3ee,#3b82f6)">J</div>
+            <div><div style="font-weight:800; color:#fff; font-size:18px">Jarvis <span class="ai-badge" style="border-color:#22d3ee;color:#22d3ee">MODE</span></div>
+              <div style="font-size:12px; color:#22c55e">● ออนไลน์ · second brain</div></div>
+            <span style="flex:1"></span>
+            <button class="qbtn" id="jarvisVoice">🎙️ Hey Jarvis</button>
+          </div>
+          <div class="quick" id="jarvisQuick" style="margin-top:12px"></div>
+          <div class="chat-input" style="margin-top:6px"><input id="jarvisGoal" placeholder="พิมพ์คำสั่งถึง Jarvis… (หรือกด 🎙️ แล้วพูด)"><button class="send" id="jarvisSend">สั่ง</button></div>
+          <div style="font-size:12px;color:#64748b;margin-top:8px">🔒 Jarvis จะขอยืนยันก่อนโพสต์ / เปลี่ยนงบแอด / ตอบอีเมลลูกค้าเสมอ</div>
+        </div>
+
+        <div class="panel"><h3>เครื่องมือที่เชื่อม <span style="flex:1"></span><span style="font-size:11px;color:#64748b">คลิกเพื่อใส่คีย์</span></h3>
+          <div id="jarvisTools" style="display:flex; gap:10px; flex-wrap:wrap"></div>
+        </div>
+
+        <div class="panel"><h3>รูทีนเช้า (ทุกวัน 9:00 น.)</h3>
+          <button class="send" id="jarvisRoutine" style="padding:10px 18px; margin-bottom:12px">▶️ รันรูทีนเช้าทั้งหมด (5 ขั้น)</button>
+          <div id="jarvisOut" class="stream" style="font-size:14px; color:#e2e8f0; min-height:40px">พิมพ์หรือพูดคำสั่ง แล้ว Jarvis จะตอบที่นี่…</div>
+        </div>
       </section>
 
       <!-- AGENTS -->
@@ -1293,6 +1319,9 @@ function handle(e) {
       break;
     case "error": addBlock("⚠️","ข้อผิดพลาด", e.message, "#ef4444"); break;
     case "byok": toastNote(e.ok ? ("ใช้คีย์: " + (e.provider==="default" ? "ของระบบ" : e.provider) + " ✓") : ("⚠️ " + e.message), e.ok ? "#22c55e" : "#f59e0b"); break;
+    case "jarvis_status": if (e.status==="working"){ jarvisRaw=""; $("jarvisOut").innerHTML="⏳ Jarvis กำลังทำงาน…"; } break;
+    case "jarvis_output": jarvisRaw += e.chunk; $("jarvisOut").innerHTML = mdToHtml(jarvisRaw); break;
+    case "jarvis_done": if (jarvisSpeak && jarvisRaw) jarvisSpeakText(jarvisRaw); break;
     case "done": setBusy(false); break;
   }
 }
@@ -1358,6 +1387,57 @@ async function loadAgentDetail(){
     : '<div style="color:#64748b">ยังไม่มีผลงาน — ลองสั่งงานเอเจนต์นี้ดู</div>';
 }
 
+/* ---------- Jarvis mode (personal assistant + voice) ---------- */
+const JARVIS_QUICK = [
+  ["💰 สรุปรายได้", "ดึงรายได้แอปจาก RevenueCat แล้วสรุปผลงานเมื่อคืน"],
+  ["📊 เช็คโฆษณา", "เช็ค Meta Ads แล้วสรุป: งบที่ใช้, ROAS และโฆษณาที่ดีที่สุด"],
+  ["✉️ อีเมลลูกค้า", "อ่านอีเมลลูกค้าที่ยังไม่ได้อ่าน แล้วร่างคำตอบให้ฉันรีวิว (อย่าเพิ่งส่ง)"],
+  ["💡 ไอเดียคอนเทนต์", "เสนอไอเดียคอนเทนต์สั้น 3 ชิ้นจากเทรนด์ปัจจุบัน"],
+  ["📅 ตั้งเวลาโพสต์", "เตรียมตั้งเวลาโพสต์คอนเทนต์ที่อนุมัติแล้วไป Buffer ทุกแพลตฟอร์ม (รอฉันยืนยัน)"],
+];
+const JARVIS_TOOLS = [["Buffer","📮"],["Meta Ads","📣"],["RevenueCat","💰"],["Gmail/Email","✉️"],["Browser (Chrome)","🌐"]];
+let jarvisRaw = "", jarvisSpeak = true, jarvisRecog = null;
+
+async function loadJarvis(){
+  $("jarvisQuick").innerHTML = JARVIS_QUICK.map(([t,g]) => `<button class="qbtn" data-jg="${g.replace(/"/g,'&quot;')}">${t}</button>`).join("");
+  $("jarvisQuick").querySelectorAll("[data-jg]").forEach(b => b.onclick = () => jarvisSend(b.dataset.jg));
+  let conn = {}; try { conn = (await (await fetch("/api/console")).json()).connectors || {}; } catch(e){}
+  $("jarvisTools").innerHTML = JARVIS_TOOLS.map(([n,ic]) => {
+    const on = conn[n] === "connected";
+    return `<div class="conn-chip ${on?'on':''}" data-jtool="${n}">${ic} ${n} ${on?'✓':'· เชื่อม'}</div>`;
+  }).join("");
+  $("jarvisTools").querySelectorAll("[data-jtool]").forEach(el => el.onclick = () => openConnect(el.dataset.jtool, loadJarvis));
+}
+function jarvisSend(goal){
+  goal = (goal != null ? goal : $("jarvisGoal").value).trim();
+  if (!goal || ws.readyState !== WebSocket.OPEN) return;
+  jarvisRaw = ""; $("jarvisOut").innerHTML = "⏳ Jarvis กำลังทำงาน…";
+  ws.send(JSON.stringify({ action: "jarvis", goal }));
+  $("jarvisGoal").value = "";
+}
+function jarvisStripForSpeech(s){ return (s||"").replace(/[#*`>_~|-]/g, " ").replace(/\s+/g, " ").trim(); }
+function jarvisSpeakText(text){
+  try { if (!("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(jarvisStripForSpeech(text).slice(0, 600));
+    u.lang = "th-TH"; u.rate = 1; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  } catch(e){}
+}
+function jarvisToggleVoice(){
+  const btn = $("jarvisVoice");
+  if (jarvisRecog){ jarvisRecog.stop(); jarvisRecog = null; btn.classList.remove("active"); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR){ toastNote("เบราว์เซอร์นี้ไม่รองรับสั่งเสียง — ใช้ Chrome", "#f59e0b"); return; }
+  jarvisRecog = new SR(); jarvisRecog.lang = "th-TH"; jarvisRecog.continuous = true; jarvisRecog.interimResults = false;
+  jarvisRecog.onresult = (ev) => {
+    const t = ev.results[ev.results.length - 1][0].transcript.trim();
+    let cmd = t.replace(/^(hey\s+)?jarvis[,\s]*/i, "").replace(/^เฮ้?\s*จา[ร์]?วิส[,\s]*/, "").trim();
+    $("jarvisGoal").value = cmd || t; jarvisSend();
+  };
+  jarvisRecog.onend = () => { if (jarvisRecog) try { jarvisRecog.start(); } catch(e){} };
+  try { jarvisRecog.start(); btn.classList.add("active"); toastNote("🎙️ Jarvis กำลังฟัง… พูด \"Hey Jarvis ...\"", "#22d3ee"); }
+  catch(e){ jarvisRecog = null; }
+}
+
 /* ---------- image studio (SVG) ---------- */
 function imgCard(svg, prompt, size){
   const c = document.createElement("div"); c.className = "img-card";
@@ -1410,8 +1490,9 @@ function send(text) {
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
+  if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
   if (v === "automation") loadAutomation();
   if (v === "settings") initSettingsForm();
@@ -1719,6 +1800,10 @@ document.querySelectorAll(".ad-f").forEach(b => b.addEventListener("click", () =
 $("agentBack").addEventListener("click", () => showView("dashboard"));
 $("adImgGen").addEventListener("click", () => genImage());
 $("adImgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") genImage(); });
+$("jarvisSend").addEventListener("click", () => jarvisSend());
+$("jarvisGoal").addEventListener("keydown", e => { if (e.key === "Enter") jarvisSend(); });
+$("jarvisRoutine").addEventListener("click", () => { jarvisRaw=""; $("jarvisOut").innerHTML="⏳ Jarvis กำลังรันรูทีนเช้า…"; ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({action:"jarvis_routine"})); });
+$("jarvisVoice").addEventListener("click", jarvisToggleVoice);
 $("companyPause").addEventListener("click", () => togglePause("company"));
 $("agentPause").addEventListener("click", () => { if (adAgentId) togglePause(adAgentId); });
 

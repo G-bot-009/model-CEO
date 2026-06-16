@@ -18,8 +18,17 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from . import db
-from .agents import AGENTS
+from .agents import AGENTS, JARVIS
 from .orchestrator import Orchestrator
+
+JARVIS_ROUTINE = (
+    "รันรูทีนเช้าของฉันให้ครบ 5 ข้อ แล้วสรุปแบบผู้ช่วยส่วนตัว:\n"
+    "1) ดึงรายได้แอปจาก RevenueCat แล้วสรุปผลงานเมื่อคืน\n"
+    "2) เช็ค Meta Ads แล้วสรุป: งบที่ใช้, ROAS, และโฆษณาที่ดีที่สุด\n"
+    "3) อ่านอีเมลลูกค้าที่ยังไม่ได้อ่าน แล้วร่างคำตอบให้ฉันรีวิว\n"
+    "4) เสนอไอเดียคอนเทนต์สั้น 3 ชิ้นจากเทรนด์ปัจจุบัน\n"
+    "5) เตรียมตั้งเวลาโพสต์คอนเทนต์ที่อนุมัติแล้วไป Buffer ทุกแพลตฟอร์ม (รอฉันยืนยันก่อนโพสต์)"
+)
 
 load_dotenv()
 
@@ -286,6 +295,29 @@ class Recorder:
             db.save_message(self.session_id, "ceo", "final", e["output"])
 
 
+async def run_jarvis(send, goal: str, client, session_id: int) -> None:
+    """Stream a Jarvis (personal-assistant persona) response."""
+    await send({"type": "jarvis_status", "status": "working"})
+    collected: list[str] = []
+    async with client.messages.stream(
+        model="claude-opus-4-8",
+        max_tokens=8000,
+        thinking={"type": "adaptive"},
+        system=JARVIS.system,
+        messages=[{"role": "user", "content": goal}],
+    ) as stream:
+        async for chunk in stream.text_stream:
+            collected.append(chunk)
+            await send({"type": "jarvis_output", "chunk": chunk})
+        final = await stream.get_final_message()
+    text = "".join(collected)
+    db.save_message(session_id, "jarvis", "assistant", text)
+    u = final.usage
+    db.save_token_usage(session_id, "jarvis", getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0)
+    db.add_decision("jarvis", goal[:80])
+    await send({"type": "jarvis_done"})
+
+
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -364,6 +396,21 @@ async def ws(websocket: WebSocket) -> None:
                 except Exception as exc:
                     await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
                 await send({"type": "done"})
+                await send(usage_payload())
+                continue
+
+            # Jarvis mode (personal assistant) — chat or full morning routine.
+            if action in ("jarvis", "jarvis_routine"):
+                jgoal = JARVIS_ROUTINE if action == "jarvis_routine" else (msg.get("goal") or "").strip()
+                if not jgoal:
+                    await send({"type": "jarvis_done"})
+                    continue
+                db.save_message(current_id, "user", "user", "[jarvis] " + jgoal[:200])
+                try:
+                    await run_jarvis(send, jgoal, orch.client, current_id)
+                except Exception as exc:
+                    await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+                    await send({"type": "jarvis_done"})
                 await send(usage_payload())
                 continue
 
