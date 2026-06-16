@@ -299,6 +299,11 @@ def decisions_count() -> int:
     with _conn() as c:
         return c.execute("SELECT COUNT(*) n FROM decisions").fetchone()["n"]
 
+def decisions_today() -> int:
+    today = _now()[:10]
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) n FROM decisions WHERE substr(created_at,1,10)=?", (today,)).fetchone()["n"]
+
 
 # --- Connectors --------------------------------------------------------------
 def set_connector(name: str, status: str, config: str = "") -> None:

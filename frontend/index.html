@@ -186,6 +186,15 @@
   .conn-chip:hover { background:#1b2742; }
   .conn-chip.on { border-color:#22c55e; color:#fff; background:#0f2a18; }
 
+  /* Mochi console */
+  .mochi-av { width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg,#8b5cf6,#6d4bff); color:#fff;
+              font-weight:900; display:flex; align-items:center; justify-content:center; font-size:18px; flex:0 0 auto; }
+  .statgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:16px; }
+  .statcard { background:#10182b; border:1px solid #1e293b; border-radius:16px; padding:16px; }
+  .statcard .lab { font-size:11px; letter-spacing:.06em; color:#94a3b8; text-transform:uppercase; }
+  .statcard .val { font-size:30px; font-weight:900; color:#fff; margin-top:4px; }
+  .sys-line { display:flex; align-items:center; gap:10px; padding:6px 0; color:#cbd5e1; font-size:14px; letter-spacing:.04em; }
+
   /* token graph */
   .bars { display:flex; align-items:flex-end; gap:10px; height:140px; }
   .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; justify-content:flex-end; }
@@ -274,12 +283,20 @@
 
       <!-- CEO CONSOLE -->
       <section class="view" id="view-console">
-        <div class="panel">
-          <h3>สิ่งที่ควรทำต่อ</h3>
-          <div id="nextSteps"></div>
+        <div class="panel" style="border-color:#6d4bff">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="mochi-av">MO</div>
+            <div><div style="font-weight:800; color:#fff; font-size:18px">Mochi <span class="ai-badge" style="border-color:#f5b301;color:#f5b301">CEO</span></div>
+              <div style="font-size:12px; color:#22c55e">● ออนไลน์ · รอรับคำสั่ง</div></div>
+          </div>
+          <div id="mochiLine" style="background:#0b1220; border:1px solid #1e293b; border-radius:12px; padding:12px; margin:12px 0; color:#cbd5e1; font-size:13px">Mochi // รายงานตัว พร้อมรับคำสั่ง</div>
+          <div class="quick" id="mochiQuick"></div>
+          <div class="chat-input"><input id="mochiGoal" placeholder="พิมพ์คำสั่ง…"><button class="send" id="mochiSend">สั่ง</button></div>
         </div>
+
+        <div class="statgrid" id="statGrid"></div>
+
         <div class="console-2">
-          <div class="panel"><h3>รออนุมัติ (APPROVAL LANE)</h3><div id="approvalLane"></div></div>
           <div class="panel"><h3>ภาพรวมการตัดสินใจ</h3>
             <div class="kv">
               <div class="big-num" id="ovTotal">0</div>
@@ -290,7 +307,14 @@
               </div>
             </div>
           </div>
+          <div class="panel"><h3>สถานะระบบ</h3><div id="sysStatus"></div></div>
         </div>
+
+        <div class="panel">
+          <h3>สิ่งที่ควรทำต่อ</h3>
+          <div id="nextSteps"></div>
+        </div>
+        <div class="panel"><h3>รออนุมัติ (APPROVAL LANE)</h3><div id="approvalLane"></div></div>
         <div class="panel"><h3>กำลังพล / ทีม · <span id="wfCount">0</span></h3><div id="workforce"></div></div>
         <div class="panel"><h3>งานประจำ (ROUTING) <span style="flex:1"></span>
             <button class="qbtn" id="addRoutine">+ เพิ่มงานประจำ</button></h3><div id="routines"></div></div>
@@ -1077,6 +1101,25 @@ async function loadConsole(){
   $("ovTotal").textContent = d.overview.total; $("ovApproved").textContent = d.overview.approved;
   $("ovRejected").textContent = d.overview.rejected; $("ovPending").textContent = d.overview.pending;
 
+  // stat cards + system status + Mochi line
+  const st = d.stats || {}, ss = d.status || {};
+  $("statGrid").innerHTML = [
+    ["รออนุมัติ", st.pending ?? 0], ["ตัดสินใจวันนี้", st.decisions_today ?? 0],
+    ["กำลังพล", st.agents ?? 0], ["SYSTEMS", st.systems ?? 0], ["BOT", st.bot || "OFF"],
+  ].map(([lab,val]) => `<div class="statcard"><div class="lab">${lab}</div><div class="val">${val}</div></div>`).join("");
+  const sline = (ok,label,extra) => `<div class="sys-line"><span class="dotc" style="background:${ok?'#22c55e':'#64748b'}"></span>${label}${extra?` · <span style="color:#94a3b8">${extra}</span>`:""}</div>`;
+  $("sysStatus").innerHTML = sline(ss.database,"DATABASE") + sline(ss.metaapi,"METAAPI / MT5")
+    + sline(ss.trading_bot,"TRADING BOT","OFF") + sline(ss.egress,"EGRESS");
+  $("mochiLine").textContent = `Mochi // รายงานตัว พร้อมรับคำสั่ง // สถานะ: รออนุมัติ ${st.pending??0} · กำลังพล ${st.agents??0} · บอท ${st.bot||"OFF"} · เชื่อม ${st.systems??0} ระบบ — สั่งได้เลยครับท่าน`;
+  const chips = [
+    ["สรุปสถานะ","สรุปสถานะของบริษัทและทีมทั้งหมดในตอนนี้"],
+    ["ให้ทีมทำคอนเทนต์ 3 ชิ้น","ให้ทีมคอนเทนต์เสนอไอเดียคอนเทนต์ 3 ชิ้นพร้อมแคปชั่น"],
+    ["วิเคราะห์คู่แข่ง","วิเคราะห์คู่แข่งในตลาดของเราและสรุปจุดที่เราเหนือกว่า"],
+    ["เช็คบอทเทรด","สรุปสถานะพอร์ตและความเสี่ยงของกลยุทธ์เทรดตอนนี้"],
+  ];
+  $("mochiQuick").innerHTML = chips.map(([t,g]) => `<button class="qbtn" data-g="${g.replace(/"/g,'&quot;')}">${t}</button>`).join("");
+  $("mochiQuick").querySelectorAll("[data-g]").forEach(b => b.onclick = () => send(b.dataset.g));
+
   const wf = d.workforce || {}, ids = Object.keys(AGENTS);
   $("wfCount").textContent = ids.length;
   $("workforce").innerHTML = ids.map(id => { const m = meta(id), n = wf[id]||0;
@@ -1229,6 +1272,11 @@ $("byokClear").addEventListener("click", () => {
 $("autoRun").addEventListener("change", e => saveSettings({ auto_run: e.target.checked }));
 $("adsMeta").addEventListener("click", () => openConnect("Meta Ads", loadAutomation));
 $("adsGoogle").addEventListener("click", () => openConnect("Google Ads", loadAutomation));
+
+/* Mochi console input */
+function mochiSend(){ const g = $("mochiGoal").value.trim(); if (g) { send(g); $("mochiGoal").value = ""; } }
+$("mochiSend").addEventListener("click", mochiSend);
+$("mochiGoal").addEventListener("keydown", e => { if (e.key === "Enter") mochiSend(); });
 
 /* clock */
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);

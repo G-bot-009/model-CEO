@@ -75,14 +75,30 @@ async def usage() -> dict:
 
 @app.get("/api/console")
 async def console() -> dict:
+    connectors = db.list_connectors()
+    connected = sum(1 for v in connectors.values() if v == "connected")
+    summary = db.approvals_summary()
     return {
         "sops": db.list_sops(),
         "routines": db.list_routines(),
         "approvals": db.list_approvals("pending"),
         "decisions": db.list_decisions(),
-        "overview": {"total": db.decisions_count(), **db.approvals_summary()},
+        "overview": {"total": db.decisions_count(), **summary},
         "workforce": db.workforce(),
-        "connectors": db.list_connectors(),
+        "connectors": connectors,
+        "stats": {
+            "pending": summary["pending"],
+            "decisions_today": db.decisions_today(),
+            "agents": len(AGENTS),
+            "systems": connected,
+            "bot": "OFF",
+        },
+        "status": {
+            "database": True,
+            "metaapi": connectors.get("MetaTrader 5 (Forex)") == "connected",
+            "trading_bot": False,
+            "egress": connected > 0,
+        },
     }
 
 
