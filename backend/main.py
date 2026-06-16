@@ -60,9 +60,16 @@ async def index() -> FileResponse:
 
 @app.get("/api/agents")
 async def list_agents() -> dict:
+    s = db.get_settings()  # user-defined name overrides (agent_name_<id>)
     return {
         "agents": [
-            {"id": a.id, "name": a.name, "title": a.title, "emoji": a.emoji, "tags": list(a.tags)}
+            {
+                "id": a.id,
+                "name": s.get(f"agent_name_{a.id}") or a.name,
+                "title": a.title,
+                "emoji": a.emoji,
+                "tags": list(a.tags),
+            }
             for a in AGENTS.values()
         ]
     }

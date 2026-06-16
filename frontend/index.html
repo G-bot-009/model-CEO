@@ -236,7 +236,7 @@
 <div class="app">
   <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><span style="font-size:22px">🏢</span><span class="label">ToonOffice</span></div>
+    <div class="brand"><span style="font-size:22px">🏢</span><span class="label" id="brandName">ToonOffice</span></div>
     <nav class="menu" id="menu">
       <div class="menu-item active" data-view="dashboard"><span class="ico">🗺️</span><span class="label">Dashboard</span></div>
       <div class="menu-item" data-view="console"><span class="ico">🏠</span><span class="label">CEO Console</span></div>
@@ -421,6 +421,15 @@
       <!-- SETTINGS -->
       <section class="view" id="view-settings">
         <h2 style="color:#fff; margin:0 0 14px">ตั้งค่า</h2>
+
+        <div class="panel"><h3>ชื่อบริษัท</h3>
+          <input id="companyName" class="numfld" placeholder="เช่น ToonOffice" />
+        </div>
+        <div class="panel"><h3>ตั้งชื่อตัวละคร (Agents)</h3>
+          <div id="agentNameList" style="display:flex; flex-direction:column; gap:8px"></div>
+        </div>
+        <button class="send" id="saveNames" style="margin-bottom:18px; padding:11px 24px">💾 บันทึกชื่อ</button>
+
         <div class="card" style="padding:16px; color:#cbd5e1; max-width:520px; line-height:1.7">
           <p><b style="color:#fff">โมเดล:</b> claude-opus-4-8 (adaptive thinking)</p>
           <p><b style="color:#fff">ราคา:</b> input $<span id="set_in">5</span> / output $<span id="set_out">25</span> ต่อ 1M tokens</p>
@@ -1052,6 +1061,23 @@ function showView(v) {
   if (v === "console") loadConsole();
   if (v === "connectors") loadConnectors();
   if (v === "automation") loadAutomation();
+  if (v === "settings") initSettingsForm();
+}
+
+/* ---------- company + agent names (Settings) ---------- */
+async function applyCompany(){
+  try { const s = await (await fetch("/api/settings")).json();
+    if (s.company_name) { $("brandName").textContent = s.company_name; document.title = s.company_name + " · Multi-Agent OS"; }
+  } catch(e){}
+}
+async function initSettingsForm(){
+  let s = {}; try { s = await (await fetch("/api/settings")).json(); } catch(e){}
+  $("companyName").value = s.company_name || $("brandName").textContent || "ToonOffice";
+  $("agentNameList").innerHTML = Object.values(AGENTS).map(a => `
+    <div style="display:flex; align-items:center; gap:10px">
+      <span style="font-size:20px">${a.emoji}</span>
+      <input class="numfld" data-aid="${a.id}" value="${(a.name||"").replace(/"/g,'&quot;')}" style="flex:1; margin:0" />
+    </div>`).join("");
 }
 
 /* ---------- modals ---------- */
@@ -1280,10 +1306,22 @@ function mochiSend(){ const g = $("mochiGoal").value.trim(); if (g) { send(g); $
 $("mochiSend").addEventListener("click", mochiSend);
 $("mochiGoal").addEventListener("keydown", e => { if (e.key === "Enter") mochiSend(); });
 
+/* save company + agent names */
+$("saveNames").addEventListener("click", async () => {
+  const data = { company_name: ($("companyName").value || "ToonOffice").trim() };
+  $("agentNameList").querySelectorAll("[data-aid]").forEach(inp => {
+    const id = inp.dataset.aid;
+    data["agent_name_" + id] = (inp.value || "").trim() || meta(id).name;
+  });
+  await postJSON("/api/settings", data);
+  toastNote("บันทึกชื่อแล้ว กำลังโหลดใหม่…", "#22c55e");
+  setTimeout(() => location.reload(), 700);
+});
+
 /* clock */
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
 
-loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); });
+loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); });
 </script>
 </body>
 </html>
