@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ToonOffice · Multi-Agent OS</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
 <style>
   :root { --sky1:#bfe3ff; --sky2:#e9f5ff; }
   * { box-sizing: border-box; }
@@ -124,6 +125,19 @@
   @keyframes celebrate { 0%{transform:translateY(0) rotate(0);} 30%{transform:translateY(-26px) scale(1.07) rotate(-4deg);} 55%{transform:translateY(0) rotate(3deg);} 75%{transform:translateY(-8px) rotate(-1deg);} 100%{transform:translateY(0) rotate(0);} }
   @keyframes checkpop { 0%{transform:translateX(-50%) scale(0);} 60%{ transform:translateX(-50%) scale(1.3);} 100%{ transform:translateX(-50%) scale(1);} }
 
+  /* ---------- 3D scene ---------- */
+  #scene3d { position:relative; height:460px; border-radius:22px; overflow:hidden; background:#bfe3ff; box-shadow:inset 0 -30px 50px rgba(80,120,160,.25); }
+  #threeCanvas { width:100%; height:100%; display:block; }
+  #nameTags { position:absolute; inset:0; pointer-events:none; }
+  .nametag { position:absolute; transform:translate(-50%,-100%); background:rgba(15,23,42,.82); color:#fff; font-size:11px;
+             font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; border-bottom:3px solid #888; }
+  .scene-hint { position:absolute; left:12px; bottom:12px; background:rgba(15,23,42,.6); color:#e2e8f0; font-size:11px;
+                padding:5px 10px; border-radius:999px; }
+  #taskPopup { position:absolute; transform:translate(-50%,-100%); display:none; max-width:240px; background:#0f172a; color:#e2e8f0;
+               border:1px solid #334155; border-radius:12px; padding:10px 12px; font-size:12px; box-shadow:0 10px 30px rgba(0,0,0,.5); z-index:5; }
+  #taskPopup b { display:block; margin-bottom:4px; }
+  .scene-fallback { display:flex; align-items:center; justify-content:center; height:100%; color:#0f3050; font-weight:700; padding:20px; text-align:center; }
+
   /* ---------- cards / panels ---------- */
   .card { background:#10182b; border:1px solid #1e293b; border-radius:16px; color:#e2e8f0; }
   .stream { white-space:pre-wrap; word-break:break-word; }
@@ -199,7 +213,12 @@
     <div class="content">
       <!-- DASHBOARD -->
       <section class="view active" id="view-dashboard">
-        <div class="office"><div class="floor" id="floor"></div></div>
+        <div id="scene3d">
+          <canvas id="threeCanvas"></canvas>
+          <div id="nameTags"></div>
+          <div id="taskPopup"></div>
+          <div class="scene-hint">🖱️ ดับเบิลคลิกที่พื้น = ตัวละครเดินไป · คลิกตัวละคร = ดูงานที่ทำ</div>
+        </div>
         <div class="card" style="margin-top:16px">
           <div style="padding:10px 16px; border-bottom:1px solid #1e293b; color:#94a3b8; font-size:13px;">กิจกรรม / ผลลัพธ์สด</div>
           <div id="activityLog" style="padding:14px; display:flex; flex-direction:column; gap:12px; max-height:42vh; overflow:auto;"></div>
@@ -293,77 +312,6 @@ const COLORS = { ceo:"#f5b301", researcher:"#3b82f6", cmo:"#ec4899", sales_rep:"
 const HAIR   = { ceo:"#6b4423", researcher:"#2b2b2b", cmo:"#d65a9a", sales_rep:"#caa14a", dev:"#3a3f55", data_analyst:"#8a5a2b" };
 const SKIN   = { ceo:"#ffd9b3", researcher:"#f1c9a5", cmo:"#ffd9b3", sales_rep:"#e8b58c", dev:"#f1c9a5", data_analyst:"#e0a982" };
 
-function shade(hex, pct) {
-  hex = (hex || "#888888").replace("#", "");
-  if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
-  let r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
-  const f = (c) => Math.max(0, Math.min(255, Math.round(c + (pct/100)*255)));
-  return `rgb(${f(r)},${f(g)},${f(b)})`;
-}
-const lighten = (h) => shade(h, 16);
-const darken  = (h) => shade(h, -22);
-
-// High-quality cartoon character as inline SVG (smooth curves, gradient shading).
-function buildCharacter(id) {
-  const shirt = COLORS[id] || "#888", hair = HAIR[id] || "#5b3b2a", skin = SKIN[id] || "#ffd9b3";
-  const u = id;
-  return `
-  <svg class="character" viewBox="0 0 130 150" width="128" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <radialGradient id="face-${u}" cx="40%" cy="32%" r="78%">
-        <stop offset="0%" stop-color="${lighten(skin)}"/><stop offset="100%" stop-color="${skin}"/>
-      </radialGradient>
-      <linearGradient id="shirt-${u}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${lighten(shirt)}"/><stop offset="100%" stop-color="${darken(shirt)}"/>
-      </linearGradient>
-      <linearGradient id="hair-${u}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${lighten(hair)}"/><stop offset="100%" stop-color="${hair}"/>
-      </linearGradient>
-    </defs>
-
-    <g class="breathe">
-      <path d="M30 150 Q26 100 47 86 Q56 80 65 80 Q74 80 83 86 Q104 100 100 150 Z" fill="url(#shirt-${u})"/>
-      <path d="M53 84 Q65 97 77 84 L73 80 Q65 88 57 80 Z" fill="${darken(shirt)}" opacity=".55"/>
-      <path d="M40 146 Q37 104 52 88" stroke="rgba(255,255,255,.28)" stroke-width="4" fill="none" stroke-linecap="round"/>
-    </g>
-
-    <g class="arm-l">
-      <path d="M41 92 Q30 110 50 124" stroke="url(#shirt-${u})" stroke-width="13" fill="none" stroke-linecap="round"/>
-      <circle cx="51" cy="125" r="8" fill="url(#face-${u})"/>
-    </g>
-    <g class="arm-r">
-      <path d="M89 92 Q100 110 80 124" stroke="url(#shirt-${u})" stroke-width="13" fill="none" stroke-linecap="round"/>
-      <circle cx="79" cy="125" r="8" fill="url(#face-${u})"/>
-    </g>
-
-    <rect x="58" y="68" width="14" height="15" rx="6" fill="${darken(skin)}"/>
-
-    <g class="head-g">
-      <ellipse cx="65" cy="46" rx="30" ry="31" fill="url(#face-${u})"/>
-      <ellipse cx="36" cy="49" rx="6" ry="8" fill="${skin}"/>
-      <ellipse cx="94" cy="49" rx="6" ry="8" fill="${skin}"/>
-      <path d="M35 42 Q38 11 65 11 Q92 11 95 42 Q87 25 65 25 Q43 25 35 42 Z" fill="url(#hair-${u})"/>
-      <path d="M33 43 Q31 31 41 23 L45 35 Z" fill="url(#hair-${u})"/>
-      <path d="M97 43 Q99 31 89 23 L85 35 Z" fill="url(#hair-${u})"/>
-      <ellipse cx="47" cy="55" rx="6" ry="4" fill="#ff8fa0" opacity=".5"/>
-      <ellipse cx="83" cy="55" rx="6" ry="4" fill="#ff8fa0" opacity=".5"/>
-      <g class="eyes">
-        <ellipse cx="54" cy="47" rx="5.5" ry="6.6" fill="#fff"/>
-        <ellipse cx="76" cy="47" rx="5.5" ry="6.6" fill="#fff"/>
-        <circle cx="55" cy="48" r="3.3" fill="#2b2b2b"/>
-        <circle cx="77" cy="48" r="3.3" fill="#2b2b2b"/>
-        <circle cx="56.3" cy="46.4" r="1.1" fill="#fff"/>
-        <circle cx="78.3" cy="46.4" r="1.1" fill="#fff"/>
-      </g>
-      <path class="mouth-idle" d="M58 61 Q65 67 72 61" stroke="#a06a4a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-      <ellipse class="mouth-work" cx="65" cy="63" rx="3.6" ry="4.6" fill="#9c5b46"/>
-      <path class="mouth-done" d="M55 59 Q65 75 75 59 Q65 64 55 59 Z" fill="#9c5b46"/>
-      <ellipse cx="65" cy="46" rx="30" ry="31" fill="none" stroke="rgba(0,0,0,.05)" stroke-width="2"/>
-      <ellipse cx="53" cy="33" rx="10" ry="6.5" fill="rgba(255,255,255,.35)"/>
-    </g>
-  </svg>`;
-}
-
 const AGENTS = {};        // id -> meta
 let ws, currentSessionId = null;
 let usage = { per_agent:{}, input:0, output:0 };
@@ -376,25 +324,312 @@ const $ = (id) => document.getElementById(id);
 const color = (id) => COLORS[id] || "#64748b";
 const meta = (id) => AGENTS[id] || { name:id, emoji:"•" };
 
+/* ============================================================
+   Office3D — Three.js isometric 3D office (low-poly characters)
+   ============================================================ */
+const Office3D = (function () {
+  let renderer, scene, camera, raycaster, pointer, clock, floorMesh;
+  let chars = {};            // id -> char object
+  let deskSeat = {};         // id -> THREE.Vector3 (home seat)
+  let ceoGather = null;      // gather point in front of CEO desk
+  let selectedId = null, ready = false, container;
+
+  const THREEok = () => typeof window.THREE !== "undefined";
+
+  function hex(c){ return new THREE.Color(c); }
+
+  /* ---- textures via canvas ---- */
+  function checkerTexture(a, b, n) {
+    const s = 256, c = document.createElement("canvas"); c.width=c.height=s;
+    const x = c.getContext("2d"); const t = s/n;
+    for (let i=0;i<n;i++) for (let j=0;j<n;j++){ x.fillStyle=(i+j)%2?a:b; x.fillRect(i*t,j*t,t,t); }
+    const tex = new THREE.CanvasTexture(c); tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(4,4); return tex;
+  }
+  function windowTexture() {
+    const c = document.createElement("canvas"); c.width=256; c.height=256; const x=c.getContext("2d");
+    const sky = x.createLinearGradient(0,0,0,256); sky.addColorStop(0,"#9fd0ff"); sky.addColorStop(1,"#e8f6ff");
+    x.fillStyle=sky; x.fillRect(0,0,256,256);
+    const cols=["#7fa8c9","#6b95b8","#8fb6d6"];
+    for (let i=0;i<7;i++){ const w=24+Math.random()*26, h=70+Math.random()*150, bx=i*34+4;
+      x.fillStyle=cols[i%3]; x.fillRect(bx,256-h,w,h);
+      x.fillStyle="rgba(255,255,255,.5)";
+      for (let yy=256-h+8; yy<250; yy+=14) for (let xx=bx+4; xx<bx+w-4; xx+=10) x.fillRect(xx,yy,5,7);
+    }
+    return new THREE.CanvasTexture(c);
+  }
+
+  function init(agents) {
+    container = document.getElementById("scene3d");
+    if (!THREEok()) { container.innerHTML = '<div class="scene-fallback">โหลด 3D ไม่สำเร็จ (ตรวจการเชื่อมต่ออินเทอร์เน็ต) — ส่วนอื่นของแดชบอร์ดยังใช้งานได้ปกติ</div>'; return; }
+    const W = container.clientWidth, H = container.clientHeight;
+    renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("threeCanvas"), antialias:true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(W,H);
+    scene = new THREE.Scene(); scene.background = hex("#bfe3ff");
+
+    const aspect = W/H, d = 13;
+    camera = new THREE.OrthographicCamera(-d*aspect, d*aspect, d, -d, -100, 100);
+    camera.position.set(20,18,20); camera.lookAt(0,2,0);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.7); dir.position.set(12,22,8); scene.add(dir);
+    const fill = new THREE.DirectionalLight(0xcfe8ff, 0.3); fill.position.set(-10,8,-6); scene.add(fill);
+
+    buildRoom();
+    layoutDesks(agents);
+    agents.forEach(a => { chars[a.id] = buildCharacter3D(a); scene.add(chars[a.id].group); });
+
+    raycaster = new THREE.Raycaster(); pointer = new THREE.Vector2(); clock = new THREE.Clock();
+    renderer.domElement.addEventListener("dblclick", onDblClick);
+    renderer.domElement.addEventListener("click", onClick);
+    window.addEventListener("resize", resize);
+    ready = true; animate();
+  }
+
+  function buildRoom() {
+    const ROOM = 34;
+    floorMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROOM, ROOM),
+      new THREE.MeshLambertMaterial({ map: checkerTexture("#e7d6b8","#d8c3a0",8) })
+    );
+    floorMesh.rotation.x = -Math.PI/2; scene.add(floorMesh);
+
+    const wallMat = new THREE.MeshLambertMaterial({ color:"#eaf2fb" });
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(ROOM,16), wallMat);
+    back.position.set(0,8,-ROOM/2); scene.add(back);
+    const left = new THREE.Mesh(new THREE.PlaneGeometry(ROOM,16), wallMat);
+    left.rotation.y = Math.PI/2; left.position.set(-ROOM/2,8,0); scene.add(left);
+
+    // windows with city
+    const winMat = new THREE.MeshBasicMaterial({ map: windowTexture() });
+    for (let i=-1;i<=1;i++){
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(7,6), winMat);
+      w.position.set(i*9, 9, -ROOM/2+0.1); scene.add(w);
+      const frame = new THREE.Mesh(new THREE.PlaneGeometry(7.6,6.6), new THREE.MeshBasicMaterial({color:"#cdd9e6"}));
+      frame.position.set(i*9,9,-ROOM/2+0.05); scene.add(frame);
+    }
+    // decorations
+    plant(-14,-13); plant(13,-14); bookshelf(-15,4); coffeeMachine(14,8);
+  }
+
+  function plant(x,z){
+    const g = new THREE.Group();
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.5,1,12), new THREE.MeshLambertMaterial({color:"#c2693f"}));
+    pot.position.y=0.5; g.add(pot);
+    [[0,1.7,0,1],[0.5,2.1,0.2,.8],[-0.4,2.0,-0.3,.7]].forEach(([px,py,pz,s])=>{
+      const f = new THREE.Mesh(new THREE.SphereGeometry(0.8*s,8,8), new THREE.MeshLambertMaterial({color:"#3fae5a"}));
+      f.position.set(px,py,pz); g.add(f);
+    });
+    g.position.set(x,0,z); scene.add(g);
+  }
+  function bookshelf(x,z){
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.2,6,4), new THREE.MeshLambertMaterial({color:"#8a5a33"}));
+    body.position.y=3; g.add(body);
+    const cols=["#e06666","#6fa8dc","#ffd966","#93c47d","#c27ba0"];
+    for (let r=0;r<4;r++) for (let b=0;b<6;b++){
+      const book = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.9,0.3), new THREE.MeshLambertMaterial({color:cols[(r+b)%5]}));
+      book.position.set(0.5, 1.1+r*1.3, -1.5+b*0.55); g.add(book);
+    }
+    g.position.set(x,0,z); g.rotation.y=Math.PI/2; scene.add(g);
+  }
+  function coffeeMachine(x,z){
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.4,2.2,1.4), new THREE.MeshLambertMaterial({color:"#3b4252"}));
+    base.position.y=1.1; g.add(base);
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.2,0.4,10), new THREE.MeshLambertMaterial({color:"#fff"}));
+    cup.position.set(0,0.6,0.8); g.add(cup);
+    g.position.set(x,0,z); scene.add(g);
+  }
+
+  function layoutDesks(agents) {
+    const cols = [-9,0,9], rows = [-2,9];
+    agents.forEach((a,i) => {
+      const x = cols[i%3], z = rows[Math.floor(i/3)];
+      buildDesk(a.id, x, z);
+      deskSeat[a.id] = new THREE.Vector3(x, 0, z + 2.0);   // character stands behind desk (camera side)
+      if (a.id === "ceo") ceoGather = new THREE.Vector3(x, 0, z + 3.6);
+    });
+    if (!ceoGather) ceoGather = new THREE.Vector3(0,0,4);
+  }
+
+  function buildDesk(id, x, z) {
+    const g = new THREE.Group();
+    const top = new THREE.Mesh(new THREE.BoxGeometry(3.4,0.3,1.8), new THREE.MeshLambertMaterial({color:"#d9b487"}));
+    top.position.y=1.5; g.add(top);
+    [[-1.5,-0.7],[1.5,-0.7],[-1.5,0.7],[1.5,0.7]].forEach(([lx,lz])=>{
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2,1.5,0.2), new THREE.MeshLambertMaterial({color:"#a87f50"}));
+      leg.position.set(lx,0.75,lz); g.add(leg);
+    });
+    // monitor (glows when working)
+    const screenMat = new THREE.MeshStandardMaterial({ color:"#22324a", emissive:hex("#0a0f1a"), emissiveIntensity:0.4 });
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(1.7,1.1,0.12), screenMat);
+    screen.position.set(0,2.4,-0.1); g.add(screen);
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.15,0.5,0.15), new THREE.MeshLambertMaterial({color:"#222"}));
+    stand.position.set(0,1.8,-0.1); g.add(stand);
+    // desk lamp
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8), new THREE.MeshStandardMaterial({color:"#fff7d6", emissive:hex("#ffe9a8"), emissiveIntensity:0.6}));
+    lamp.position.set(1.3,2.1,0.4); g.add(lamp);
+    g.position.set(x,0,z); scene.add(g);
+    if (!Office3D._monitors) Office3D._monitors = {};
+    Office3D._monitors[id] = { mat: screenMat };
+  }
+
+  function buildCharacter3D(a) {
+    const group = new THREE.Group();
+    const skin = SKIN[a.id] || "#ffd9b3", hair = HAIR[a.id] || "#5b3b2a", outfit = COLORS[a.id] || "#888";
+    // legs
+    const legMat = new THREE.MeshLambertMaterial({color:"#2f3b52"});
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.45,1.2,0.5), legMat); legL.position.set(-0.3,0.6,0);
+    const legR = legL.clone(); legR.position.x=0.3; group.add(legL,legR);
+    // body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.3,1.5,0.8), new THREE.MeshLambertMaterial({color:outfit}));
+    body.position.y=1.95; group.add(body);
+    // arms (pivoted at shoulder for typing)
+    const armMat = new THREE.MeshLambertMaterial({color:outfit});
+    function arm(side){
+      const pivot = new THREE.Group(); pivot.position.set(side*0.85, 2.5, 0);
+      const a2 = new THREE.Mesh(new THREE.BoxGeometry(0.32,1.1,0.32), armMat); a2.position.y=-0.55; pivot.add(a2);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8), new THREE.MeshLambertMaterial({color:skin})); hand.position.y=-1.1; pivot.add(hand);
+      group.add(pivot); return pivot;
+    }
+    const armL = arm(-1), armR = arm(1);
+    // head + hair
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.62,16,16), new THREE.MeshLambertMaterial({color:skin}));
+    head.position.y=3.2; group.add(head);
+    const hairMesh = new THREE.Mesh(new THREE.SphereGeometry(0.66,16,16,0,Math.PI*2,0,Math.PI*0.6), new THREE.MeshLambertMaterial({color:hair}));
+    hairMesh.position.y=3.32; group.add(hairMesh);
+    // contact shadow
+    const sh = new THREE.Mesh(new THREE.CircleGeometry(0.9,16), new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.18}));
+    sh.rotation.x=-Math.PI/2; sh.position.y=0.02; group.add(sh);
+
+    const seat = deskSeat[a.id];
+    group.position.copy(seat);
+    group.rotation.y = Math.PI; // face +z (toward camera/desk in front)
+
+    return {
+      id:a.id, group, armL, armR, legL, legR, head,
+      state:"idle", queue:[], thenState:"idle", t0:0, task:"", phase:0
+    };
+  }
+
+  /* ---- public state hooks ---- */
+  function setStatus(id, status) {
+    const c = chars[id]; if (!c) return;
+    const mon = Office3D._monitors && Office3D._monitors[id];
+    if (status === "working") {
+      if (mon) { mon.mat.emissive = hex(COLORS[id]||"#22d3ee"); mon.mat.emissiveIntensity = 1.1; }
+      // walk to CEO desk (receive task) then back to own desk, then type
+      const seat = deskSeat[id];
+      c.queue = id === "ceo" ? [seat.clone()] : [ceoGather.clone(), seat.clone()];
+      c.thenState = "working"; c.state = "walking";
+    } else if (status === "done") {
+      if (mon) { mon.mat.emissive = hex("#16a34a"); mon.mat.emissiveIntensity = 0.9; }
+      c.queue = [deskSeat[id].clone()]; c.thenState = "done"; c.state = "walking";
+      c.t0 = clock ? clock.elapsedTime : 0;
+    } else { // idle
+      if (mon) { mon.mat.emissive = hex("#0a0f1a"); mon.mat.emissiveIntensity = 0.4; }
+      c.state = "idle";
+    }
+  }
+  function setTasks(subtasks) { (subtasks||[]).forEach(s => { if (chars[s.agent]) chars[s.agent].task = s.task; }); }
+
+  /* ---- interaction ---- */
+  function ndc(e){ const r = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX-r.left)/r.width)*2-1; pointer.y = -((e.clientY-r.top)/r.height)*2+1; }
+  function onDblClick(e){ ndc(e); raycaster.setFromCamera(pointer,camera);
+    const hit = raycaster.intersectObject(floorMesh)[0];
+    if (hit){ const who = selectedId || "ceo"; const c = chars[who];
+      if (c){ c.queue=[new THREE.Vector3(hit.point.x,0,hit.point.z)]; c.thenState="idle"; c.state="walking"; } }
+    hidePopup();
+  }
+  function onClick(e){ ndc(e); raycaster.setFromCamera(pointer,camera);
+    const groups = Object.values(chars).map(c=>c.group);
+    const hit = raycaster.intersectObjects(groups, true)[0];
+    let found = null;
+    if (hit){ for (const c of Object.values(chars)){ if (isDescendant(hit.object, c.group)){ found=c; break; } } }
+    if (found){ selectedId = found.id; showPopup(found); } else hidePopup();
+  }
+  function isDescendant(obj, root){ let o=obj; while(o){ if(o===root) return true; o=o.parent; } return false; }
+  function showPopup(c){ const p=$("taskPopup"); const m=meta(c.id);
+    p.innerHTML = `<b style="color:${color(c.id)}">${m.emoji} ${m.name}</b>${c.task ? c.task : "ยังไม่มีงานที่กำลังทำ"}<div style="color:#64748b;margin-top:4px">สถานะ: ${c.state}</div>`;
+    p.style.display="block"; c._showPopup=true; positionPopup(c); }
+  function hidePopup(){ $("taskPopup").style.display="none"; Object.values(chars).forEach(c=>c._showPopup=false); }
+
+  /* ---- per-frame ---- */
+  function project(v){ const p=v.clone().project(camera); const r=renderer.domElement.getBoundingClientRect();
+    return { x:(p.x*0.5+0.5)*r.width, y:(-p.y*0.5+0.5)*r.height }; }
+  function positionPopup(c){ const head=c.group.position.clone(); head.y+=4.4;
+    const s=project(head); const p=$("taskPopup"); p.style.left=s.x+"px"; p.style.top=(s.y-6)+"px"; }
+
+  function updateTags(){
+    const tags=$("nameTags");
+    Object.values(chars).forEach(c=>{
+      let tag=c._tag;
+      if(!tag){ tag=document.createElement("div"); tag.className="nametag"; const m=meta(c.id);
+        tag.textContent=`${m.emoji} ${m.name}`; tag.style.borderBottomColor=color(c.id); tags.appendChild(tag); c._tag=tag; }
+      const head=c.group.position.clone(); head.y+=4.4; const s=project(head);
+      tag.style.left=s.x+"px"; tag.style.top=s.y+"px";
+      if(c._showPopup) positionPopup(c);
+    });
+  }
+
+  function stepChar(c, t, dt){
+    const g=c.group;
+    if (c.state==="walking"){
+      const target=c.queue[0];
+      if (target){
+        const dx=target.x-g.position.x, dz=target.z-g.position.z, dist=Math.hypot(dx,dz);
+        if (dist<0.15){ c.queue.shift(); if(!c.queue.length){ c.state=c.thenState; if(c.state==="done") c.t0=t; g.rotation.x=0; } }
+        else { const sp=6*dt; g.position.x+=dx/dist*sp; g.position.z+=dz/dist*sp;
+          g.rotation.y=Math.atan2(dx,dz);
+          const sw=Math.sin(t*12)*0.5; c.legL.rotation.x=sw; c.legR.rotation.x=-sw; g.position.y=Math.abs(Math.sin(t*12))*0.12; }
+      }
+      return;
+    }
+    // settled facing camera
+    c.legL.rotation.x=0; c.legR.rotation.x=0; g.rotation.y=Math.PI;
+    if (c.state==="idle"){
+      g.position.y=Math.sin(t*1.6)*0.07; g.rotation.x=0;
+      c.armL.rotation.x=0.1; c.armR.rotation.x=0.1;
+    } else if (c.state==="working"){
+      g.position.y=0; g.rotation.x=0.22;                 // lean toward screen
+      c.armL.rotation.x=-1.1+Math.sin(t*16)*0.35;
+      c.armR.rotation.x=-1.1+Math.sin(t*16+Math.PI)*0.35;
+    } else if (c.state==="done"){
+      const e=t-c.t0; g.rotation.x=0;
+      g.position.y=Math.abs(Math.sin(e*6))*0.5;           // jump
+      c.armL.rotation.x=-2.6; c.armR.rotation.x=-2.6;     // arms up
+      if (e>1.4) setStatusInternalIdle(c);
+    }
+  }
+  function setStatusInternalIdle(c){ c.state="idle"; const mon=Office3D._monitors&&Office3D._monitors[c.id];
+    if(mon){ mon.mat.emissive=hex("#0a0f1a"); mon.mat.emissiveIntensity=0.4; } }
+
+  function animate(){
+    if(!ready) return;
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);   // advances clock.elapsedTime
+    const tt = clock.elapsedTime;
+    Object.values(chars).forEach(c=>stepChar(c,tt,dt));
+    updateTags();
+    renderer.render(scene,camera);
+  }
+
+  function resize(){
+    if(!ready) return; const W=container.clientWidth,H=container.clientHeight;
+    renderer.setSize(W,H); const aspect=W/H,d=13;
+    camera.left=-d*aspect; camera.right=d*aspect; camera.top=d; camera.bottom=-d; camera.updateProjectionMatrix();
+  }
+
+  return { init, setStatus, setTasks, resize, _monitors:null };
+})();
+
 /* ---------- load agents + build office ---------- */
 async function loadAgents() {
   const data = await (await fetch("/api/agents")).json();
-  const floor = $("floor"), list = $("agentList"), cards = $("agentCards");
+  const list = $("agentList"), cards = $("agentCards");
   data.agents.forEach(a => {
     AGENTS[a.id] = a;
-    // office station
-    const st = document.createElement("div");
-    st.className = "station"; st.dataset.agent = a.id; st.style.setProperty("--c", color(a.id));
-    st.innerHTML = `
-      <div class="char-stage">
-        <div class="shadow"></div>
-        <div class="desk3d"></div>
-        ${buildCharacter(a.id)}
-        <div class="monitor3d"><div class="screen3d"></div><div class="stand3d"></div></div>
-        <div class="check">✓</div>
-      </div>
-      <div class="nameplate">${a.emoji} ${a.name}</div>`;
-    floor.appendChild(st);
     // sidebar row
     const row = document.createElement("div");
     row.className = "agent-row";
@@ -410,18 +645,18 @@ async function loadAgents() {
         <span class="tag" data-cardstatus="${a.id}" style="background:#1e293b;color:#94a3b8">idle</span></div>`;
     cards.appendChild(card);
   });
+  Office3D.init(data.agents);
 }
 
 /* ---------- status / animation ---------- */
 function setStatus(id, status) {
-  const st = document.querySelector(`.station[data-agent="${id}"]`);
-  if (st) { st.classList.remove("working","done","idle"); st.classList.add(status); }
   const dot = document.querySelector(`[data-dot="${id}"]`);
   if (dot) dot.className = "sdot " + (status === "idle" ? "" : status);
   const cs = document.querySelector(`[data-cardstatus="${id}"]`);
   if (cs) { cs.textContent = status;
     cs.style.background = status==="working" ? "#7c2d12" : status==="done" ? "#14532d" : "#1e293b";
     cs.style.color = status==="idle" ? "#94a3b8" : "#fff"; }
+  Office3D.setStatus(id, status);
 }
 function resetStatuses() { Object.keys(AGENTS).forEach(id => setStatus(id, "idle")); }
 
@@ -586,7 +821,7 @@ function handle(e) {
     case "history": renderHistory(e.messages, e.tasks); setBusy(false); break;
     case "usage": setUsage(e); break;
     case "token_usage": addUsage(e.agent, e.input_tokens, e.output_tokens); break;
-    case "plan": showPlan(e.subtasks); break;
+    case "plan": showPlan(e.subtasks); Office3D.setTasks(e.subtasks); break;
     case "agent_status":
       setStatus(e.agent, e.status);
       if (e.status==="done" && e.agent!=="ceo") notify(e.agent, `${meta(e.agent).emoji} ${meta(e.agent).name} เสร็จงาน`, "ส่งผลให้ CEO แล้ว");
