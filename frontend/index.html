@@ -151,7 +151,17 @@
 
   /* ---------- cards / panels ---------- */
   .card { background:#10182b; border:1px solid #1e293b; border-radius:16px; color:#e2e8f0; }
-  .stream { white-space:pre-wrap; word-break:break-word; }
+  .stream { word-break:break-word; }
+  .stream h2 { font-size:18px; font-weight:800; color:#fff; margin:12px 0 6px; }
+  .stream h3 { font-size:16px; font-weight:800; color:#fff; margin:10px 0 5px; }
+  .stream h4 { font-size:14px; font-weight:800; color:#e2e8f0; margin:8px 0 4px; }
+  .stream p { margin:6px 0; line-height:1.55; }
+  .stream ul, .stream ol { margin:6px 0; padding-left:22px; }
+  .stream li { margin:3px 0; line-height:1.5; }
+  .stream code { background:#0b1220; border:1px solid #27355a; border-radius:4px; padding:1px 5px; font-size:12px; }
+  .stream strong { color:#fff; }
+  .stream em { color:#cbd5e1; }
+  .stream hr { border:none; border-top:1px solid #27355a; margin:10px 0; }
   .tag { font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; }
   .chip { font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px; background:#1b2742; color:#cbd5e1; border:1px solid #27355a; }
   .ai-badge { font-size:10px; font-weight:900; padding:1px 7px; border-radius:999px; border:1.5px solid; line-height:1.5; }
@@ -406,6 +416,15 @@
           </div>
         </div>
 
+        <div class="panel"><h3>พักตามเวลา (อัตโนมัติ) <span style="flex:1"></span><span style="font-size:11px;color:#22c55e">บันทึกอัตโนมัติ</span></h3>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+            <label style="font-size:13px;color:#cbd5e1; display:flex; align-items:center; gap:6px"><input type="checkbox" id="schedEnabled"> เปิดพักทั้งบริษัทอัตโนมัติ</label>
+            <span style="color:#94a3b8">ตั้งแต่</span><input id="schedStart" type="time" class="numfld" style="width:auto;margin:0" value="18:00">
+            <span style="color:#94a3b8">ถึง</span><input id="schedEnd" type="time" class="numfld" style="width:auto;margin:0" value="09:00">
+          </div>
+          <div style="color:#64748b; font-size:12px; margin-top:8px">ในช่วงนี้บริษัทจะถูกพักงานอัตโนมัติ และเริ่มงานต่อเองเมื่อพ้นช่วงเวลา</div>
+        </div>
+
         <div class="panel"><h3>เวลาโพสต์ (เวลาไทย)</h3>
           <div id="postTime" style="display:flex; flex-direction:column; gap:8px"></div>
         </div>
@@ -554,6 +573,31 @@ function initials(name){
   const w = (name||"").trim().split(/\s+/);
   if (w.length >= 2) return (w[0][0] + w[1][0]).toUpperCase();
   return (name||"?").slice(0,2).toUpperCase();
+}
+/* lightweight, safe Markdown -> HTML (headings, bold/italic, code, lists, hr) */
+function escapeHtml(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function mdToHtml(src){
+  if (!src) return "";
+  let s = escapeHtml(src);
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  const lines = s.split(/\n/);
+  let html = "", inUl = false, inOl = false;
+  const close = () => { if (inUl){ html+="</ul>"; inUl=false; } if (inOl){ html+="</ol>"; inOl=false; } };
+  for (const line of lines){
+    const t = line.trim(); let m;
+    if (/^### /.test(t)) { close(); html += "<h4>"+t.slice(4)+"</h4>"; }
+    else if (/^## /.test(t)) { close(); html += "<h3>"+t.slice(3)+"</h3>"; }
+    else if (/^# /.test(t)) { close(); html += "<h2>"+t.slice(2)+"</h2>"; }
+    else if (/^---+$/.test(t)) { close(); html += "<hr>"; }
+    else if (m = t.match(/^[-*]\s+(.*)/)) { if(!inUl){ close(); html+="<ul>"; inUl=true; } html += "<li>"+m[1]+"</li>"; }
+    else if (m = t.match(/^\d+\.\s+(.*)/)) { if(!inOl){ close(); html+="<ol>"; inOl=true; } html += "<li>"+m[1]+"</li>"; }
+    else if (t === "") { close(); }
+    else { close(); html += "<p>"+line+"</p>"; }
+  }
+  close();
+  return html;
 }
 
 /* ============================================================
@@ -923,9 +967,10 @@ const Office3D = (function () {
   function updateTags(){
     const tags=$("nameTags");
     Object.values(chars).forEach(c=>{
-      let tag=c._tag;
-      if(!tag){ tag=document.createElement("div"); tag.className="nametag"; const m=meta(c.id);
-        tag.textContent=`${m.emoji} ${m.name}`; tag.style.borderBottomColor=color(c.id); tags.appendChild(tag); c._tag=tag; }
+      let tag=c._tag; const m=meta(c.id);
+      if(!tag){ tag=document.createElement("div"); tag.className="nametag";
+        tag.style.borderBottomColor=color(c.id); tags.appendChild(tag); c._tag=tag; }
+      tag.textContent = c._paused ? `${m.emoji} ${m.name} 💤` : `${m.emoji} ${m.name}`;
       const head=c.group.position.clone(); head.y+=4.4; const s=project(head);
       tag.style.left=s.x+"px"; tag.style.top=s.y+"px";
       if(c._showPopup) positionPopup(c);
@@ -949,6 +994,13 @@ const Office3D = (function () {
       const e = t - c.t0;
       if (e > c.gdur){ resetPose(c); c.state="idle"; }
       else { doGesture(c, e); }
+      return;
+    }
+    if (c._paused){   // slumped/sleeping pose
+      c.legL.rotation.x=0; c.legR.rotation.x=0;
+      g.rotation.set(0.2, Math.PI, 0);
+      g.position.y = -0.28 + Math.sin(t*1.0)*0.04;
+      c.armL.rotation.set(0.25,0,0); c.armR.rotation.set(0.25,0,0);
       return;
     }
     // settled facing camera
@@ -986,7 +1038,8 @@ const Office3D = (function () {
     camera.left=-d*aspect; camera.right=d*aspect; camera.top=d; camera.bottom=-d; camera.updateProjectionMatrix();
   }
 
-  return { init, setStatus, setTasks, resize, playGesture, setMode:(m)=>{ if(ready) applyMode(m); }, _monitors:null };
+  function setPaused(id, p){ if (chars[id]) chars[id]._paused = p; }
+  return { init, setStatus, setTasks, resize, playGesture, setPaused, setMode:(m)=>{ if(ready) applyMode(m); }, _monitors:null };
 })();
 window.playGesture = (id, key) => Office3D.playGesture(id, key);
 
@@ -1016,8 +1069,12 @@ async function loadAgents() {
       </div>
       <div style="font-size:13px;color:#94a3b8;margin:8px 0 12px">${a.title}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
-      <div style="margin-top:12px;font-size:12px;color:${color(a.id)};font-weight:700">✍️ คลิกเพื่อสั่งงานตัวนี้โดยตรง</div>`;
+      <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+        <span style="flex:1;font-size:12px;color:${color(a.id)};font-weight:700">✍️ คลิกเพื่อสั่งงาน</span>
+        <button class="qbtn" data-pause="${a.id}">⏸️ พัก</button>
+      </div>`;
     card.addEventListener("click", () => openAgentCmd(a.id));
+    card.querySelector("[data-pause]").addEventListener("click", (e) => { e.stopPropagation(); togglePause(a.id); });
     cards.appendChild(card);
   });
   Office3D.init(data.agents);
@@ -1042,15 +1099,16 @@ function addBlock(emoji, label, text, accent) {
   wrap.innerHTML = `<div style="padding:8px 12px;border-bottom:1px solid #1e293b;font-weight:800;display:flex;gap:8px">
       <span>${emoji}</span><span>${label}</span></div>
       <div class="stream" style="padding:12px;font-size:14px;color:#e2e8f0"></div>`;
-  const body = wrap.querySelector(".stream"); body.textContent = text || "";
+  const body = wrap.querySelector(".stream"); body.innerHTML = mdToHtml(text || "");
   $("activityLog").appendChild(wrap); scrollLog();
   return { wrap, body };
 }
 function liveBlock(id, label) {
   if (liveBlocks[id]) return liveBlocks[id];
   const a = meta(id);
-  liveBlocks[id] = addBlock(a.emoji, label || a.name, "", color(id));
-  return liveBlocks[id];
+  const b = addBlock(a.emoji, label || a.name, "", color(id)); b._raw = "";
+  liveBlocks[id] = b;
+  return b;
 }
 function scrollLog(){ const l=$("activityLog"); l.scrollTop=l.scrollHeight; }
 
@@ -1151,7 +1209,7 @@ function renderHistory(messages, tasks) {
   const mkRow = (emoji,label,text,accent) => {
     const d = document.createElement("div"); d.className="card"; if(accent) d.style.borderColor=accent;
     d.innerHTML = `<div style="padding:8px 12px;border-bottom:1px solid #1e293b;font-weight:800">${emoji} ${label}</div>
-       <div class="stream" style="padding:12px;font-size:14px;color:#e2e8f0">${text}</div>`;
+       <div class="stream" style="padding:12px;font-size:14px;color:#e2e8f0">${mdToHtml(text)}</div>`;
     hb.appendChild(d);
   };
   if (!messages || !messages.length) mkRow("📭","ยังไม่มีประวัติในเซสชันนี้","ส่งคำสั่งถึง CEO เพื่อเริ่มต้น");
@@ -1207,7 +1265,7 @@ function handle(e) {
       setStatus(e.agent, e.status);
       if (e.status==="done" && e.agent!=="ceo") notify(e.agent, `${meta(e.agent).emoji} ${meta(e.agent).name} เสร็จงาน`, "ส่งผลให้ CEO แล้ว");
       break;
-    case "agent_output": liveBlock(e.agent).body.textContent += e.chunk; scrollLog(); break;
+    case "agent_output": { const lb = liveBlock(e.agent); lb._raw = (lb._raw||"") + e.chunk; lb.body.innerHTML = mdToHtml(lb._raw); scrollLog(); } break;
     case "final":
       addBlock("✅","ผลลัพธ์สุดท้าย (CEO)", e.output, "#22c55e");
       notify("ceo", "✅ CEO สรุปผลเสร็จแล้ว", "ดูผลลัพธ์สุดท้ายในกิจกรรม");
@@ -1225,10 +1283,17 @@ function applyPauseUI(){
   const cb = $("companyPause");
   if (cb){ cb.textContent = pausedState.company ? "▶️ เริ่มบริษัท" : "⏸️ หยุดบริษัททั้งหมด"; cb.classList.toggle("active", pausedState.company); }
   document.querySelectorAll(".agent-row").forEach(r => { const id = r.dataset.agent; if (!id) return;
-    const p = pausedState.company || pausedState.agents[id];
+    const p = pausedState.company || !!pausedState.agents[id];
     r.style.opacity = p ? 0.45 : 1; r.title = p ? "พักงานอยู่" : ""; });
+  // Agents-card quick pause buttons + dim
+  document.querySelectorAll("[data-pause]").forEach(b => { const id = b.dataset.pause;
+    const p = !!pausedState.agents[id]; b.textContent = p ? "▶️ ต่อ" : "⏸️ พัก"; b.classList.toggle("active", p); });
+  document.querySelectorAll("[data-card]").forEach(c => { const id = c.dataset.card;
+    c.style.opacity = (pausedState.company || pausedState.agents[id]) ? 0.5 : 1; });
   const ab = $("agentPause");
   if (ab && adAgentId){ const p = !!pausedState.agents[adAgentId]; ab.textContent = p ? "▶️ ทำงานต่อ" : "⏸️ พักงาน"; ab.classList.toggle("active", p); }
+  // 3D office: paused agents sit/sleep
+  Object.keys(AGENTS).forEach(id => Office3D.setPaused(id, pausedState.company || !!pausedState.agents[id]));
 }
 async function togglePause(target){
   const cur = target === "company" ? pausedState.company : !!pausedState.agents[target];
@@ -1315,6 +1380,7 @@ async function applyCompany(){
     if (s.company_name) { $("brandName").textContent = s.company_name; document.title = s.company_name + " · Multi-Agent OS"; }
     if (s.room_mode) { Office3D.setMode(s.room_mode);
       document.querySelectorAll(".modebtn").forEach(x => x.classList.toggle("active", x.dataset.mode === s.room_mode)); }
+    SETTINGS = s; syncScheduleCfg();   // enable scheduled auto-pause app-wide
   } catch(e){}
 }
 async function initSettingsForm(){
@@ -1490,6 +1556,32 @@ async function loadAutomation(){
   $("ppdImage").value = SETTINGS.ppd_image ?? 3;
   $("ppdVideo").value = SETTINGS.ppd_video ?? 1;
   $("autoRun").checked = SETTINGS.auto_run === "true";
+  $("schedEnabled").checked = SETTINGS.schedule_enabled === "true";
+  $("schedStart").value = SETTINGS.schedule_start || "18:00";
+  $("schedEnd").value = SETTINGS.schedule_end || "09:00";
+  syncScheduleCfg();
+}
+
+/* ---------- scheduled auto-pause (whole company) ---------- */
+let scheduleCfg = { enabled:false, start:"18:00", end:"09:00" };
+function syncScheduleCfg(){
+  scheduleCfg = {
+    enabled: (SETTINGS.schedule_enabled === "true"),
+    start: SETTINGS.schedule_start || "18:00",
+    end: SETTINGS.schedule_end || "09:00",
+  };
+}
+function toMin(hhmm){ const [h,m] = (hhmm||"0:0").split(":").map(Number); return h*60 + m; }
+async function checkSchedule(){
+  if (!scheduleCfg.enabled) return;
+  const now = new Date(), cur = now.getHours()*60 + now.getMinutes();
+  const s = toMin(scheduleCfg.start), e = toMin(scheduleCfg.end);
+  const should = s < e ? (cur >= s && cur < e) : (cur >= s || cur < e);   // handles overnight window
+  if (should !== pausedState.company){
+    pausedState = await postJSON("/api/pause", { target:"company", paused: should });
+    applyPauseUI();
+    toastNote(should ? "⏸️ พักอัตโนมัติตามเวลา" : "▶️ เริ่มงานอัตโนมัติตามเวลา", "#a855f7");
+  }
 }
 async function saveSettings(partial){ try { await postJSON("/api/settings", partial); } catch(e){} }
 
@@ -1548,6 +1640,13 @@ $("byokClear").addEventListener("click", () => {
   });
 });
 $("autoRun").addEventListener("change", e => saveSettings({ auto_run: e.target.checked }));
+["schedEnabled","schedStart","schedEnd"].forEach(id => $(id).addEventListener("change", () => {
+  SETTINGS.schedule_enabled = $("schedEnabled").checked ? "true" : "false";
+  SETTINGS.schedule_start = $("schedStart").value;
+  SETTINGS.schedule_end = $("schedEnd").value;
+  saveSettings({ schedule_enabled: SETTINGS.schedule_enabled, schedule_start: SETTINGS.schedule_start, schedule_end: SETTINGS.schedule_end });
+  syncScheduleCfg(); checkSchedule();
+}));
 $("adsMeta").addEventListener("click", () => openConnect("Meta Ads", loadAutomation));
 $("adsGoogle").addEventListener("click", () => openConnect("Google Ads", loadAutomation));
 
@@ -1584,8 +1683,10 @@ document.querySelectorAll(".modebtn").forEach(b => b.addEventListener("click", (
   Office3D.setMode(b.dataset.mode); saveSettings({ room_mode: b.dataset.mode });
 }));
 
-/* clock */
+/* clock + scheduled auto-pause check */
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
+setInterval(checkSchedule, 30000);
+setTimeout(checkSchedule, 2500);
 
 loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); refreshPause(); });
 </script>
