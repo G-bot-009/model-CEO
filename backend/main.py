@@ -29,6 +29,24 @@ app = FastAPI(title="Multi-Agent Agentic OS")
 _client = anthropic.AsyncAnthropic()
 _orchestrator = Orchestrator(_client)
 
+# Pricing / limits for the token-usage panel. claude-opus-4-8: $5 / $25 per 1M.
+PRICING = {
+    "input_per_mtok_usd": 5.0,
+    "output_per_mtok_usd": 25.0,
+    "usd_to_thb": 36.5,          # approximate; adjust to taste
+    "daily_token_limit": 2_000_000,  # warn as this is approached
+    "warn_ratio": 0.8,
+}
+
+
+def usage_payload() -> dict:
+    return {
+        "type": "usage",
+        "today": db.usage_today(),
+        "series": db.usage_series(7),
+        "pricing": PRICING,
+    }
+
 
 @app.on_event("startup")
 async def _startup() -> None:
@@ -48,6 +66,11 @@ async def list_agents() -> dict:
             for a in AGENTS.values()
         ]
     }
+
+
+@app.get("/api/usage")
+async def usage() -> dict:
+    return usage_payload()
 
 
 class Recorder:
@@ -92,6 +115,10 @@ class Recorder:
                     db.save_message(self.session_id, agent, "assistant", text)
                 if agent in self._task_ids:
                     db.update_task(self._task_ids[agent], status="done", result=text)
+        elif t == "token_usage":
+            db.save_token_usage(
+                self.session_id, e["agent"], e["input_tokens"], e["output_tokens"]
+            )
         elif t == "final":
             db.save_message(self.session_id, "ceo", "final", e["output"])
 
@@ -113,6 +140,7 @@ async def ws(websocket: WebSocket) -> None:
         await send({"type": "history", **db.get_history(session["id"])})
 
     await send_session_state(current)
+    await send(usage_payload())
 
     try:
         while True:
@@ -147,7 +175,8 @@ async def ws(websocket: WebSocket) -> None:
             except Exception as exc:  # surface to the UI rather than dropping the socket
                 await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
                 await send({"type": "done"})
-            # Refresh the session list (timestamps/new names) after a run.
+            # Refresh the session list and usage totals after a run.
             await send({"type": "sessions", "sessions": db.list_sessions()})
+            await send(usage_payload())
     except WebSocketDisconnect:
         return

@@ -48,6 +48,17 @@ def _extract_subtasks(text: str) -> list[dict]:
     return subtasks
 
 
+async def _emit_usage(emit: Emit, agent: str, usage) -> None:
+    if usage is None:
+        return
+    await emit({
+        "type": "token_usage",
+        "agent": agent,
+        "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+        "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+    })
+
+
 class Orchestrator:
     def __init__(self, client: anthropic.AsyncAnthropic):
         self.client = client
@@ -79,6 +90,7 @@ class Orchestrator:
         text = next((b.text for b in resp.content if b.type == "text"), "{}")
         subtasks = _extract_subtasks(text)
 
+        await _emit_usage(emit, "ceo", resp.usage)
         await emit({"type": "plan", "subtasks": subtasks})
         await emit({"type": "agent_status", "agent": "ceo", "status": "idle"})
         return subtasks
@@ -104,8 +116,10 @@ class Orchestrator:
             async for chunk in stream.text_stream:
                 collected.append(chunk)
                 await emit({"type": "agent_output", "agent": agent_id, "chunk": chunk})
+            final_msg = await stream.get_final_message()
 
         result = "".join(collected)
+        await _emit_usage(emit, agent_id, final_msg.usage)
         await emit({"type": "agent_status", "agent": agent_id, "status": "done"})
         return result
 
@@ -140,8 +154,10 @@ class Orchestrator:
             async for chunk in stream.text_stream:
                 collected.append(chunk)
                 await emit({"type": "agent_output", "agent": "ceo", "chunk": chunk})
+            final_msg = await stream.get_final_message()
 
         final = "".join(collected)
+        await _emit_usage(emit, "ceo", final_msg.usage)
         await emit({"type": "agent_status", "agent": "ceo", "status": "done"})
         await emit({"type": "final", "output": final})
         return final

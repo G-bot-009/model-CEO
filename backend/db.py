@@ -73,6 +73,15 @@ def init() -> None:
                 status     TEXT NOT NULL,
                 timestamp  TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id    INTEGER NOT NULL,
+                agent_name    TEXT NOT NULL,
+                input_tokens  INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                timestamp     TEXT NOT NULL
+            );
             """
         )
 
@@ -161,6 +170,49 @@ def save_status(agent_name: str, status: str) -> None:
             "INSERT INTO agent_status (agent_name, status, timestamp) VALUES (?, ?, ?)",
             (agent_name, status, _now()),
         )
+
+
+# --- Token usage ------------------------------------------------------------
+def save_token_usage(session_id: int, agent_name: str, input_tokens: int, output_tokens: int) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO token_usage (session_id, agent_name, input_tokens, "
+            "output_tokens, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (session_id, agent_name, int(input_tokens or 0), int(output_tokens or 0), _now()),
+        )
+
+
+def usage_today() -> dict:
+    """Per-agent and total token usage for the current calendar day."""
+    today = _now()[:10]
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT agent_name, SUM(input_tokens) AS input_tokens, "
+            "SUM(output_tokens) AS output_tokens FROM token_usage "
+            "WHERE substr(timestamp,1,10) = ? GROUP BY agent_name",
+            (today,),
+        ).fetchall()
+    per_agent = {r["agent_name"]: {"input": r["input_tokens"], "output": r["output_tokens"]} for r in rows}
+    total_in = sum(v["input"] for v in per_agent.values())
+    total_out = sum(v["output"] for v in per_agent.values())
+    return {"per_agent": per_agent, "input": total_in, "output": total_out}
+
+
+def usage_series(days: int = 7) -> list[dict]:
+    """Daily input/output totals, oldest→newest, for the last `days` days."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT substr(timestamp,1,10) AS day, SUM(input_tokens) AS input_tokens, "
+            "SUM(output_tokens) AS output_tokens FROM token_usage "
+            "GROUP BY day ORDER BY day DESC LIMIT ?",
+            (days,),
+        ).fetchall()
+    series = [
+        {"day": r["day"], "input": r["input_tokens"], "output": r["output_tokens"]}
+        for r in rows
+    ]
+    series.reverse()
+    return series
 
 
 # --- History (for replaying a session in the dashboard) ---------------------
