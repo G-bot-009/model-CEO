@@ -29,6 +29,10 @@ receive a single, scoped sub-task. Do only that sub-task — do not try to run t
 whole project. Be concrete and actionable. State any assumptions briefly. Return
 a tight, well-structured result the CEO can hand to the user or another agent.
 Lead with the outcome, then supporting detail.
+
+IMPORTANT: Always write your response in Thai (ภาษาไทย), clear and easy to
+understand, even if the task or context is in English. Keep proper nouns,
+product names, and code in their original language.
 """
 
 
@@ -54,7 +58,12 @@ Two modes:
    conflicts, and end with clear recommended next steps. Do not merely
    concatenate the agents' outputs — produce a unified executive answer.
 
-Be decisive and concise. You are accountable for the final result.""",
+Be decisive and concise. You are accountable for the final result.
+
+IMPORTANT: When writing the final synthesis for the user, always write in Thai
+(ภาษาไทย), clear and easy to understand, even if the goal is in English. Keep
+proper nouns, product names, and code in their original language. (The planning
+JSON itself stays in the exact schema requested — only prose is in Thai.)""",
 )
 
 
