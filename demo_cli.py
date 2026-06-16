@@ -13,6 +13,7 @@ Run:
 from __future__ import annotations
 
 import json
+import re
 import sys
 
 import anthropic
@@ -25,25 +26,21 @@ load_dotenv()
 MODEL = "claude-opus-4-8"
 DEMO_AGENTS = ["researcher", "sales_rep"]  # specialists used in this demo
 
-_PLAN_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "subtasks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "agent": {"type": "string", "enum": DEMO_AGENTS},
-                    "task": {"type": "string"},
-                },
-                "required": ["agent", "task"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["subtasks"],
-    "additionalProperties": False,
-}
+
+def _extract_subtasks(text: str) -> list[dict]:
+    candidate = text.strip()
+    if not candidate.startswith("{"):
+        match = re.search(r"\{.*\}", candidate, re.DOTALL)
+        candidate = match.group(0) if match else "{}"
+    try:
+        data = json.loads(candidate)
+    except json.JSONDecodeError:
+        return []
+    return [
+        {"agent": st["agent"], "task": st["task"]}
+        for st in data.get("subtasks", [])
+        if isinstance(st, dict) and st.get("agent") in DEMO_AGENTS and st.get("task")
+    ]
 
 
 def run_agent(client: anthropic.Anthropic, agent_id: str, prompt: str) -> str:
@@ -64,6 +61,7 @@ def main(goal: str) -> None:
 
     print(f"\n🧠 CEO is planning for goal: {goal!r}\n")
     roster = "\n".join(f"- {get_agent(a).id}: {get_agent(a).name} — {get_agent(a).title}" for a in DEMO_AGENTS)
+    valid = ", ".join(DEMO_AGENTS)
     plan_resp = client.messages.create(
         model=MODEL,
         max_tokens=2000,
@@ -71,12 +69,13 @@ def main(goal: str) -> None:
         system=ceo.system,
         messages=[{"role": "user", "content": (
             f"Goal:\n{goal}\n\nAvailable specialists:\n{roster}\n\n"
-            "Produce the delegation plan as JSON matching the schema."
+            "Respond with ONLY a JSON object and no other text, in this shape:\n"
+            '{"subtasks": [{"agent": "<id>", "task": "<what to do>"}]}\n'
+            f'where "agent" is one of: {valid}.'
         )}],
-        output_config={"format": {"type": "json_schema", "schema": _PLAN_SCHEMA}},
     )
     plan_text = next((b.text for b in plan_resp.content if b.type == "text"), "{}")
-    subtasks = json.loads(plan_text).get("subtasks", [])
+    subtasks = _extract_subtasks(plan_text)
 
     results = []
     for st in subtasks:

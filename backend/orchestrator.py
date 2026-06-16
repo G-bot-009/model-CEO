@@ -14,6 +14,7 @@ about transport.
 from __future__ import annotations
 
 import json
+import re
 from typing import Awaitable, Callable
 
 import anthropic
@@ -25,29 +26,26 @@ MODEL = "claude-opus-4-8"
 # Emit signature: emit(event_dict) -> awaitable
 Emit = Callable[[dict], Awaitable[None]]
 
-# JSON schema for the CEO's plan (structured output keeps delegation reliable).
-_PLAN_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "subtasks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "agent": {
-                        "type": "string",
-                        "enum": list(SUB_AGENTS.keys()),
-                    },
-                    "task": {"type": "string"},
-                },
-                "required": ["agent", "task"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["subtasks"],
-    "additionalProperties": False,
-}
+
+def _extract_subtasks(text: str) -> list[dict]:
+    """Pull a {"subtasks": [...]} object out of the model's reply.
+
+    The CEO is instructed to return only JSON, but we tolerate stray prose by
+    grabbing the outermost ``{ ... }`` block. Invalid agents are dropped.
+    """
+    candidate = text.strip()
+    if not candidate.startswith("{"):
+        match = re.search(r"\{.*\}", candidate, re.DOTALL)
+        candidate = match.group(0) if match else "{}"
+    try:
+        data = json.loads(candidate)
+    except json.JSONDecodeError:
+        return []
+    subtasks = []
+    for st in data.get("subtasks", []):
+        if isinstance(st, dict) and st.get("agent") in SUB_AGENTS and st.get("task"):
+            subtasks.append({"agent": st["agent"], "task": st["task"]})
+    return subtasks
 
 
 class Orchestrator:
@@ -61,11 +59,14 @@ class Orchestrator:
         await emit({"type": "log", "agent": "ceo", "text": "Breaking the goal into sub-tasks…"})
 
         roster = "\n".join(f"- {a.id}: {a.name} — {a.title}" for a in SUB_AGENTS.values())
+        valid = ", ".join(SUB_AGENTS.keys())
         prompt = (
             f"Goal from the user:\n{goal}\n\n"
             f"Available specialists:\n{roster}\n\n"
-            "Produce the delegation plan as JSON matching the required schema. "
-            "Assign 2-5 focused sub-tasks to the specialists best suited to them."
+            "Assign 2-5 focused sub-tasks to the specialists best suited to them.\n\n"
+            "Respond with ONLY a JSON object and no other text, in this exact shape:\n"
+            '{"subtasks": [{"agent": "<id>", "task": "<what to do>"}]}\n'
+            f'where "agent" is one of: {valid}.'
         )
 
         resp = await self.client.messages.create(
@@ -74,10 +75,9 @@ class Orchestrator:
             thinking={"type": "adaptive"},
             system=ceo.system,
             messages=[{"role": "user", "content": prompt}],
-            output_config={"format": {"type": "json_schema", "schema": _PLAN_SCHEMA}},
         )
         text = next((b.text for b in resp.content if b.type == "text"), "{}")
-        subtasks = json.loads(text).get("subtasks", [])
+        subtasks = _extract_subtasks(text)
 
         await emit({"type": "plan", "subtasks": subtasks})
         await emit({"type": "agent_status", "agent": "ceo", "status": "idle"})

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -17,36 +17,42 @@
   <div class="max-w-7xl mx-auto p-6">
     <header class="mb-6">
       <h1 class="text-2xl font-bold flex items-center gap-2">🧠 Multi-Agent Agentic OS</h1>
-      <p class="text-slate-400 text-sm">Send a goal to the CEO. It plans, delegates to specialists, and synthesizes the result — live.</p>
-      <p id="conn" class="text-xs mt-1 text-slate-500">connecting…</p>
+      <p class="text-slate-400 text-sm">ส่งเป้าหมายให้ CEO — มันจะวางแผน มอบหมายงานให้ทีม แล้วสรุปผลแบบเรียลไทม์ (ประวัติถูกบันทึกอัตโนมัติ)</p>
+      <p id="conn" class="text-xs mt-1 text-slate-500">กำลังเชื่อมต่อ…</p>
     </header>
+
+    <!-- Session bar -->
+    <div class="bg-slate-900 rounded-xl p-3 border border-slate-800 mb-6 flex flex-wrap items-center gap-3">
+      <span class="text-sm text-slate-400">เซสชัน:</span>
+      <select id="sessionSelect" class="bg-slate-800 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 ring-amber-500"></select>
+      <button id="newSession" class="bg-slate-700 hover:bg-slate-600 text-sm px-3 py-1.5 rounded-lg">+ New Session</button>
+      <span id="sessionLabel" class="text-xs text-slate-500 ml-auto"></span>
+    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Agents column -->
       <section class="lg:col-span-1">
-        <h2 class="text-sm uppercase tracking-wider text-slate-400 mb-3">Agents</h2>
+        <h2 class="text-sm uppercase tracking-wider text-slate-400 mb-3">ทีมเอเจนต์</h2>
         <div id="agents" class="space-y-2"></div>
       </section>
 
       <!-- Activity column -->
       <section class="lg:col-span-2 flex flex-col gap-4">
-        <!-- Command box -->
         <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
-          <label class="text-sm text-slate-400">Command to CEO</label>
+          <label class="text-sm text-slate-400">คำสั่งถึง CEO</label>
           <div class="flex gap-2 mt-2">
             <input id="goal" type="text"
               class="flex-1 bg-slate-800 rounded-lg px-3 py-2 outline-none focus:ring-2 ring-amber-500"
-              placeholder="e.g. Find our best leads and suggest an outreach strategy" />
+              placeholder="เช่น Find our best leads and suggest an outreach strategy" />
             <button id="send"
               class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
-              Send
+              ส่ง
             </button>
           </div>
         </div>
 
-        <!-- Live output -->
         <div class="bg-slate-900 rounded-xl border border-slate-800">
-          <div class="px-4 py-2 border-b border-slate-800 text-sm text-slate-400">Live output</div>
+          <div class="px-4 py-2 border-b border-slate-800 text-sm text-slate-400">กิจกรรม / ผลลัพธ์</div>
           <div id="output" class="p-4 space-y-4 max-h-[60vh] overflow-y-auto"></div>
         </div>
       </section>
@@ -56,7 +62,7 @@
 <script>
 const AGENTS = {};                 // id -> meta
 const cards = {};                  // id -> card element
-const outputBlocks = {};           // id -> {wrap, body} streaming panels
+let liveBlocks = {};               // id -> streaming block (current run only)
 let ws;
 
 const statusLabel = { idle:"idle", working:"working", done:"done" };
@@ -84,45 +90,75 @@ async function loadAgents() {
   });
 }
 
+function meta(id) { return AGENTS[id] || { name: id, emoji: "•" }; }
+
 function setStatus(id, status) {
   const card = cards[id];
   if (!card) return;
   card.querySelector("[data-status]").textContent = statusLabel[status] || status;
   card.querySelector("[data-dot]").className = "w-3 h-3 rounded-full dot-" + status;
 }
+function resetStatuses() { Object.keys(cards).forEach(id => setStatus(id, "idle")); }
 
-function resetStatuses() {
-  Object.keys(cards).forEach(id => setStatus(id, "idle"));
-}
-
-function outputBlock(id, opts = {}) {
-  if (outputBlocks[id]) return outputBlocks[id];
-  const a = AGENTS[id] || { name: id, emoji: "•" };
+// Create a brand-new block element (used for history + final/plan/error).
+function addBlock(emoji, label, text, extraClass = "") {
   const wrap = document.createElement("div");
-  wrap.className = "border border-slate-800 rounded-lg overflow-hidden";
+  wrap.className = "border border-slate-800 rounded-lg overflow-hidden " + extraClass;
   wrap.innerHTML = `
     <div class="px-3 py-2 text-sm font-semibold bg-slate-800/60 flex items-center gap-2">
-      <span>${a.emoji}</span><span>${opts.label || a.name}</span>
+      <span>${emoji}</span><span>${label}</span>
     </div>
     <div class="p-3 text-sm text-slate-200 stream" data-body></div>`;
+  const body = wrap.querySelector("[data-body]");
+  body.textContent = text || "";
   document.getElementById("output").appendChild(wrap);
-  const block = { wrap, body: wrap.querySelector("[data-body]") };
-  outputBlocks[id] = block;
-  return block;
+  scrollOut();
+  return { wrap, body };
 }
 
-function appendChunk(id, chunk) {
-  const block = outputBlock(id);
-  block.body.textContent += chunk;
-  document.getElementById("output").scrollTop = document.getElementById("output").scrollHeight;
+// A streaming block keyed by agent for the CURRENT run (chunks append).
+function liveBlock(id, label) {
+  if (liveBlocks[id]) return liveBlocks[id];
+  const a = meta(id);
+  liveBlocks[id] = addBlock(a.emoji, label || a.name, "");
+  return liveBlocks[id];
+}
+
+function scrollOut() {
+  const o = document.getElementById("output");
+  o.scrollTop = o.scrollHeight;
+}
+
+function clearOutput() {
+  document.getElementById("output").innerHTML = "";
+  liveBlocks = {};
 }
 
 function showPlan(subtasks) {
-  const block = outputBlock("__plan__", { label: "CEO — Delegation Plan" });
+  const block = liveBlock("__plan__", "CEO — แผนการมอบหมายงาน");
   block.body.innerHTML = subtasks.map(s => {
-    const a = AGENTS[s.agent] || { name: s.agent, emoji: "•" };
+    const a = meta(s.agent);
     return `<div class="mb-1">${a.emoji} <span class="font-semibold">${a.name}</span>: ${s.task}</div>`;
   }).join("");
+}
+
+function renderHistory(messages, tasks) {
+  clearOutput();
+  if ((!messages || !messages.length) && (!tasks || !tasks.length)) {
+    addBlock("📭", "ยังไม่มีประวัติในเซสชันนี้", "ส่งคำสั่งถึง CEO เพื่อเริ่มต้น");
+    return;
+  }
+  addBlock("🗂️", "ประวัติเซสชันก่อนหน้า", "ด้านล่างคือกิจกรรมที่บันทึกไว้");
+  (messages || []).forEach(m => {
+    if (m.role === "user") {
+      addBlock("▶️", "เป้าหมาย", m.content, "border-amber-700/60");
+    } else if (m.role === "final") {
+      addBlock("✅", "ผลลัพธ์สุดท้าย (CEO)", m.content, "border-green-800/60");
+    } else {
+      const a = meta(m.agent_name);
+      addBlock(a.emoji, a.name, m.content);
+    }
+  });
 }
 
 function setBusy(busy) {
@@ -130,12 +166,26 @@ function setBusy(busy) {
   document.getElementById("goal").disabled = busy;
 }
 
+function populateSessions(sessions, currentId) {
+  const sel = document.getElementById("sessionSelect");
+  sel.innerHTML = "";
+  sessions.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = `${s.name}  ·  ${s.created_at}`;
+    if (currentId != null && s.id === currentId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+let currentSessionId = null;
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => { document.getElementById("conn").textContent = "● connected"; };
+  ws.onopen = () => { document.getElementById("conn").textContent = "● เชื่อมต่อแล้ว"; };
   ws.onclose = () => {
-    document.getElementById("conn").textContent = "○ disconnected — retrying…";
+    document.getElementById("conn").textContent = "○ ตัดการเชื่อมต่อ — กำลังลองใหม่…";
     setTimeout(connect, 1500);
   };
   ws.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
@@ -143,23 +193,20 @@ function connect() {
 
 function handleEvent(e) {
   switch (e.type) {
+    case "sessions":     populateSessions(e.sessions, currentSessionId); break;
+    case "session":
+      currentSessionId = e.id;
+      document.getElementById("sessionLabel").textContent = "กำลังใช้: " + e.name;
+      document.getElementById("sessionSelect").value = String(e.id); // re-select if list already there
+      break;
+    case "history":      renderHistory(e.messages, e.tasks); setBusy(false); break;
     case "plan":         showPlan(e.subtasks); break;
     case "agent_status": setStatus(e.agent, e.status); break;
-    case "agent_output": appendChunk(e.agent, e.chunk); break;
-    case "log":          /* lightweight progress note */ outputBlock(e.agent); break;
-    case "final": {
-      const block = outputBlock("__final__", { label: "✅ Final Deliverable (CEO)" });
-      block.wrap.classList.add("border-green-700");
-      block.body.textContent = e.output;
-      break;
-    }
-    case "error": {
-      const block = outputBlock("__error__", { label: "⚠️ Error" });
-      block.wrap.classList.add("border-red-700");
-      block.body.textContent = e.message;
-      break;
-    }
-    case "done": setBusy(false); break;
+    case "agent_output": liveBlock(e.agent).body.textContent += e.chunk; scrollOut(); break;
+    case "log":          break;
+    case "final":        addBlock("✅", "ผลลัพธ์สุดท้าย (CEO)", e.output, "border-green-700"); break;
+    case "error":        addBlock("⚠️", "ข้อผิดพลาด", e.message, "border-red-700"); break;
+    case "done":         setBusy(false); break;
   }
 }
 
@@ -167,16 +214,26 @@ function send() {
   const input = document.getElementById("goal");
   const goal = input.value.trim();
   if (!goal || ws.readyState !== WebSocket.OPEN) return;
-  // fresh run: clear output panels and reset statuses
-  document.getElementById("output").innerHTML = "";
-  Object.keys(outputBlocks).forEach(k => delete outputBlocks[k]);
+  // New run within the same session: keep history above, append new blocks below.
+  liveBlocks = {};
   resetStatuses();
   setBusy(true);
+  addBlock("▶️", "เป้าหมายใหม่", goal, "border-amber-700/60");
   ws.send(JSON.stringify({ goal }));
+  input.value = "";
 }
 
 document.getElementById("send").addEventListener("click", send);
 document.getElementById("goal").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+document.getElementById("newSession").addEventListener("click", () => {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "new_session" }));
+});
+document.getElementById("sessionSelect").addEventListener("change", (e) => {
+  const id = parseInt(e.target.value, 10);
+  if (!isNaN(id) && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "load_session", id }));
+  }
+});
 
 loadAgents().then(connect);
 </script>

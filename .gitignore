@@ -1,4 +1,6 @@
 .env
+agents.db
+agents.db-journal
 __pycache__/
 *.pyc
 .venv/
