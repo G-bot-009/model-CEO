@@ -73,6 +73,47 @@ async def usage() -> dict:
     return usage_payload()
 
 
+@app.get("/api/console")
+async def console() -> dict:
+    return {
+        "sops": db.list_sops(),
+        "routines": db.list_routines(),
+        "approvals": db.list_approvals("pending"),
+        "decisions": db.list_decisions(),
+        "overview": {"total": db.decisions_count(), **db.approvals_summary()},
+        "workforce": db.workforce(),
+        "connectors": db.list_connectors(),
+    }
+
+
+@app.post("/api/sop")
+async def api_add_sop(p: dict) -> dict:
+    db.add_sop((p.get("title") or "SOP").strip(), (p.get("body") or "").strip())
+    return {"ok": True, "sops": db.list_sops()}
+
+
+@app.post("/api/routine")
+async def api_add_routine(p: dict) -> dict:
+    db.add_routine((p.get("goal") or "").strip(), p.get("cadence") or "daily")
+    return {"ok": True, "routines": db.list_routines()}
+
+
+@app.post("/api/approval")
+async def api_decide(p: dict) -> dict:
+    db.decide_approval(int(p["id"]), p.get("action", "approved"))
+    db.add_decision("approval", f'{p.get("action","approved")} #{p["id"]}')
+    return {"ok": True, "approvals": db.list_approvals("pending")}
+
+
+@app.post("/api/connector")
+async def api_connector(p: dict) -> dict:
+    name = (p.get("name") or "").strip()
+    status = p.get("status", "connected")
+    db.set_connector(name, status, p.get("config", ""))
+    db.add_decision("connector", f"{name} → {status}")
+    return {"ok": True, "connectors": db.list_connectors()}
+
+
 class Recorder:
     """Wraps the WebSocket ``emit`` and persists each event to SQLite.
 
@@ -133,6 +174,7 @@ async def ws(websocket: WebSocket) -> None:
     # Continue the most recent session (requirement: pick up where we left off).
     current = db.get_or_create_current()
     current_id = current["id"]
+    orch = _orchestrator   # may be swapped to a BYOK client for this connection
 
     async def send_session_state(session: dict) -> None:
         await send({"type": "sessions", "sessions": db.list_sessions()})
@@ -163,6 +205,21 @@ async def ws(websocket: WebSocket) -> None:
                     await send_session_state({"id": sid, "name": name})
                 continue
 
+            # BYOK: use the user's own API key for this connection (Anthropic only for now).
+            if action == "set_key":
+                key = (msg.get("api_key") or "").strip()
+                provider = msg.get("provider", "anthropic")
+                if not key:
+                    orch = _orchestrator
+                    await send({"type": "byok", "ok": True, "provider": "default"})
+                elif provider == "anthropic":
+                    orch = Orchestrator(anthropic.AsyncAnthropic(api_key=key))
+                    await send({"type": "byok", "ok": True, "provider": provider})
+                else:
+                    await send({"type": "byok", "ok": False,
+                                "message": "ตอนนี้รองรับเฉพาะ Anthropic (Claude) — provider อื่นกำลังจะเพิ่ม"})
+                continue
+
             goal = (msg or {}).get("goal", "").strip()
             if not goal:
                 await send({"type": "error", "message": "Empty goal."})
@@ -171,7 +228,8 @@ async def ws(websocket: WebSocket) -> None:
             db.save_message(current_id, "user", "user", goal)
             recorder = Recorder(send, current_id, goal)
             try:
-                await _orchestrator.run(goal, recorder)
+                await orch.run(goal, recorder)
+                db.add_decision("run", goal[:120])
             except Exception as exc:  # surface to the UI rather than dropping the socket
                 await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
                 await send({"type": "done"})

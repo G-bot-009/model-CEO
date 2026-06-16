@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -81,6 +81,27 @@ def init() -> None:
                 input_tokens  INTEGER NOT NULL,
                 output_tokens INTEGER NOT NULL,
                 timestamp     TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sops (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS routines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                goal TEXT NOT NULL, cadence TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS approvals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER, agent_name TEXT, content TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, decided_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS connectors (
+                name TEXT PRIMARY KEY, status TEXT NOT NULL, config TEXT, updated_at TEXT NOT NULL
             );
             """
         )
@@ -213,6 +234,88 @@ def usage_series(days: int = 7) -> list[dict]:
     ]
     series.reverse()
     return series
+
+
+# --- SOP library ------------------------------------------------------------
+def add_sop(title: str, body: str) -> int:
+    with _conn() as c:
+        return c.execute("INSERT INTO sops (title, body, created_at) VALUES (?,?,?)",
+                         (title, body, _now())).lastrowid
+
+def list_sops() -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT id, title, body, created_at FROM sops ORDER BY id DESC").fetchall()]
+
+
+# --- Routines (recurring goals) ---------------------------------------------
+def add_routine(goal: str, cadence: str) -> int:
+    with _conn() as c:
+        return c.execute("INSERT INTO routines (goal, cadence, created_at) VALUES (?,?,?)",
+                         (goal, cadence, _now())).lastrowid
+
+def list_routines() -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT id, goal, cadence, created_at FROM routines ORDER BY id DESC").fetchall()]
+
+
+# --- Approvals ---------------------------------------------------------------
+def add_approval(session_id, agent_name: str, content: str) -> int:
+    with _conn() as c:
+        return c.execute("INSERT INTO approvals (session_id, agent_name, content, status, created_at) "
+                         "VALUES (?,?,?, 'pending', ?)", (session_id, agent_name, content, _now())).lastrowid
+
+def list_approvals(status: str = "pending") -> list[dict]:
+    with _conn() as c:
+        if status:
+            rows = c.execute("SELECT * FROM approvals WHERE status=? ORDER BY id DESC", (status,)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM approvals ORDER BY id DESC").fetchall()
+    return [dict(r) for r in rows]
+
+def decide_approval(approval_id: int, status: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE approvals SET status=?, decided_at=? WHERE id=?", (status, _now(), approval_id))
+
+def approvals_summary() -> dict:
+    with _conn() as c:
+        rows = c.execute("SELECT status, COUNT(*) n FROM approvals GROUP BY status").fetchall()
+    d = {r["status"]: r["n"] for r in rows}
+    return {"approved": d.get("approved",0), "rejected": d.get("rejected",0), "pending": d.get("pending",0)}
+
+
+# --- Decision log ------------------------------------------------------------
+def add_decision(kind: str, detail: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO decisions (kind, detail, created_at) VALUES (?,?,?)", (kind, detail, _now()))
+
+def list_decisions(limit: int = 30) -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT kind, detail, created_at FROM decisions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+
+def decisions_count() -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) n FROM decisions").fetchone()["n"]
+
+
+# --- Connectors --------------------------------------------------------------
+def set_connector(name: str, status: str, config: str = "") -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO connectors (name, status, config, updated_at) VALUES (?,?,?,?) "
+                  "ON CONFLICT(name) DO UPDATE SET status=excluded.status, config=excluded.config, updated_at=excluded.updated_at",
+                  (name, status, config, _now()))
+
+def list_connectors() -> dict:
+    with _conn() as c:
+        return {r["name"]: r["status"] for r in c.execute("SELECT name, status FROM connectors").fetchall()}
+
+
+# --- Workforce (tasks per agent, last 7 days) -------------------------------
+def workforce() -> dict:
+    cutoff = (datetime.now() - timedelta(days=7)).isoformat(timespec="seconds")
+    with _conn() as c:
+        rows = c.execute("SELECT agent_name, COUNT(*) n FROM tasks WHERE created_at >= ? GROUP BY agent_name",
+                         (cutoff,)).fetchall()
+    return {r["agent_name"]: r["n"] for r in rows}
 
 
 # --- History (for replaying a session in the dashboard) ---------------------

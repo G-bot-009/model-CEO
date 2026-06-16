@@ -145,6 +145,36 @@
   .chip { font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px; background:#1b2742; color:#cbd5e1; border:1px solid #27355a; }
   .ai-badge { font-size:10px; font-weight:900; padding:1px 7px; border-radius:999px; border:1.5px solid; line-height:1.5; }
 
+  /* ---------- CEO console ---------- */
+  .panel { background:#10182b; border:1px solid #1e293b; border-radius:16px; padding:16px; margin-bottom:16px; }
+  .panel h3 { margin:0 0 12px; color:#fff; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .panel h3::before { content:""; width:4px; height:16px; background:#a855f7; border-radius:2px; }
+  .row-link { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border:1px solid #27355a;
+              border-radius:12px; margin-bottom:10px; cursor:pointer; color:#e2e8f0; font-weight:700; }
+  .row-link:hover { background:#1b2742; }
+  .row-link .arrow { color:#a855f7; font-size:18px; }
+  .kv { display:flex; gap:20px; align-items:center; }
+  .big-num { font-size:40px; font-weight:900; color:#fff; }
+  .legend { display:flex; flex-direction:column; gap:6px; font-weight:700; color:#cbd5e1; }
+  .dotc { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:middle; }
+  .wf-row { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid #1e293b; border-radius:12px; margin-bottom:8px; }
+  .console-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:820px){ .console-2 { grid-template-columns:1fr; } }
+
+  /* ---------- modals ---------- */
+  .modal-overlay { position:fixed; inset:0; background:rgba(2,6,18,.7); display:flex; align-items:center; justify-content:center; z-index:90; }
+  .modal-overlay[hidden] { display:none; }
+  .modal { width:min(460px,92vw); max-height:90vh; overflow:auto; background:#fbf7ee; color:#1f2937; border-radius:16px; box-shadow:0 30px 80px rgba(0,0,0,.55); }
+  .modal .mh { background:linear-gradient(90deg,#7c5cff,#9b6bff); color:#fff; font-weight:800; letter-spacing:.06em; padding:13px 16px;
+               display:flex; justify-content:space-between; align-items:center; border-radius:16px 16px 0 0; }
+  .modal .mb { padding:18px; }
+  .modal label { font-size:11px; font-weight:800; color:#6b7280; letter-spacing:.06em; }
+  .modal input, .modal select, .modal textarea { width:100%; margin:6px 0 14px; padding:11px 12px; border:1px solid #d6cdbb;
+                 border-radius:10px; background:#fff; color:#1f2937; font-size:14px; }
+  .modal .save { width:100%; background:linear-gradient(90deg,#7c5cff,#9b6bff); color:#fff; font-weight:800; border:none; padding:12px; border-radius:12px; cursor:pointer; }
+  .modal .note { background:#f3eede; border-radius:12px; padding:12px; font-size:13px; color:#4b5563; }
+  .modal .steps { font-size:13px; color:#4b5563; line-height:1.8; }
+
   /* token graph */
   .bars { display:flex; align-items:flex-end; gap:10px; height:140px; }
   .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; justify-content:flex-end; }
@@ -187,6 +217,7 @@
     <div class="brand"><span style="font-size:22px">🏢</span><span class="label">ToonOffice</span></div>
     <nav class="menu" id="menu">
       <div class="menu-item active" data-view="dashboard"><span class="ico">🗺️</span><span class="label">Dashboard</span></div>
+      <div class="menu-item" data-view="console"><span class="ico">🏠</span><span class="label">CEO Console</span></div>
       <div class="menu-item" data-view="agents"><span class="ico">🧑‍💼</span><span class="label">Agents</span></div>
       <div class="menu-item" data-view="tasks"><span class="ico">📋</span><span class="label">Tasks</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
@@ -207,6 +238,7 @@
       <div class="pill" title="โทเค็นที่ใช้วันนี้">🪙 <span id="tokTotal">0</span><small>tokens</small></div>
       <div class="pill" title="ค่าใช้จ่ายวันนี้">💵 $<span id="costUsd">0.00</span></div>
       <div class="pill"><span class="conn-dot" id="connDot"></span><span id="clock">--:--:--</span></div>
+      <div class="icon-btn" id="byok" title="ใช้ API key ของคุณเอง">🔑</div>
       <div class="icon-btn" id="bell">🔔<span class="badge" id="bellBadge" style="display:none">0</span></div>
       <div class="icon-btn" id="gear" data-view="settings">⚙️</div>
     </div>
@@ -225,6 +257,34 @@
           <div style="padding:10px 16px; border-bottom:1px solid #1e293b; color:#94a3b8; font-size:13px;">กิจกรรม / ผลลัพธ์สด</div>
           <div id="activityLog" style="padding:14px; display:flex; flex-direction:column; gap:12px; max-height:42vh; overflow:auto;"></div>
         </div>
+      </section>
+
+      <!-- CEO CONSOLE -->
+      <section class="view" id="view-console">
+        <div class="panel">
+          <h3>สิ่งที่ควรทำต่อ</h3>
+          <div id="nextSteps"></div>
+        </div>
+        <div class="console-2">
+          <div class="panel"><h3>รออนุมัติ (APPROVAL LANE)</h3><div id="approvalLane"></div></div>
+          <div class="panel"><h3>ภาพรวมการตัดสินใจ</h3>
+            <div class="kv">
+              <div class="big-num" id="ovTotal">0</div>
+              <div class="legend">
+                <span><span class="dotc" style="background:#22c55e"></span>อนุมัติ <b id="ovApproved">0</b></span>
+                <span><span class="dotc" style="background:#ef4444"></span>ปฏิเสธ <b id="ovRejected">0</b></span>
+                <span><span class="dotc" style="background:#f59e0b"></span>รออนุมัติ <b id="ovPending">0</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel"><h3>กำลังพล / ทีม · <span id="wfCount">0</span></h3><div id="workforce"></div></div>
+        <div class="panel"><h3>งานประจำ (ROUTING) <span style="flex:1"></span>
+            <button class="qbtn" id="addRoutine">+ เพิ่มงานประจำ</button></h3><div id="routines"></div></div>
+        <div class="panel"><h3>คลังคู่มือ (SOP) · <span id="sopCount">0</span> <span style="flex:1"></span>
+            <button class="qbtn" id="addSop">+ เพิ่ม SOP</button></h3><div id="sops"></div></div>
+        <div class="panel"><h3>บันทึกการตัดสินใจ · <span id="decCount">0</span></h3><div id="decisions"></div></div>
+        <div style="text-align:center;color:#475569;font-size:12px;margin:6px 0 16px">เอเจนต์เสนอ · เจ้าของอนุมัติ · บันทึกทุกอย่าง // TOONOFFICE</div>
       </section>
 
       <!-- AGENTS -->
@@ -305,6 +365,39 @@
 <div class="drawer" id="drawer">
   <h3>การแจ้งเตือน <span style="cursor:pointer" id="drawerClose">✕</span></h3>
   <div id="notifList" style="overflow:auto"></div>
+</div>
+
+<!-- BYOK modal -->
+<div class="modal-overlay" id="byokModal" hidden>
+  <div class="modal">
+    <div class="mh">USE YOUR OWN API KEY <span style="cursor:pointer" data-close="byokModal">✕</span></div>
+    <div class="mb">
+      <p style="margin-top:0">เพิ่มพลังให้เอเจนต์ด้วย API key ของคุณเอง — งานไม่จำกัด เลือก provider แล้วระบบรันโมเดลที่ดีที่สุดให้ คีย์เก็บไว้ในเบราว์เซอร์ของคุณเท่านั้น ไม่ถูกบันทึกที่เซิร์ฟเวอร์</p>
+      <p style="color:#16a34a;font-weight:800">ตอนนี้ BYOK ฟรี — ไม่มีค่าบริการ</p>
+      <label>PROVIDER</label>
+      <select id="byokProvider">
+        <option value="anthropic">Anthropic (Claude) — ใช้ได้จริงตอนนี้</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="openrouter">OpenRouter</option>
+      </select>
+      <label>MODEL</label>
+      <input id="byokModel" placeholder="auto — e.g. claude-opus-4-8" />
+      <label>API KEY</label>
+      <input id="byokKey" type="password" placeholder="Paste your API key" />
+      <div class="note" id="byokNote"></div>
+      <button class="save" id="byokSave" style="margin-top:14px">Save & use my key</button>
+      <button class="save" id="byokClear" style="margin-top:8px;background:#e5e7eb;color:#374151">ใช้คีย์ของระบบ (ล้างคีย์ของฉัน)</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generic add/connect modal -->
+<div class="modal-overlay" id="genModal" hidden>
+  <div class="modal">
+    <div class="mh"><span id="genTitle">เพิ่ม</span> <span style="cursor:pointer" data-close="genModal">✕</span></div>
+    <div class="mb" id="genBody"></div>
+  </div>
 </div>
 
 <div id="toasts"></div>
@@ -820,7 +913,13 @@ function populateSessions(sessions) {
 function connect() {
   const proto = location.protocol==="https:"?"wss":"ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => $("connDot").style.background = "#22c55e";
+  ws.onopen = () => {
+    $("connDot").style.background = "#22c55e";
+    // Re-apply a stored BYOK key for this connection.
+    const k = localStorage.getItem("byok_key");
+    if (k) { const m = JSON.parse(localStorage.getItem("byok")||"{}");
+      ws.send(JSON.stringify({action:"set_key", provider:m.provider||"anthropic", api_key:k, model:m.model||""})); }
+  };
   ws.onclose = () => { $("connDot").style.background = "#ef4444"; setTimeout(connect, 1500); };
   ws.onmessage = (ev) => handle(JSON.parse(ev.data));
 }
@@ -842,6 +941,7 @@ function handle(e) {
       notify("ceo", "✅ CEO สรุปผลเสร็จแล้ว", "ดูผลลัพธ์สุดท้ายในกิจกรรม");
       break;
     case "error": addBlock("⚠️","ข้อผิดพลาด", e.message, "#ef4444"); break;
+    case "byok": toastNote(e.ok ? ("ใช้คีย์: " + (e.provider==="default" ? "ของระบบ" : e.provider) + " ✓") : ("⚠️ " + e.message), e.ok ? "#22c55e" : "#f59e0b"); break;
     case "done": setBusy(false); break;
   }
 }
@@ -863,7 +963,89 @@ function send(text) {
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", agents:"Agents", tasks:"Tasks", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", agents:"Agents", tasks:"Tasks", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
+  if (v === "console") loadConsole();
+}
+
+/* ---------- modals ---------- */
+function openModal(id){ $(id).hidden = false; }
+function closeModal(id){ $(id).hidden = true; }
+function openGen(title, fields, onSave){
+  $("genTitle").textContent = title;
+  const body = $("genBody"); body.innerHTML = "";
+  fields.forEach(f => {
+    const lab = document.createElement("label"); lab.textContent = f.label; body.appendChild(lab);
+    const el = document.createElement(f.type === "textarea" ? "textarea" : "input");
+    if (f.type === "textarea") el.rows = 4;
+    el.id = "gen_" + f.key; if (f.placeholder) el.placeholder = f.placeholder; body.appendChild(el);
+  });
+  const btn = document.createElement("button"); btn.className = "save"; btn.textContent = "บันทึก";
+  btn.onclick = () => { const v = {}; fields.forEach(f => v[f.key] = ($("gen_"+f.key).value || "").trim()); onSave(v); };
+  body.appendChild(btn); openModal("genModal");
+}
+function toastNote(msg, c="#a855f7"){
+  const t = document.createElement("div"); t.className = "toast"; t.style.borderLeftColor = c;
+  t.innerHTML = `<span style="font-size:13px;color:#cbd5e1">${msg}</span>`;
+  $("toasts").appendChild(t); setTimeout(()=>{ t.style.opacity=0; setTimeout(()=>t.remove(),300); }, 4000);
+}
+async function postJSON(url, data){ return (await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)})).json(); }
+
+/* ---------- CEO console ---------- */
+async function loadConsole(){
+  let d; try { d = await (await fetch("/api/console")).json(); } catch(e){ return; }
+  const steps = [
+    {name:"LINE OA",      label:"เชื่อม LINE OA — คุย+บรอดแคสต์ลูกค้า"},
+    {name:"Telegram",     label:"เชื่อม Telegram — แจ้งเตือน+คุยลูกค้า"},
+    {name:"Auto-Publish", label:"เชื่อม Auto-Publish — โพสต์ออโต้ IG/FB/TikTok"},
+    {name:"Meta Ads",     label:"เชื่อม Meta Ads — ยิงแอด FB/IG"},
+  ];
+  const conn = d.connectors || {};
+  $("nextSteps").innerHTML = steps.map(s => {
+    const on = conn[s.name] === "connected";
+    return `<div class="row-link" data-conn="${s.name}"><span>${s.label} ${on?'<span style="color:#22c55e">· เชื่อมแล้ว</span>':''}</span><span class="arrow">${on?'✓':'→'}</span></div>`;
+  }).join("");
+  $("nextSteps").querySelectorAll("[data-conn]").forEach(el => el.onclick = () => openConnect(el.dataset.conn));
+
+  $("approvalLane").innerHTML = d.approvals.length ? d.approvals.map(a =>
+    `<div class="wf-row"><div style="flex:1"><b>${meta(a.agent_name).name||a.agent_name}</b>
+      <div style="font-size:12px;color:#94a3b8">${(a.content||"").slice(0,140)}</div></div>
+      <button class="qbtn" onclick="decide(${a.id},'approved')">อนุมัติ</button>
+      <button class="qbtn" onclick="decide(${a.id},'rejected')">ปฏิเสธ</button></div>`).join("")
+    : '<div style="color:#64748b">เคลียร์หมดแล้ว</div>';
+
+  $("ovTotal").textContent = d.overview.total; $("ovApproved").textContent = d.overview.approved;
+  $("ovRejected").textContent = d.overview.rejected; $("ovPending").textContent = d.overview.pending;
+
+  const wf = d.workforce || {}, ids = Object.keys(AGENTS);
+  $("wfCount").textContent = ids.length;
+  $("workforce").innerHTML = ids.map(id => { const m = meta(id), n = wf[id]||0;
+    return `<div class="wf-row"><span style="font-size:20px">${m.emoji}</span>
+      <div style="flex:1"><b style="color:#fff">${m.name}</b>
+        <span class="ai-badge" style="border-color:${color(id)};color:${color(id)}">AI</span>
+        <div style="font-size:12px;color:#94a3b8">${m.title||""}</div></div>
+      <span style="color:#94a3b8;font-size:12px">${n} งาน/7วัน</span>
+      <span class="dotc" style="background:${color(id)}"></span></div>`; }).join("");
+
+  $("routines").innerHTML = d.routines.length ? d.routines.map(r =>
+    `<div style="margin-bottom:6px;color:#cbd5e1"><b style="color:#22d3ee">Routine</b> · ${r.goal} <span style="color:#64748b">(${r.cadence})</span></div>`).join("")
+    : '<div style="color:#64748b">ยังไม่มีงานประจำ — กด "+ เพิ่มงานประจำ"</div>';
+
+  $("sopCount").textContent = d.sops.length;
+  $("sops").innerHTML = d.sops.length ? d.sops.map(s =>
+    `<div class="wf-row"><div style="flex:1"><b style="color:#fff">${s.title}</b>
+      <div style="font-size:12px;color:#94a3b8">${(s.body||"").slice(0,160)}</div></div></div>`).join("")
+    : '<div style="color:#64748b">ยังไม่มีคู่มือ — AGENT เรียนรู้เองจากงาน หรือคุณเพิ่มเองได้</div>';
+
+  $("decCount").textContent = d.decisions.length;
+  $("decisions").innerHTML = d.decisions.length ? d.decisions.map(x =>
+    `<div style="color:#cbd5e1;font-size:13px;margin-bottom:4px"><span style="color:#a855f7">[${x.kind}]</span> ${x.detail} <span style="color:#64748b">· ${x.created_at}</span></div>`).join("")
+    : '<div style="color:#64748b">ไม่มีประวัติ</div>';
+}
+window.decide = async (id, action) => { await postJSON("/api/approval", {id, action}); loadConsole(); };
+function openConnect(name){
+  openGen("เชื่อม " + name, [{key:"config", label:"API token / Webhook URL", type:"input", placeholder:"วางคีย์ / URL ที่นี่"}],
+    async (v) => { await postJSON("/api/connector", {name, status:"connected", config:v.config}); closeModal("genModal");
+      toastNote(name + " เชื่อมแล้ว — เก็บคีย์ไว้แล้ว (การยิงจริงจะเปิดเมื่อพร้อม)"); loadConsole(); });
 }
 
 /* ---------- wire up ---------- */
@@ -878,6 +1060,41 @@ $("drawerClose").addEventListener("click", () => $("drawer").classList.remove("o
 $("newSession").addEventListener("click", () => ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({action:"new_session"})));
 $("sessionSelect").addEventListener("change", e => { const id=parseInt(e.target.value,10);
   if(!isNaN(id) && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"load_session", id})); });
+
+/* modal close (✕ and overlay click) */
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => closeModal(b.dataset.close));
+["byokModal","genModal"].forEach(id => $(id).addEventListener("click", e => { if (e.target.id===id) closeModal(id); }));
+
+/* console add buttons */
+$("addSop").addEventListener("click", () => openGen("เพิ่ม SOP",
+  [{key:"title",label:"ชื่อคู่มือ",type:"input",placeholder:"เช่น วิธีตอบลูกค้า"},{key:"body",label:"เนื้อหา",type:"textarea"}],
+  async v => { await postJSON("/api/sop", v); closeModal("genModal"); loadConsole(); }));
+$("addRoutine").addEventListener("click", () => openGen("เพิ่มงานประจำ",
+  [{key:"goal",label:"เป้าหมาย",type:"input",placeholder:"เช่น สรุปยอดขายรายวัน"},{key:"cadence",label:"ความถี่",type:"input",placeholder:"daily / weekly"}],
+  async v => { await postJSON("/api/routine", v); closeModal("genModal"); loadConsole(); }));
+
+/* BYOK */
+function byokNote(){ const p=$("byokProvider").value;
+  $("byokNote").innerHTML = p==="anthropic"
+    ? "วางคีย์ Anthropic (ขึ้นต้น sk-ant-...) แล้วกดบันทึก เอเจนต์จะใช้คีย์ของคุณแทนทันที"
+    : "ℹ️ ตอนนี้ระบบรันด้วย Claude — provider นี้จะถูกบันทึกไว้ แต่ยังต้องเชื่อมเพิ่มเพื่อใช้จริง"; }
+$("byokProvider").addEventListener("change", byokNote); byokNote();
+$("byok").addEventListener("click", () => {
+  const m = JSON.parse(localStorage.getItem("byok")||"{}");
+  $("byokProvider").value = m.provider || "anthropic"; $("byokModel").value = m.model || "";
+  $("byokKey").value = localStorage.getItem("byok_key") || ""; byokNote(); openModal("byokModal");
+});
+$("byokSave").addEventListener("click", () => {
+  const provider=$("byokProvider").value, key=$("byokKey").value.trim(), model=$("byokModel").value.trim();
+  if (key) { localStorage.setItem("byok", JSON.stringify({provider, model})); localStorage.setItem("byok_key", key); }
+  if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"set_key", provider, api_key:key, model}));
+  closeModal("byokModal");
+});
+$("byokClear").addEventListener("click", () => {
+  localStorage.removeItem("byok_key"); localStorage.removeItem("byok");
+  if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"set_key", api_key:""}));
+  $("byokKey").value=""; closeModal("byokModal");
+});
 
 /* clock */
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
