@@ -62,7 +62,7 @@ async def index() -> FileResponse:
 async def list_agents() -> dict:
     return {
         "agents": [
-            {"id": a.id, "name": a.name, "title": a.title, "emoji": a.emoji}
+            {"id": a.id, "name": a.name, "title": a.title, "emoji": a.emoji, "tags": list(a.tags)}
             for a in AGENTS.values()
         ]
     }

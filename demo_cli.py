@@ -24,7 +24,7 @@ from backend.agents import get_agent
 load_dotenv()
 
 MODEL = "claude-opus-4-8"
-DEMO_AGENTS = ["researcher", "sales_rep"]  # specialists used in this demo
+DEMO_AGENTS = ["research", "marketing"]  # specialists used in this demo
 
 
 def _extract_subtasks(text: str) -> list[dict]:

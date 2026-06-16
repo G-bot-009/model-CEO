@@ -142,6 +142,8 @@
   .card { background:#10182b; border:1px solid #1e293b; border-radius:16px; color:#e2e8f0; }
   .stream { white-space:pre-wrap; word-break:break-word; }
   .tag { font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; }
+  .chip { font-size:11px; font-weight:700; padding:3px 10px; border-radius:999px; background:#1b2742; color:#cbd5e1; border:1px solid #27355a; }
+  .ai-badge { font-size:10px; font-weight:900; padding:1px 7px; border-radius:999px; border:1.5px solid; line-height:1.5; }
 
   /* token graph */
   .bars { display:flex; align-items:flex-end; gap:10px; height:140px; }
@@ -308,9 +310,9 @@
 <div id="toasts"></div>
 
 <script>
-const COLORS = { ceo:"#f5b301", researcher:"#3b82f6", cmo:"#ec4899", sales_rep:"#22c55e", dev:"#8b5cf6", data_analyst:"#14b8a6" };
-const HAIR   = { ceo:"#6b4423", researcher:"#2b2b2b", cmo:"#d65a9a", sales_rep:"#caa14a", dev:"#3a3f55", data_analyst:"#8a5a2b" };
-const SKIN   = { ceo:"#ffd9b3", researcher:"#f1c9a5", cmo:"#ffd9b3", sales_rep:"#e8b58c", dev:"#f1c9a5", data_analyst:"#e0a982" };
+const COLORS = { ceo:"#f5b301", developer:"#8b5cf6", content:"#ef4444", trader:"#22c55e", marketing:"#ec4899", designer:"#3b82f6", research:"#f59e0b", admin:"#10b981", ops_bot:"#a855f7" };
+const HAIR   = { ceo:"#6b4423", developer:"#3a3f55", content:"#2b2b2b", trader:"#4a2f1a", marketing:"#d65a9a", designer:"#1f2937", research:"#8a5a2b", admin:"#5b3b2a", ops_bot:"#444" };
+const SKIN   = { ceo:"#ffd9b3", developer:"#f1c9a5", content:"#e8b58c", trader:"#e0a982", marketing:"#ffd9b3", designer:"#f1c9a5", research:"#e8b58c", admin:"#ffd9b3", ops_bot:"#cfcfd6" };
 
 const AGENTS = {};        // id -> meta
 let ws, currentSessionId = null;
@@ -366,7 +368,7 @@ const Office3D = (function () {
     renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(W,H);
     scene = new THREE.Scene(); scene.background = hex("#bfe3ff");
 
-    const aspect = W/H, d = 13;
+    const aspect = W/H, d = 16;
     camera = new THREE.OrthographicCamera(-d*aspect, d*aspect, d, -d, -100, 100);
     camera.position.set(20,18,20); camera.lookAt(0,2,0);
 
@@ -442,9 +444,11 @@ const Office3D = (function () {
   }
 
   function layoutDesks(agents) {
-    const cols = [-9,0,9], rows = [-2,9];
+    const perRow = 3, spacingX = 9.5, spacingZ = 9, startZ = -6;
     agents.forEach((a,i) => {
-      const x = cols[i%3], z = rows[Math.floor(i/3)];
+      const col = i % perRow, row = Math.floor(i / perRow);
+      const x = (col - (perRow-1)/2) * spacingX;
+      const z = startZ + row * spacingZ;
       buildDesk(a.id, x, z);
       deskSeat[a.id] = new THREE.Vector3(x, 0, z + 2.0);   // character stands behind desk (camera side)
       if (a.id === "ceo") ceoGather = new THREE.Vector3(x, 0, z + 3.6);
@@ -617,7 +621,7 @@ const Office3D = (function () {
 
   function resize(){
     if(!ready) return; const W=container.clientWidth,H=container.clientHeight;
-    renderer.setSize(W,H); const aspect=W/H,d=13;
+    renderer.setSize(W,H); const aspect=W/H,d=16;
     camera.left=-d*aspect; camera.right=d*aspect; camera.top=d; camera.bottom=-d; camera.updateProjectionMatrix();
   }
 
@@ -635,14 +639,20 @@ async function loadAgents() {
     row.className = "agent-row";
     row.innerHTML = `<span class="sdot" data-dot="${a.id}"></span><span class="nm">${a.emoji} ${a.name}</span>`;
     list.appendChild(row);
-    // agents view card
+    // agents view card (role card styled like the reference)
+    const chips = (a.tags || []).map(t => `<span class="chip">${t}</span>`).join("");
     const card = document.createElement("div");
-    card.className = "card"; card.style.padding = "14px"; card.dataset.card = a.id;
-    card.innerHTML = `<div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:26px">${a.emoji}</span>
-        <div style="flex:1"><div style="font-weight:800;color:#fff">${a.name}</div>
-        <div style="font-size:12px;color:#94a3b8">${a.title}</div></div>
-        <span class="tag" data-cardstatus="${a.id}" style="background:#1e293b;color:#94a3b8">idle</span></div>`;
+    card.className = "card"; card.style.padding = "16px"; card.dataset.card = a.id;
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:24px">${a.emoji}</span>
+        <div style="font-weight:800;color:#fff;font-size:17px">${a.name}</div>
+        <span class="ai-badge" style="border-color:${color(a.id)};color:${color(a.id)}">AI</span>
+        <span style="flex:1"></span>
+        <span class="tag" data-cardstatus="${a.id}" style="background:#1e293b;color:#94a3b8">idle</span>
+      </div>
+      <div style="font-size:13px;color:#94a3b8;margin:8px 0 12px">${a.title}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>`;
     cards.appendChild(card);
   });
   Office3D.init(data.agents);
