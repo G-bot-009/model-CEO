@@ -14,7 +14,9 @@
   /* ---------- layout ---------- */
   .app { display:flex; height:100vh; overflow:hidden; }
   .sidebar { width:230px; flex:0 0 230px; background:#10182b; color:#cbd5e1; display:flex; flex-direction:column;
-             transition:width .25s ease, flex-basis .25s ease; }
+             overflow-y:auto; transition:width .25s ease, flex-basis .25s ease; }
+  .sidebar::-webkit-scrollbar { width:8px; }
+  .sidebar::-webkit-scrollbar-thumb { background:#27355a; border-radius:8px; }
   .sidebar.collapsed { width:64px; flex-basis:64px; }
   .sidebar.collapsed .label, .sidebar.collapsed .side-title { display:none; }
   .main { flex:1; display:flex; flex-direction:column; min-width:0; background:#0b1220; }
@@ -28,7 +30,7 @@
   .menu-item.active { background:#2563eb; color:#fff; }
   .menu-item .ico { font-size:18px; width:22px; text-align:center; }
   .side-title { padding:14px 16px 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
-  .agent-list { padding:0 8px 12px; overflow:auto; }
+  .agent-list { padding:0 8px 12px; }
   .agent-row { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:10px; font-size:13px; }
   .agent-row .nm { flex:1; color:#cbd5e1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sdot { width:10px; height:10px; border-radius:50%; background:#64748b; flex:0 0 auto; }
