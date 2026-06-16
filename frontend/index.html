@@ -135,6 +135,12 @@
              font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; border-bottom:3px solid #888; }
   .scene-hint { position:absolute; left:12px; bottom:12px; background:rgba(15,23,42,.6); color:#e2e8f0; font-size:11px;
                 padding:5px 10px; border-radius:999px; }
+  #threeCanvas { cursor:grab; } #threeCanvas:active { cursor:grabbing; }
+  #roomModes { position:absolute; top:12px; left:12px; display:flex; gap:8px; z-index:4; flex-wrap:wrap; }
+  .modebtn { background:rgba(15,23,42,.7); color:#e2e8f0; border:1px solid #334155; border-radius:999px; padding:6px 12px;
+             font-size:12px; font-weight:700; cursor:pointer; }
+  .modebtn:hover { background:rgba(30,41,59,.9); }
+  .modebtn.active { background:#a855f7; border-color:#a855f7; color:#fff; }
   #taskPopup { position:absolute; transform:translate(-50%,-100%); display:none; max-width:240px; background:#0f172a; color:#e2e8f0;
                border:1px solid #334155; border-radius:12px; padding:10px 12px; font-size:12px; box-shadow:0 10px 30px rgba(0,0,0,.5); z-index:5; }
   #taskPopup b { display:block; margin-bottom:4px; }
@@ -276,9 +282,15 @@
       <section class="view active" id="view-dashboard">
         <div id="scene3d">
           <canvas id="threeCanvas"></canvas>
+          <div id="roomModes">
+            <button class="modebtn active" data-mode="office">🏢 ออฟฟิศ</button>
+            <button class="modebtn" data-mode="dining">🍽️ ห้องอาหาร</button>
+            <button class="modebtn" data-mode="party">🎉 ปาร์ตี้</button>
+            <button class="modebtn" data-mode="gym">🏋️ ออกกำลังกาย</button>
+          </div>
           <div id="nameTags"></div>
           <div id="taskPopup"></div>
-          <div class="scene-hint">🖱️ ดับเบิลคลิกที่พื้น = ตัวละครเดินไป · คลิกตัวละคร = ดูงานที่ทำ</div>
+          <div class="scene-hint">🖱️ ลากเมาส์ = หมุนกล้อง · สกอลล์ = ซูม · ดับเบิลคลิกพื้น = เดิน · คลิกตัวละคร = ท่าทาง</div>
         </div>
         <div class="card" style="margin-top:16px">
           <div style="padding:10px 16px; border-bottom:1px solid #1e293b; color:#94a3b8; font-size:13px;">กิจกรรม / ผลลัพธ์สด</div>
@@ -525,6 +537,10 @@ const Office3D = (function () {
   let deskSeat = {};         // id -> THREE.Vector3 (home seat)
   let ceoGather = null;      // gather point in front of CEO desk
   let selectedId = null, ready = false, container;
+  let wallMat, decorGroup, currentMode = "office";
+  let theta = Math.PI/4, camRadius = 28, camHeight = 18;   // orbit camera
+  const target = { x:0, y:2, z:0 };
+  let dragging = false, lastX = 0, lastY = 0, moved = 0;
 
   const THREEok = () => typeof window.THREE !== "undefined";
 
@@ -560,7 +576,7 @@ const Office3D = (function () {
 
     const aspect = W/H, d = 16;
     camera = new THREE.OrthographicCamera(-d*aspect, d*aspect, d, -d, -100, 100);
-    camera.position.set(20,18,20); camera.lookAt(0,2,0);
+    updateCamera();
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const dir = new THREE.DirectionalLight(0xffffff, 0.7); dir.position.set(12,22,8); scene.add(dir);
@@ -571,10 +587,27 @@ const Office3D = (function () {
     agents.forEach(a => { chars[a.id] = buildCharacter3D(a); scene.add(chars[a.id].group); });
 
     raycaster = new THREE.Raycaster(); pointer = new THREE.Vector2(); clock = new THREE.Clock();
-    renderer.domElement.addEventListener("dblclick", onDblClick);
-    renderer.domElement.addEventListener("click", onClick);
+    const dom = renderer.domElement;
+    dom.addEventListener("dblclick", onDblClick);
+    dom.addEventListener("click", onClick);
+    // drag to orbit the camera
+    dom.addEventListener("pointerdown", e => { dragging=true; lastX=e.clientX; lastY=e.clientY; moved=0; });
+    window.addEventListener("pointerup", () => { dragging=false; });
+    window.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+      moved += Math.abs(dx)+Math.abs(dy);
+      theta -= dx*0.008; camHeight = Math.max(8, Math.min(32, camHeight - dy*0.06)); updateCamera();
+    });
+    dom.addEventListener("wheel", e => { e.preventDefault(); camRadius = Math.max(14, Math.min(46, camRadius + e.deltaY*0.02)); updateCamera(); }, {passive:false});
     window.addEventListener("resize", resize);
     ready = true; animate();
+  }
+
+  function updateCamera(){
+    if (!camera) return;
+    camera.position.set(target.x + camRadius*Math.cos(theta), camHeight, target.z + camRadius*Math.sin(theta));
+    camera.lookAt(target.x, target.y, target.z);
   }
 
   function buildRoom() {
@@ -585,7 +618,7 @@ const Office3D = (function () {
     );
     floorMesh.rotation.x = -Math.PI/2; scene.add(floorMesh);
 
-    const wallMat = new THREE.MeshLambertMaterial({ color:"#eaf2fb" });
+    wallMat = new THREE.MeshLambertMaterial({ color:"#eaf2fb" });
     const back = new THREE.Mesh(new THREE.PlaneGeometry(ROOM,16), wallMat);
     back.position.set(0,8,-ROOM/2); scene.add(back);
     const left = new THREE.Mesh(new THREE.PlaneGeometry(ROOM,16), wallMat);
@@ -599,8 +632,74 @@ const Office3D = (function () {
       const frame = new THREE.Mesh(new THREE.PlaneGeometry(7.6,6.6), new THREE.MeshBasicMaterial({color:"#cdd9e6"}));
       frame.position.set(i*9,9,-ROOM/2+0.05); scene.add(frame);
     }
-    // decorations
-    plant(-14,-13); plant(13,-14); bookshelf(-15,4); coffeeMachine(14,8);
+    // themed decorations live in their own group so modes can swap them
+    decorGroup = new THREE.Group(); scene.add(decorGroup);
+    applyMode(currentMode);
+  }
+
+  /* ---- room modes ---- */
+  function clearDecor(){ while (decorGroup.children.length) decorGroup.remove(decorGroup.children[0]); }
+  function applyMode(mode){
+    const T = {
+      office: {bg:"#bfe3ff", wall:"#eaf2fb", f1:"#e7d6b8", f2:"#d8c3a0"},
+      dining: {bg:"#ffe1c0", wall:"#f7e2c8", f1:"#caa27a", f2:"#b98a5e"},
+      party:  {bg:"#241640", wall:"#2c1d4d", f1:"#3a2a5e", f2:"#2c2046"},
+      gym:    {bg:"#cfeede", wall:"#e6f5ec", f1:"#9fb8a8", f2:"#8aa897"},
+    }[mode];
+    if (!T || !decorGroup) return;
+    currentMode = mode;
+    if (scene.background) scene.background.set(T.bg);
+    if (wallMat) wallMat.color.set(T.wall);
+    if (floorMesh) { floorMesh.material.map = checkerTexture(T.f1, T.f2, 8); floorMesh.material.needsUpdate = true; }
+    clearDecor();
+    if (mode === "office") { plant(-14,-13); plant(13,-14); bookshelf(-15,4); coffeeMachine(14,8); }
+    else if (mode === "dining") diningProps();
+    else if (mode === "party") partyProps();
+    else if (mode === "gym") gymProps();
+  }
+  function diningProps(){
+    const g = new THREE.Group();
+    g.add(meshBox(10,0.3,3,"#a9744f",0,1.4,0));
+    [[-4.5,-1],[4.5,-1],[-4.5,1],[4.5,1]].forEach(([lx,lz]) => g.add(meshBox(0.3,1.4,0.3,"#7a5235",lx,0.7,lz)));
+    const food = ["#e06666","#93c47d","#ffd966"];
+    for (let i=-3;i<=3;i++){
+      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.1,16), new THREE.MeshLambertMaterial({color:"#fff"}));
+      plate.position.set(i*1.4,1.6,0); g.add(plate);
+      const f = new THREE.Mesh(new THREE.SphereGeometry(0.25,8,8), new THREE.MeshLambertMaterial({color:food[(i+3)%3]}));
+      f.position.set(i*1.4,1.75,0); g.add(f);
+    }
+    g.position.set(0,0,14); decorGroup.add(g);
+    plant(-14,-13); plant(14,-13);
+  }
+  function partyProps(){
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(1.2,12,12),
+      new THREE.MeshStandardMaterial({color:"#cbd5e1", metalness:1, roughness:0.2, emissive:hex("#8b5cf6"), emissiveIntensity:0.4}));
+    ball.position.set(0,12,2); decorGroup.add(ball);
+    const cols = ["#ef4444","#f59e0b","#22c55e","#3b82f6","#ec4899","#a855f7"];
+    for (let i=0;i<12;i++){
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.6,10,10), new THREE.MeshLambertMaterial({color:cols[i%6]}));
+      b.scale.y = 1.25; b.position.set(-14+Math.random()*28, 7+Math.random()*5, -10+Math.random()*22); decorGroup.add(b);
+    }
+    [["#ec4899",-8],["#3b82f6",0],["#22c55e",8]].forEach(([c,x]) => {
+      const pl = new THREE.PointLight(new THREE.Color(c), 1.2, 40); pl.position.set(x,10,4); decorGroup.add(pl);
+    });
+  }
+  function gymProps(){
+    const dumbbell = (x,z) => {
+      const g = new THREE.Group();
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,2,8), new THREE.MeshStandardMaterial({color:"#9ca3af", metalness:0.6}));
+      bar.rotation.z = Math.PI/2; bar.position.y = 0.6; g.add(bar);
+      [-1,1].forEach(s => { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.4,12), new THREE.MeshStandardMaterial({color:"#374151"}));
+        w.rotation.z = Math.PI/2; w.position.set(s,0.6,0); g.add(w); });
+      g.position.set(x,0,z); decorGroup.add(g);
+    };
+    dumbbell(-12,12); dumbbell(12,12);
+    [["#22c55e",-6],["#3b82f6",6]].forEach(([c,x]) => decorGroup.add(meshBox(2,0.1,5,c,x,0.05,13)));
+    plant(14,-13);
+  }
+  function meshBox(w,h,d,color,x,y,z){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({color}));
+    m.position.set(x,y,z); return m;
   }
 
   function plant(x,z){
@@ -611,7 +710,7 @@ const Office3D = (function () {
       const f = new THREE.Mesh(new THREE.SphereGeometry(0.8*s,8,8), new THREE.MeshLambertMaterial({color:"#3fae5a"}));
       f.position.set(px,py,pz); g.add(f);
     });
-    g.position.set(x,0,z); scene.add(g);
+    g.position.set(x,0,z); decorGroup.add(g);
   }
   function bookshelf(x,z){
     const g = new THREE.Group();
@@ -622,7 +721,7 @@ const Office3D = (function () {
       const book = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.9,0.3), new THREE.MeshLambertMaterial({color:cols[(r+b)%5]}));
       book.position.set(0.5, 1.1+r*1.3, -1.5+b*0.55); g.add(book);
     }
-    g.position.set(x,0,z); g.rotation.y=Math.PI/2; scene.add(g);
+    g.position.set(x,0,z); g.rotation.y=Math.PI/2; decorGroup.add(g);
   }
   function coffeeMachine(x,z){
     const g = new THREE.Group();
@@ -630,7 +729,7 @@ const Office3D = (function () {
     base.position.y=1.1; g.add(base);
     const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.2,0.4,10), new THREE.MeshLambertMaterial({color:"#fff"}));
     cup.position.set(0,0.6,0.8); g.add(cup);
-    g.position.set(x,0,z); scene.add(g);
+    g.position.set(x,0,z); decorGroup.add(g);
   }
 
   function layoutDesks(agents) {
@@ -736,7 +835,9 @@ const Office3D = (function () {
       if (c){ c.queue=[new THREE.Vector3(hit.point.x,0,hit.point.z)]; c.thenState="idle"; c.state="walking"; } }
     hidePopup();
   }
-  function onClick(e){ ndc(e); raycaster.setFromCamera(pointer,camera);
+  function onClick(e){
+    if (moved > 6) { moved = 0; return; }   // was a drag, not a click
+    ndc(e); raycaster.setFromCamera(pointer,camera);
     const groups = Object.values(chars).map(c=>c.group);
     const hit = raycaster.intersectObjects(groups, true)[0];
     let found = null;
@@ -857,7 +958,7 @@ const Office3D = (function () {
     camera.left=-d*aspect; camera.right=d*aspect; camera.top=d; camera.bottom=-d; camera.updateProjectionMatrix();
   }
 
-  return { init, setStatus, setTasks, resize, playGesture, _monitors:null };
+  return { init, setStatus, setTasks, resize, playGesture, setMode:(m)=>{ if(ready) applyMode(m); }, _monitors:null };
 })();
 window.playGesture = (id, key) => Office3D.playGesture(id, key);
 
@@ -1131,6 +1232,8 @@ function showView(v) {
 async function applyCompany(){
   try { const s = await (await fetch("/api/settings")).json();
     if (s.company_name) { $("brandName").textContent = s.company_name; document.title = s.company_name + " · Multi-Agent OS"; }
+    if (s.room_mode) { Office3D.setMode(s.room_mode);
+      document.querySelectorAll(".modebtn").forEach(x => x.classList.toggle("active", x.dataset.mode === s.room_mode)); }
   } catch(e){}
 }
 async function initSettingsForm(){
@@ -1380,6 +1483,12 @@ $("saveNames").addEventListener("click", async () => {
   toastNote("บันทึกชื่อแล้ว กำลังโหลดใหม่…", "#22c55e");
   setTimeout(() => location.reload(), 700);
 });
+
+/* room mode switch */
+document.querySelectorAll(".modebtn").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".modebtn").forEach(x => x.classList.toggle("active", x === b));
+  Office3D.setMode(b.dataset.mode); saveSettings({ room_mode: b.dataset.mode });
+}));
 
 /* clock */
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
