@@ -254,6 +254,26 @@ async def ws(websocket: WebSocket) -> None:
                                 "message": "ตอนนี้รองรับเฉพาะ Anthropic (Claude) — provider อื่นกำลังจะเพิ่ม"})
                 continue
 
+            # Direct task to a single agent (skip CEO planning/delegation).
+            if action == "agent_task":
+                agent = msg.get("agent")
+                task = (msg.get("task") or "").strip()
+                if agent not in AGENTS or not task:
+                    await send({"type": "error", "message": "Invalid agent task."})
+                    continue
+                db.save_message(current_id, "user", "user", f"[{agent}] {task}")
+                rec = Recorder(send, current_id, task)
+                rec._task_ids[agent] = db.create_task(current_id, agent, task)
+                try:
+                    await send({"type": "plan", "subtasks": [{"agent": agent, "task": task}]})
+                    await orch.run_specialist(agent, task, task, rec)
+                    db.add_decision("agent_task", f"{agent}: {task[:80]}")
+                except Exception as exc:
+                    await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+                await send({"type": "done"})
+                await send(usage_payload())
+                continue
+
             goal = (msg or {}).get("goal", "").strip()
             if not goal:
                 await send({"type": "error", "message": "Empty goal."})
