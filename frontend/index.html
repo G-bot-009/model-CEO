@@ -207,6 +207,13 @@
   .conn-chip:hover { background:#1b2742; }
   .conn-chip.on { border-color:#22c55e; color:#fff; background:#0f2a18; }
 
+  /* image studio cards */
+  .img-card { width:230px; cursor:pointer; border:1px solid #1e293b; border-radius:12px; overflow:hidden; background:#0b1220; }
+  .img-card:hover { border-color:#a855f7; }
+  .img-wrap { background:#fff; display:flex; align-items:center; justify-content:center; padding:6px; }
+  .img-wrap svg { max-width:100%; height:auto; display:block; }
+  .img-cap { padding:8px; font-size:12px; color:#cbd5e1; word-break:break-word; }
+
   /* Mochi console */
   .mochi-av { width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg,#8b5cf6,#6d4bff); color:#fff;
               font-weight:900; display:flex; align-items:center; justify-content:center; font-size:18px; flex:0 0 auto; }
@@ -376,6 +383,20 @@
             <button class="qbtn ad-f" data-p="month">รายเดือน</button>
           </span></h3>
           <div class="bars" id="adBars"></div>
+        </div>
+        <div class="panel"><h3>🎨 สตูดิโอสร้างภาพ (SVG)</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px">
+            <input id="adImgPrompt" class="numfld" style="flex:1; min-width:240px; margin:0" placeholder="อธิบายภาพ เช่น โลโก้ร้านกาแฟมินิมอล โทนน้ำตาล" />
+            <select id="adImgSize" class="numfld" style="width:auto; margin:0">
+              <option value="1:1">1:1 จัตุรัส</option>
+              <option value="16:9">16:9 แนวนอน</option>
+              <option value="9:16">9:16 แนวตั้ง</option>
+              <option value="banner">แบนเนอร์</option>
+            </select>
+            <button class="send" id="adImgGen" style="padding:10px 18px">🎨 สร้างภาพ</button>
+          </div>
+          <div style="font-size:12px; color:#64748b; margin-bottom:10px">💡 คลิกที่ภาพเพื่อสร้างใหม่ (variation) · ภาพเป็นเวกเตอร์ SVG จากโมเดล (ภาพถ่าย/วิดีโอจริงต้องต่อ API ภายนอก)</div>
+          <div id="adImgResult" style="display:flex; flex-wrap:wrap; gap:12px"></div>
         </div>
         <div class="panel"><h3>ผลงานล่าสุด</h3><div id="adWorks"></div></div>
       </section>
@@ -1327,12 +1348,34 @@ async function loadAgentDetail(){
     `<div class="bar-col"><div class="bar" style="height:${s.tasks/max*100}%;background:${color(adAgentId)}" title="${s.tasks} งาน · ${fmt(s.input+s.output)} tokens"></div>
       <div style="font-size:10px;color:#64748b">${s.period.replace(/^\d{4}-/,"")}</div></div>`).join("")
     : '<div style="color:#64748b">ยังไม่มีข้อมูลในช่วงนี้</div>';
+  $("adImgResult").innerHTML = "";
+  (d.images || []).forEach(im => $("adImgResult").appendChild(imgCard(im.svg, im.prompt, im.size)));
   $("adWorks").innerHTML = (d.works||[]).length ? d.works.map(w =>
     `<div class="wf-row" style="flex-direction:column;align-items:flex-start;gap:4px">
       <div style="font-weight:700;color:#fff">${w.task} <span class="tag" style="background:#1e293b;color:#94a3b8">${w.status}</span></div>
       <div style="font-size:12px;color:#cbd5e1;white-space:pre-wrap">${(w.result||"").slice(0,400)}</div>
       <div style="font-size:11px;color:#64748b">${w.created_at}</div></div>`).join("")
     : '<div style="color:#64748b">ยังไม่มีผลงาน — ลองสั่งงานเอเจนต์นี้ดู</div>';
+}
+
+/* ---------- image studio (SVG) ---------- */
+function imgCard(svg, prompt, size){
+  const c = document.createElement("div"); c.className = "img-card";
+  c.innerHTML = `<div class="img-wrap">${svg}</div><div class="img-cap">${prompt} · ${size}</div>`;
+  c.addEventListener("click", () => genImage(prompt, size));
+  return c;
+}
+async function genImage(prompt, size){
+  prompt = (prompt != null ? prompt : $("adImgPrompt").value).trim();
+  size = size || $("adImgSize").value;
+  if (!prompt || !adAgentId) return;
+  const btn = $("adImgGen"), old = btn.textContent; btn.disabled = true; btn.textContent = "⏳ กำลังสร้าง…";
+  try {
+    const d = await postJSON("/api/generate-image", { agent: adAgentId, prompt, size });
+    if (d.svg) $("adImgResult").prepend(imgCard(d.svg, d.prompt, d.size));
+    else toastNote(d.error || "สร้างภาพไม่สำเร็จ", "#f59e0b");
+  } catch(e){ toastNote("เกิดข้อผิดพลาดในการสร้างภาพ", "#f59e0b"); }
+  btn.disabled = false; btn.textContent = old;
 }
 
 /* ---------- direct per-agent command ---------- */
@@ -1674,6 +1717,8 @@ document.querySelectorAll(".ad-f").forEach(b => b.addEventListener("click", () =
   loadAgentDetail();
 }));
 $("agentBack").addEventListener("click", () => showView("dashboard"));
+$("adImgGen").addEventListener("click", () => genImage());
+$("adImgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") genImage(); });
 $("companyPause").addEventListener("click", () => togglePause("company"));
 $("agentPause").addEventListener("click", () => { if (adAgentId) togglePause(adAgentId); });
 

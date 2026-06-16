@@ -9,6 +9,7 @@ Requires:  ANTHROPIC_API_KEY in the environment (or a .env file).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import anthropic
@@ -152,7 +153,62 @@ async def agent_detail(agent_id: str, period: str = "day") -> dict:
         "summary": db.agent_summary(agent_id, period),
         "works": db.agent_works(agent_id),
         "totals": db.agent_totals(agent_id),
+        "images": db.list_images(agent_id, 12),
     }
+
+
+# --- Image studio: Claude generates self-contained SVG artwork --------------
+IMG_SIZES = {"1:1": (600, 600), "16:9": (800, 450), "9:16": (450, 800), "banner": (900, 300)}
+
+def _extract_svg(text: str) -> str:
+    i, j = text.find("<svg"), text.rfind("</svg>")
+    svg = text[i:j + 6] if (i != -1 and j != -1) else ""
+    # basic sanitization for embedding in the page
+    svg = re.sub(r"<script[\s\S]*?</script>", "", svg, flags=re.I)
+    svg = re.sub(r"<foreignObject[\s\S]*?</foreignObject>", "", svg, flags=re.I)
+    svg = re.sub(r"\son\w+\s*=\s*\"[^\"]*\"", "", svg, flags=re.I)
+    svg = re.sub(r"\son\w+\s*=\s*'[^']*'", "", svg, flags=re.I)
+    return svg
+
+
+@app.post("/api/generate-image")
+async def generate_image(p: dict) -> dict:
+    agent = p.get("agent") if p.get("agent") in AGENTS else "designer"
+    prompt = (p.get("prompt") or "").strip()
+    size = p.get("size", "1:1")
+    if not prompt:
+        return {"error": "empty prompt"}
+    w, h = IMG_SIZES.get(size, (600, 600))
+    instr = (
+        f"Create one piece of artwork as a SINGLE self-contained SVG. "
+        f"Output ONLY raw SVG markup — no markdown, no code fences, no explanation. "
+        f'Start with <svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" '
+        f'viewBox="0 0 {w} {h}"> and end with </svg>. Use gradients, clean shapes, and '
+        f"readable text where helpful. Do not use external images, fonts, <script>, or "
+        f"<foreignObject>.\n\nSubject: {prompt}"
+    )
+    try:
+        resp = await _client.messages.create(
+            model="claude-opus-4-8",
+            max_tokens=8000,
+            thinking={"type": "adaptive"},
+            system=AGENTS[agent].system,
+            messages=[{"role": "user", "content": instr}],
+        )
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    text = next((b.text for b in resp.content if b.type == "text"), "")
+    svg = _extract_svg(text)
+    if not svg:
+        return {"error": "โมเดลไม่ได้คืนค่าเป็น SVG — ลองใหม่อีกครั้ง"}
+    sess = db.get_or_create_current()["id"]
+    iid = db.add_image(agent, prompt, size, svg)
+    u = resp.usage
+    db.save_token_usage(sess, agent, getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0)
+    tid = db.create_task(sess, agent, f"สร้างภาพ: {prompt[:60]}")
+    db.update_task(tid, status="done", result="(ภาพ SVG)")
+    db.add_decision("image", f"{agent}: {prompt[:60]}")
+    return {"ok": True, "id": iid, "svg": svg, "prompt": prompt, "size": size}
 
 
 @app.get("/api/pause")

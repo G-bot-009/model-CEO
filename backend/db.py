@@ -106,6 +106,11 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY, value TEXT
             );
+            CREATE TABLE IF NOT EXISTS images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_name TEXT NOT NULL, prompt TEXT NOT NULL, size TEXT NOT NULL,
+                svg TEXT NOT NULL, created_at TEXT NOT NULL
+            );
             """
         )
 
@@ -368,6 +373,18 @@ def agent_works(agent_id: str, limit: int = 25) -> list[dict]:
         return [dict(r) for r in c.execute(
             "SELECT task, status, result, created_at FROM tasks WHERE agent_name=? "
             "ORDER BY id DESC LIMIT ?", (agent_id, limit)).fetchall()]
+
+def add_image(agent_name: str, prompt: str, size: str, svg: str) -> int:
+    with _conn() as c:
+        return c.execute("INSERT INTO images (agent_name, prompt, size, svg, created_at) "
+                         "VALUES (?,?,?,?,?)", (agent_name, prompt, size, svg, _now())).lastrowid
+
+def list_images(agent_name: str, limit: int = 12) -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT id, prompt, size, svg, created_at FROM images WHERE agent_name=? "
+            "ORDER BY id DESC LIMIT ?", (agent_name, limit)).fetchall()]
+
 
 def agent_totals(agent_id: str) -> dict:
     with _conn() as c:
