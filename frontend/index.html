@@ -310,6 +310,7 @@
           <div id="mochiLine" style="background:#0b1220; border:1px solid #1e293b; border-radius:12px; padding:12px; margin:12px 0; color:#cbd5e1; font-size:13px">Mochi // รายงานตัว พร้อมรับคำสั่ง</div>
           <div class="quick" id="mochiQuick"></div>
           <div class="chat-input"><input id="mochiGoal" placeholder="พิมพ์คำสั่ง…"><button class="send" id="mochiSend">สั่ง</button></div>
+          <div style="margin-top:10px"><button class="qbtn" id="companyPause">⏸️ หยุดบริษัททั้งหมด</button></div>
         </div>
 
         <div class="statgrid" id="statGrid"></div>
@@ -353,8 +354,9 @@
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px">
           <button class="qbtn" id="agentBack">← กลับ</button>
           <span id="adEmoji" style="font-size:28px"></span>
-          <div><div id="adName" style="font-weight:800; color:#fff; font-size:20px"></div>
+          <div style="flex:1"><div id="adName" style="font-weight:800; color:#fff; font-size:20px"></div>
             <div id="adTitle" style="font-size:13px; color:#94a3b8"></div></div>
+          <button class="qbtn" id="agentPause">⏸️ พักงาน</button>
         </div>
         <div class="statgrid" id="adStats"></div>
         <div class="panel"><h3>สรุปการทำงาน <span style="flex:1"></span>
@@ -996,7 +998,7 @@ async function loadAgents() {
     AGENTS[a.id] = a;
     // sidebar row (click → per-agent detail)
     const row = document.createElement("div");
-    row.className = "agent-row"; row.style.cursor = "pointer";
+    row.className = "agent-row"; row.style.cursor = "pointer"; row.dataset.agent = a.id;
     row.innerHTML = `<span class="sdot" data-dot="${a.id}"></span><span class="nm">${a.emoji} ${a.name}</span>`;
     row.addEventListener("click", () => openAgentDetail(a.id));
     list.appendChild(row);
@@ -1216,12 +1218,33 @@ function handle(e) {
   }
 }
 
+/* ---------- pause / resume (per-agent + whole company) ---------- */
+let pausedState = { company:false, agents:{} };
+async function refreshPause(){ try { pausedState = await (await fetch("/api/pause")).json(); } catch(e){ return; } applyPauseUI(); }
+function applyPauseUI(){
+  const cb = $("companyPause");
+  if (cb){ cb.textContent = pausedState.company ? "▶️ เริ่มบริษัท" : "⏸️ หยุดบริษัททั้งหมด"; cb.classList.toggle("active", pausedState.company); }
+  document.querySelectorAll(".agent-row").forEach(r => { const id = r.dataset.agent; if (!id) return;
+    const p = pausedState.company || pausedState.agents[id];
+    r.style.opacity = p ? 0.45 : 1; r.title = p ? "พักงานอยู่" : ""; });
+  const ab = $("agentPause");
+  if (ab && adAgentId){ const p = !!pausedState.agents[adAgentId]; ab.textContent = p ? "▶️ ทำงานต่อ" : "⏸️ พักงาน"; ab.classList.toggle("active", p); }
+}
+async function togglePause(target){
+  const cur = target === "company" ? pausedState.company : !!pausedState.agents[target];
+  pausedState = await postJSON("/api/pause", { target, paused: !cur });
+  applyPauseUI();
+  toastNote(target === "company"
+    ? (pausedState.company ? "⏸️ หยุดบริษัทแล้ว" : "▶️ บริษัทเริ่มงานแล้ว")
+    : `${pausedState.agents[target] ? "⏸️ พัก" : "▶️ ให้ทำงานต่อ"} ${meta(target).name}`, "#a855f7");
+}
+
 /* ---------- per-agent detail (work + daily/weekly/monthly summary) ---------- */
 let adAgentId = null, adPeriod = "day";
 function openAgentDetail(id){
   adAgentId = id; adPeriod = "day";
   document.querySelectorAll(".ad-f").forEach(b => b.classList.toggle("active", b.dataset.p === "day"));
-  showView("agent"); loadAgentDetail();
+  showView("agent"); loadAgentDetail(); applyPauseUI();
 }
 async function loadAgentDetail(){
   if (!adAgentId) return;
@@ -1280,7 +1303,7 @@ function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
   $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
-  if (v === "console") loadConsole();
+  if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "connectors") loadConnectors();
   if (v === "automation") loadAutomation();
   if (v === "settings") initSettingsForm();
@@ -1552,6 +1575,8 @@ document.querySelectorAll(".ad-f").forEach(b => b.addEventListener("click", () =
   loadAgentDetail();
 }));
 $("agentBack").addEventListener("click", () => showView("dashboard"));
+$("companyPause").addEventListener("click", () => togglePause("company"));
+$("agentPause").addEventListener("click", () => { if (adAgentId) togglePause(adAgentId); });
 
 /* room mode switch */
 document.querySelectorAll(".modebtn").forEach(b => b.addEventListener("click", () => {
@@ -1562,7 +1587,7 @@ document.querySelectorAll(".modebtn").forEach(b => b.addEventListener("click", (
 /* clock */
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
 
-loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); });
+loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); refreshPause(); });
 </script>
 </body>
 </html>

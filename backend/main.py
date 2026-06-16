@@ -155,6 +155,20 @@ async def agent_detail(agent_id: str, period: str = "day") -> dict:
     }
 
 
+@app.get("/api/pause")
+async def get_pause() -> dict:
+    return db.pause_state()
+
+
+@app.post("/api/pause")
+async def set_pause(p: dict) -> dict:
+    target = p.get("target")
+    paused = bool(p.get("paused"))
+    db.set_pause(target, paused)
+    db.add_decision("pause", f"{target} → {'พัก' if paused else 'ทำงานต่อ'}")
+    return {"ok": True, **db.pause_state()}
+
+
 @app.get("/api/settings")
 async def get_settings() -> dict:
     return db.get_settings()
@@ -279,6 +293,11 @@ async def ws(websocket: WebSocket) -> None:
                 if agent not in AGENTS or not task:
                     await send({"type": "error", "message": "Invalid agent task."})
                     continue
+                ps = db.pause_state()
+                if ps["company"] or ps["agents"].get(agent):
+                    await send({"type": "error", "message": f"⏸️ {AGENTS[agent].name} ถูกพักงานอยู่ — กดทำงานต่อก่อนสั่งงาน"})
+                    await send({"type": "done"})
+                    continue
                 db.save_message(current_id, "user", "user", f"[{agent}] {task}")
                 rec = Recorder(send, current_id, task)
                 rec._task_ids[agent] = db.create_task(current_id, agent, task)
@@ -297,10 +316,17 @@ async def ws(websocket: WebSocket) -> None:
                 await send({"type": "error", "message": "Empty goal."})
                 continue
 
+            ps = db.pause_state()
+            if ps["company"]:
+                await send({"type": "error", "message": "⏸️ บริษัทหยุดชั่วคราวอยู่ — กดเริ่มบริษัทก่อนสั่งงาน"})
+                await send({"type": "done"})
+                continue
+            paused_set = {a for a, v in ps["agents"].items() if v}
+
             db.save_message(current_id, "user", "user", goal)
             recorder = Recorder(send, current_id, goal)
             try:
-                await orch.run(goal, recorder)
+                await orch.run(goal, recorder, paused=paused_set)
                 db.add_decision("run", goal[:120])
             except Exception as exc:  # surface to the UI rather than dropping the socket
                 await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})

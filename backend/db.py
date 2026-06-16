@@ -329,6 +329,17 @@ def set_settings(d: dict) -> None:
                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(k), str(v)))
 
 
+# --- Pause / resume (per-agent + whole company) -----------------------------
+def pause_state() -> dict:
+    s = get_settings()
+    agents = {k[len("paused_"):]: (v == "true") for k, v in s.items() if k.startswith("paused_")}
+    return {"company": s.get("company_paused") == "true", "agents": agents}
+
+def set_pause(target: str, paused: bool) -> None:
+    key = "company_paused" if target == "company" else f"paused_{target}"
+    set_settings({key: "true" if paused else "false"})
+
+
 # --- Per-agent detail + summaries (day / week / month) ----------------------
 def _period_expr(group: str, col: str) -> str:
     expr = f"replace({col},'T',' ')"

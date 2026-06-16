@@ -27,12 +27,13 @@ MODEL = "claude-opus-4-8"
 Emit = Callable[[dict], Awaitable[None]]
 
 
-def _extract_subtasks(text: str) -> list[dict]:
+def _extract_subtasks(text: str, allowed: set | None = None) -> list[dict]:
     """Pull a {"subtasks": [...]} object out of the model's reply.
 
     The CEO is instructed to return only JSON, but we tolerate stray prose by
-    grabbing the outermost ``{ ... }`` block. Invalid agents are dropped.
+    grabbing the outermost ``{ ... }`` block. Agents not in ``allowed`` are dropped.
     """
+    allowed = allowed if allowed is not None else set(SUB_AGENTS.keys())
     candidate = text.strip()
     if not candidate.startswith("{"):
         match = re.search(r"\{.*\}", candidate, re.DOTALL)
@@ -43,7 +44,7 @@ def _extract_subtasks(text: str) -> list[dict]:
         return []
     subtasks = []
     for st in data.get("subtasks", []):
-        if isinstance(st, dict) and st.get("agent") in SUB_AGENTS and st.get("task"):
+        if isinstance(st, dict) and st.get("agent") in allowed and st.get("task"):
             subtasks.append({"agent": st["agent"], "task": st["task"]})
     return subtasks
 
@@ -64,13 +65,19 @@ class Orchestrator:
         self.client = client
 
     # -- Step 1: planning ----------------------------------------------------
-    async def plan(self, goal: str, emit: Emit) -> list[dict]:
+    async def plan(self, goal: str, emit: Emit, paused: set | None = None) -> list[dict]:
+        paused = paused or set()
         ceo = get_agent("ceo")
         await emit({"type": "agent_status", "agent": "ceo", "status": "working"})
         await emit({"type": "log", "agent": "ceo", "text": "Breaking the goal into sub-tasks…"})
 
-        roster = "\n".join(f"- {a.id}: {a.name} — {a.title}" for a in SUB_AGENTS.values())
-        valid = ", ".join(SUB_AGENTS.keys())
+        available = [a for a in SUB_AGENTS.values() if a.id not in paused]
+        if not available:
+            await emit({"type": "agent_status", "agent": "ceo", "status": "idle"})
+            await emit({"type": "error", "message": "ทุกเอเจนต์ถูกพักงานอยู่ — ไม่มีใครรับงานได้"})
+            return []
+        roster = "\n".join(f"- {a.id}: {a.name} — {a.title}" for a in available)
+        valid = ", ".join(a.id for a in available)
         prompt = (
             f"Goal from the user:\n{goal}\n\n"
             f"Available specialists:\n{roster}\n\n"
@@ -88,7 +95,7 @@ class Orchestrator:
             messages=[{"role": "user", "content": prompt}],
         )
         text = next((b.text for b in resp.content if b.type == "text"), "{}")
-        subtasks = _extract_subtasks(text)
+        subtasks = _extract_subtasks(text, {a.id for a in available})
 
         await _emit_usage(emit, "ceo", resp.usage)
         await emit({"type": "plan", "subtasks": subtasks})
@@ -163,10 +170,10 @@ class Orchestrator:
         return final
 
     # -- Full run ------------------------------------------------------------
-    async def run(self, goal: str, emit: Emit) -> None:
+    async def run(self, goal: str, emit: Emit, paused: set | None = None) -> None:
         import asyncio
 
-        subtasks = await self.plan(goal, emit)
+        subtasks = await self.plan(goal, emit, paused)
         if not subtasks:
             await emit({"type": "error", "message": "The CEO produced no sub-tasks."})
             return
