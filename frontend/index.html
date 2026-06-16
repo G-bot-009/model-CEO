@@ -138,6 +138,9 @@
   #taskPopup { position:absolute; transform:translate(-50%,-100%); display:none; max-width:240px; background:#0f172a; color:#e2e8f0;
                border:1px solid #334155; border-radius:12px; padding:10px 12px; font-size:12px; box-shadow:0 10px 30px rgba(0,0,0,.5); z-index:5; }
   #taskPopup b { display:block; margin-bottom:4px; }
+  #taskPopup .gbtns { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:4px; }
+  #taskPopup .gbtn { background:#1b2742; color:#e2e8f0; border:1px solid #27355a; border-radius:8px; padding:6px 4px; font-size:11px; font-weight:700; cursor:pointer; }
+  #taskPopup .gbtn:hover { background:#27355a; }
   .scene-fallback { display:flex; align-items:center; justify-content:center; height:100%; color:#0f3050; font-weight:700; padding:20px; text-align:center; }
 
   /* ---------- cards / panels ---------- */
@@ -741,9 +744,45 @@ const Office3D = (function () {
     if (found){ selectedId = found.id; showPopup(found); } else hidePopup();
   }
   function isDescendant(obj, root){ let o=obj; while(o){ if(o===root) return true; o=o.parent; } return false; }
+  const GESTURES = [
+    ["beckon","👋 กวัก"],["no","🙅 ปฏิเสธ"],["go","👉 ไป"],
+    ["love","🤍 รัก"],["happy","😄 ดีใจ"],["angry","😠 โกรธ"],
+    ["sad","😢 เศร้า"],["shy","😳 อาย"],["beer","🍺 กินเบียร์"],
+    ["dance","💃 เต้น"],["jump","⬆️ กระโดด"],
+  ];
   function showPopup(c){ const p=$("taskPopup"); const m=meta(c.id);
-    p.innerHTML = `<b style="color:${color(c.id)}">${m.emoji} ${m.name}</b>${c.task ? c.task : "ยังไม่มีงานที่กำลังทำ"}<div style="color:#64748b;margin-top:4px">สถานะ: ${c.state}</div>`;
+    const btns = GESTURES.map(([k,l]) => `<button class="gbtn" onclick="playGesture('${c.id}','${k}')">${l}</button>`).join("");
+    p.innerHTML = `<b style="color:${color(c.id)}">${m.emoji} ${m.name}</b>${c.task ? c.task : "ยังไม่มีงานที่กำลังทำ"}
+      <div style="color:#64748b;margin:4px 0 8px">สถานะ: ${c.state}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">เลือกท่าทางให้แสดง</div>
+      <div class="gbtns">${btns}</div>`;
     p.style.display="block"; c._showPopup=true; positionPopup(c); }
+  function playGesture(id, key){ const c = chars[id]; if (!c || !clock) return;
+    c.gesture = key; c.gdur = key==="dance" ? 4.2 : key==="beer" ? 3.5 : 2.6;
+    c.t0 = clock.elapsedTime; c.state = "gesture"; }
+  function resetPose(c){ const g=c.group;
+    c.armL.rotation.set(0.1,0,0); c.armR.rotation.set(0.1,0,0);
+    c.legL.rotation.x=0; c.legR.rotation.x=0; g.rotation.set(0,Math.PI,0); g.position.y=0; }
+  function doGesture(c, e){
+    const g=c.group, aL=c.armL, aR=c.armR;
+    // neutral baseline each frame, then override per gesture
+    aL.rotation.set(0.1,0,0); aR.rotation.set(0.1,0,0);
+    c.legL.rotation.x=0; c.legR.rotation.x=0; g.rotation.set(0,Math.PI,0); g.position.y=0;
+    switch(c.gesture){
+      case "beckon": aR.rotation.set(-0.6+Math.sin(e*9)*0.5,0,0); g.rotation.x=0.05; break;
+      case "no": g.rotation.y=Math.PI+Math.sin(e*11)*0.22; aR.rotation.set(-1.0,0,Math.sin(e*11)*0.35); break;
+      case "go": { const p=(e%1.2)/1.2; aR.rotation.set(-1.4+p*1.7,0,0); } break;
+      case "love": aL.rotation.set(-1.5,0,-0.7); aR.rotation.set(-1.5,0,0.7); g.rotation.z=Math.sin(e*2)*0.05; break;
+      case "happy": aL.rotation.set(-2.4,0,0); aR.rotation.set(-2.4,0,0); g.position.y=Math.abs(Math.sin(e*6))*0.35; g.rotation.z=Math.sin(e*3)*0.08; break;
+      case "angry": aL.rotation.set(-0.3,0,-0.9); aR.rotation.set(-0.3,0,0.9); g.rotation.y=Math.PI+0.5+Math.sin(e*12)*0.08; break;
+      case "sad": g.rotation.x=0.28; aR.rotation.set(-2.4+Math.sin(e*6)*0.2,0,0.1); break;
+      case "shy": aR.rotation.set(-2.3,0,0.5); g.rotation.z=Math.sin(e*2.5)*0.1; break;
+      case "beer": aR.rotation.set(-2.1-Math.abs(Math.sin(e*2))*0.4,0,0.2); g.rotation.x=-0.12*Math.abs(Math.sin(e*2)); break;
+      case "dance": aL.rotation.set(-1.5+Math.sin(e*8)*0.9,0,0); aR.rotation.set(-1.5+Math.sin(e*8+Math.PI)*0.9,0,0);
+        c.legL.rotation.x=Math.sin(e*8)*0.4; c.legR.rotation.x=-Math.sin(e*8)*0.4; g.position.y=Math.abs(Math.sin(e*8))*0.15; g.rotation.z=Math.sin(e*4)*0.1; break;
+      case "jump": { const up=Math.abs(Math.sin(e*3.2)); g.position.y=up*0.8; aL.rotation.x=-2.2*up-0.1+0.1; aR.rotation.x=-2.2*up-0.1+0.1; } break;
+    }
+  }
   function hidePopup(){ $("taskPopup").style.display="none"; Object.values(chars).forEach(c=>c._showPopup=false); }
 
   /* ---- per-frame ---- */
@@ -775,6 +814,12 @@ const Office3D = (function () {
           g.rotation.y=Math.atan2(dx,dz);
           const sw=Math.sin(t*12)*0.5; c.legL.rotation.x=sw; c.legR.rotation.x=-sw; g.position.y=Math.abs(Math.sin(t*12))*0.12; }
       }
+      return;
+    }
+    if (c.state==="gesture"){
+      const e = t - c.t0;
+      if (e > c.gdur){ resetPose(c); c.state="idle"; }
+      else { doGesture(c, e); }
       return;
     }
     // settled facing camera
@@ -812,8 +857,9 @@ const Office3D = (function () {
     camera.left=-d*aspect; camera.right=d*aspect; camera.top=d; camera.bottom=-d; camera.updateProjectionMatrix();
   }
 
-  return { init, setStatus, setTasks, resize, _monitors:null };
+  return { init, setStatus, setTasks, resize, playGesture, _monitors:null };
 })();
+window.playGesture = (id, key) => Office3D.playGesture(id, key);
 
 /* ---------- load agents + build office ---------- */
 async function loadAgents() {
