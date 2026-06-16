@@ -302,8 +302,8 @@
       <section class="view" id="view-console">
         <div class="panel" style="border-color:#6d4bff">
           <div style="display:flex; align-items:center; gap:12px">
-            <div class="mochi-av">MO</div>
-            <div><div style="font-weight:800; color:#fff; font-size:18px">Mochi <span class="ai-badge" style="border-color:#f5b301;color:#f5b301">CEO</span></div>
+            <div class="mochi-av" id="ceoAvatar">MO</div>
+            <div><div style="font-weight:800; color:#fff; font-size:18px"><span id="ceoName">Mochi</span> <span class="ai-badge" style="border-color:#f5b301;color:#f5b301">CEO</span></div>
               <div style="font-size:12px; color:#22c55e">● ออนไลน์ · รอรับคำสั่ง</div></div>
           </div>
           <div id="mochiLine" style="background:#0b1220; border:1px solid #1e293b; border-radius:12px; padding:12px; margin:12px 0; color:#cbd5e1; font-size:13px">Mochi // รายงานตัว พร้อมรับคำสั่ง</div>
@@ -527,6 +527,11 @@ let liveBlocks = {};
 const $ = (id) => document.getElementById(id);
 const color = (id) => COLORS[id] || "#64748b";
 const meta = (id) => AGENTS[id] || { name:id, emoji:"•" };
+function initials(name){
+  const w = (name||"").trim().split(/\s+/);
+  if (w.length >= 2) return (w[0][0] + w[1][0]).toUpperCase();
+  return (name||"?").slice(0,2).toUpperCase();
+}
 
 /* ============================================================
    Office3D — Three.js isometric 3D office (low-poly characters)
@@ -1304,7 +1309,10 @@ async function loadConsole(){
   const sline = (ok,label,extra) => `<div class="sys-line"><span class="dotc" style="background:${ok?'#22c55e':'#64748b'}"></span>${label}${extra?` · <span style="color:#94a3b8">${extra}</span>`:""}</div>`;
   $("sysStatus").innerHTML = sline(ss.database,"DATABASE") + sline(ss.metaapi,"METAAPI / MT5")
     + sline(ss.trading_bot,"TRADING BOT","OFF") + sline(ss.egress,"EGRESS");
-  $("mochiLine").textContent = `Mochi // รายงานตัว พร้อมรับคำสั่ง // สถานะ: รออนุมัติ ${st.pending??0} · กำลังพล ${st.agents??0} · บอท ${st.bot||"OFF"} · เชื่อม ${st.systems??0} ระบบ — สั่งได้เลยครับท่าน`;
+  const ceoName = meta("ceo").name || "Mochi";
+  $("ceoName").textContent = ceoName;
+  $("ceoAvatar").textContent = initials(ceoName);
+  $("mochiLine").textContent = `${ceoName} // รายงานตัว พร้อมรับคำสั่ง // สถานะ: รออนุมัติ ${st.pending??0} · กำลังพล ${st.agents??0} · บอท ${st.bot||"OFF"} · เชื่อม ${st.systems??0} ระบบ — สั่งได้เลยครับท่าน`;
   const chips = [
     ["สรุปสถานะ","สรุปสถานะของบริษัทและทีมทั้งหมดในตอนนี้"],
     ["ให้ทีมทำคอนเทนต์ 3 ชิ้น","ให้ทีมคอนเทนต์เสนอไอเดียคอนเทนต์ 3 ชิ้นพร้อมแคปชั่น"],
