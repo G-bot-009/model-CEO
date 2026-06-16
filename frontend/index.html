@@ -175,6 +175,17 @@
   .modal .note { background:#f3eede; border-radius:12px; padding:12px; font-size:13px; color:#4b5563; }
   .modal .steps { font-size:13px; color:#4b5563; line-height:1.8; }
 
+  /* automation / connectors controls */
+  .numfld { width:100%; margin-top:6px; padding:10px 12px; border-radius:10px; background:#0b1220; border:1px solid #27355a; color:#e2e8f0; }
+  .opt { display:flex; align-items:center; gap:10px; padding:12px 14px; border:1px solid #27355a; border-radius:12px; cursor:pointer; color:#e2e8f0; flex:1; }
+  .opt.sel { border-color:#a855f7; background:#1b1430; }
+  .opt .rad { width:16px; height:16px; border-radius:50%; border:2px solid #64748b; flex:0 0 auto; }
+  .opt.sel .rad { border-color:#a855f7; background:#a855f7; box-shadow:inset 0 0 0 3px #1b1430; }
+  .opt small { color:#94a3b8; }
+  .conn-chip { display:flex; align-items:center; gap:8px; padding:10px 14px; border:1px solid #27355a; border-radius:12px; cursor:pointer; color:#cbd5e1; font-weight:700; font-size:13px; }
+  .conn-chip:hover { background:#1b2742; }
+  .conn-chip.on { border-color:#22c55e; color:#fff; background:#0f2a18; }
+
   /* token graph */
   .bars { display:flex; align-items:flex-end; gap:10px; height:140px; }
   .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; justify-content:flex-end; }
@@ -220,6 +231,8 @@
       <div class="menu-item" data-view="console"><span class="ico">🏠</span><span class="label">CEO Console</span></div>
       <div class="menu-item" data-view="agents"><span class="ico">🧑‍💼</span><span class="label">Agents</span></div>
       <div class="menu-item" data-view="tasks"><span class="ico">📋</span><span class="label">Tasks</span></div>
+      <div class="menu-item" data-view="connectors"><span class="ico">🔌</span><span class="label">Connectors</span></div>
+      <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
       <div class="menu-item" data-view="settings"><span class="ico">⚙️</span><span class="label">Settings</span></div>
@@ -307,6 +320,52 @@
           <button class="qbtn" id="newSession">+ New Session</button>
         </div>
         <div class="card" style="padding:14px"><div id="historyBody" style="display:flex; flex-direction:column; gap:12px;"></div></div>
+      </section>
+
+      <!-- CONNECTORS -->
+      <section class="view" id="view-connectors">
+        <h2 style="color:#fff; margin:0 0 14px">Connectors · <span id="connCount">0/22</span></h2>
+        <div class="panel"><div id="connGrid" style="display:flex; flex-wrap:wrap; gap:10px"></div></div>
+        <div style="color:#64748b; font-size:13px">คลิกที่แต่ละตัวเพื่อใส่คีย์/โทเค็น — ระบบเก็บไว้ให้ (การยิงจริงเปิดเมื่อพร้อม)</div>
+      </section>
+
+      <!-- AUTOMATION -->
+      <section class="view" id="view-automation">
+        <h2 style="color:#fff; margin:0 0 14px">Automation</h2>
+
+        <div class="panel"><h3>โฆษณา (ADS)</h3>
+          <div style="border:1px dashed #334155; border-radius:12px; padding:18px; text-align:center; color:#cbd5e1">
+            <div style="font-weight:800; color:#fff; margin-bottom:6px">เชื่อมบัญชีโฆษณาเพื่อเริ่ม</div>
+            <div style="font-size:13px; color:#94a3b8; margin-bottom:12px">เชื่อม Meta (Facebook/Instagram) หรือ Google Ads แล้วทีมจะอ่านผลงาน วิเคราะห์ และช่วยจัดการแคมเปญให้</div>
+            <button class="qbtn" id="adsMeta">เชื่อม Meta Ads</button>
+            <button class="qbtn" id="adsGoogle">เชื่อม Google Ads</button>
+          </div>
+        </div>
+
+        <div class="panel"><h3>เวลาโพสต์ (เวลาไทย)</h3>
+          <div id="postTime" style="display:flex; flex-direction:column; gap:8px"></div>
+        </div>
+
+        <div class="panel"><h3>เครื่องมือทำวิดีโอ</h3>
+          <div id="videoWarn" style="display:none; border:1px solid #f59e0b; color:#fbbf24; border-radius:10px; padding:10px; margin-bottom:10px; font-size:13px">⚠️ ยังไม่ได้เลือก — ออฟฟิศจะทำวิดีโอไม่ได้จนกว่าจะเลือกเครื่องมือ</div>
+          <div id="videoTool" style="display:flex; flex-direction:column; gap:8px"></div>
+          <div style="color:#64748b; font-size:12px; margin-top:8px">วิดีโอ 1 ช็อต = 6 วินาที · ราคาคิดต่อช็อต</div>
+        </div>
+
+        <div class="panel"><h3>ระบบโพสต์อัตโนมัติ <span style="flex:1"></span><span style="font-size:11px;color:#22c55e">บันทึกอัตโนมัติ</span></h3>
+          <div id="autoPost" style="display:flex; gap:10px; flex-wrap:wrap"></div>
+          <div style="margin-top:16px; color:#cbd5e1; font-size:13px; margin-bottom:8px">จำนวนโพสต์ต่อวัน</div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px">
+            <div><label style="font-size:12px;color:#94a3b8">โพสต์รวม</label><input id="ppdTotal" type="number" min="0" class="numfld" value="3"></div>
+            <div><label style="font-size:12px;color:#94a3b8">ภาพ</label><input id="ppdImage" type="number" min="0" class="numfld" value="3"></div>
+            <div><label style="font-size:12px;color:#94a3b8">วิดีโอ</label><input id="ppdVideo" type="number" min="0" class="numfld" value="1"></div>
+          </div>
+          <div style="color:#64748b; font-size:12px; margin-top:8px">ใส่ 0 = ให้ AI ตัดสินใจเองว่าควรโพสต์เท่าไหร่</div>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:16px">
+            <label style="font-size:13px;color:#cbd5e1">เดินงานเอง (ข้ามคิวอนุมัติ)</label>
+            <input id="autoRun" type="checkbox">
+          </div>
+        </div>
       </section>
 
       <!-- TOKENS -->
@@ -963,8 +1022,10 @@ function send(text) {
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", agents:"Agents", tasks:"Tasks", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", agents:"Agents", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
   if (v === "console") loadConsole();
+  if (v === "connectors") loadConnectors();
+  if (v === "automation") loadAutomation();
 }
 
 /* ---------- modals ---------- */
@@ -1042,11 +1103,74 @@ async function loadConsole(){
     : '<div style="color:#64748b">ไม่มีประวัติ</div>';
 }
 window.decide = async (id, action) => { await postJSON("/api/approval", {id, action}); loadConsole(); };
-function openConnect(name){
+function openConnect(name, after){
   openGen("เชื่อม " + name, [{key:"config", label:"API token / Webhook URL", type:"input", placeholder:"วางคีย์ / URL ที่นี่"}],
     async (v) => { await postJSON("/api/connector", {name, status:"connected", config:v.config}); closeModal("genModal");
-      toastNote(name + " เชื่อมแล้ว — เก็บคีย์ไว้แล้ว (การยิงจริงจะเปิดเมื่อพร้อม)"); loadConsole(); });
+      toastNote(name + " เชื่อมแล้ว — เก็บคีย์ไว้แล้ว (การยิงจริงจะเปิดเมื่อพร้อม)", "#22c55e"); (after||loadConsole)(); });
 }
+
+/* ---------- Connectors grid (22) ---------- */
+const CONNECTORS = ["Webhook → Make/Zapier","Slack","Discord","Telegram","LINE OA","Binance Futures","Bybit",
+  "MetaTrader 5 (Forex)","Meta Ads","Google Ads","Email","Notion","WordPress","Facebook & Instagram",
+  "Shopify","Google Drive","Google Sheets","YouTube","TikTok","Shopee Affiliate","X (Twitter)","GitHub"];
+const CONN_ICON = {"Webhook → Make/Zapier":"🔗","Slack":"💬","Discord":"🎮","Telegram":"✈️","LINE OA":"💚",
+  "Binance Futures":"📊","Bybit":"📉","MetaTrader 5 (Forex)":"💱","Meta Ads":"📣","Google Ads":"🔍","Email":"✉️",
+  "Notion":"📓","WordPress":"📝","Facebook & Instagram":"📷","Shopify":"🛍️","Google Drive":"📁","Google Sheets":"📗",
+  "YouTube":"▶️","TikTok":"🎵","Shopee Affiliate":"🛒","X (Twitter)":"𝕏","GitHub":"🐙"};
+
+async function loadConnectors(){
+  let d; try { d = await (await fetch("/api/console")).json(); } catch(e){ return; }
+  const conn = d.connectors || {};
+  const on = CONNECTORS.filter(n => conn[n] === "connected").length;
+  $("connCount").textContent = `${on}/${CONNECTORS.length}`;
+  $("connGrid").innerHTML = CONNECTORS.map(n =>
+    `<div class="conn-chip ${conn[n]==='connected'?'on':''}" data-c="${n}">${CONN_ICON[n]||"•"} ${n} ${conn[n]==='connected'?'✓':''}</div>`).join("");
+  $("connGrid").querySelectorAll("[data-c]").forEach(el => el.onclick = () => openConnect(el.dataset.c, loadConnectors));
+}
+
+/* ---------- Automation settings ---------- */
+const RADIOS = {
+  post_time: [
+    {v:"auto",   label:"ช่วงเวลาที่คนเล่นเยอะ (อัตโนมัติ)"},
+    {v:"custom", label:"กำหนดเวลาเอง"},
+    {v:"ai",     label:"ให้ AI คิดเอง"},
+  ],
+  video_tool: [
+    {v:"minimax_768",  label:"ประหยัด (MiniMax 768p)",  note:"9,900 Token/ช็อต · ≈142 Gold · ≈฿26"},
+    {v:"minimax_1080", label:"คุณภาพ (MiniMax 1080p)", note:"14,800 Token/ช็อต · ≈212 Gold · ≈฿39"},
+  ],
+  auto_post: [
+    {v:"off",   label:"ปิด",      note:"ออฟฟิศจะไม่โพสต์อะไรเอง"},
+    {v:"draft", label:"ร่างก่อน",  note:"AI สร้างให้ — รอคุณกดอนุมัติ"},
+    {v:"post",  label:"โพสต์เลย",  note:"สร้าง + โพสต์ให้อัตโนมัติทันที"},
+  ],
+};
+let SETTINGS = {};
+function renderRadio(containerId, key){
+  const cur = SETTINGS[key] || "";
+  $(containerId).innerHTML = RADIOS[key].map(o =>
+    `<div class="opt ${o.v===cur?'sel':''}" data-k="${key}" data-v="${o.v}">
+       <span class="rad"></span><div><div style="font-weight:700">${o.label}</div>${o.note?`<small>${o.note}</small>`:""}</div></div>`).join("");
+  $(containerId).querySelectorAll("[data-v]").forEach(el => el.onclick = () => {
+    SETTINGS[key] = el.dataset.v; saveSettings({[key]: el.dataset.v});
+    renderRadio(containerId, key);
+    if (key === "video_tool") $("videoWarn").style.display = "none";
+  });
+}
+async function loadAutomation(){
+  try { SETTINGS = await (await fetch("/api/settings")).json(); } catch(e){ SETTINGS = {}; }
+  if (!SETTINGS.post_time) SETTINGS.post_time = "auto";
+  if (!SETTINGS.auto_post) SETTINGS.auto_post = "draft";
+  renderRadio("postTime", "post_time");
+  renderRadio("videoTool", "video_tool");
+  renderRadio("autoPost", "auto_post");
+  $("videoWarn").style.display = SETTINGS.video_tool ? "none" : "block";
+  $("ppdTotal").value = SETTINGS.ppd_total ?? 3;
+  $("ppdImage").value = SETTINGS.ppd_image ?? 3;
+  $("ppdVideo").value = SETTINGS.ppd_video ?? 1;
+  $("autoRun").checked = SETTINGS.auto_run === "true";
+}
+async function saveSettings(partial){ try { await postJSON("/api/settings", partial); } catch(e){} }
 
 /* ---------- wire up ---------- */
 $("menu").addEventListener("click", e => { const it=e.target.closest(".menu-item"); if(it) showView(it.dataset.view); });
@@ -1095,6 +1219,16 @@ $("byokClear").addEventListener("click", () => {
   if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"set_key", api_key:""}));
   $("byokKey").value=""; closeModal("byokModal");
 });
+
+/* automation inputs + ADS */
+["ppdTotal","ppdImage","ppdVideo"].forEach(id => {
+  $(id).addEventListener("change", () => {
+    saveSettings({ ppd_total:$("ppdTotal").value, ppd_image:$("ppdImage").value, ppd_video:$("ppdVideo").value });
+  });
+});
+$("autoRun").addEventListener("change", e => saveSettings({ auto_run: e.target.checked }));
+$("adsMeta").addEventListener("click", () => openConnect("Meta Ads", loadAutomation));
+$("adsGoogle").addEventListener("click", () => openConnect("Google Ads", loadAutomation));
 
 /* clock */
 setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);

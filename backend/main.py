@@ -114,6 +114,17 @@ async def api_connector(p: dict) -> dict:
     return {"ok": True, "connectors": db.list_connectors()}
 
 
+@app.get("/api/settings")
+async def get_settings() -> dict:
+    return db.get_settings()
+
+
+@app.post("/api/settings")
+async def post_settings(p: dict) -> dict:
+    db.set_settings(p)
+    return {"ok": True, "settings": db.get_settings()}
+
+
 class Recorder:
     """Wraps the WebSocket ``emit`` and persists each event to SQLite.
 

@@ -103,6 +103,9 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS connectors (
                 name TEXT PRIMARY KEY, status TEXT NOT NULL, config TEXT, updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY, value TEXT
+            );
             """
         )
 
@@ -307,6 +310,18 @@ def set_connector(name: str, status: str, config: str = "") -> None:
 def list_connectors() -> dict:
     with _conn() as c:
         return {r["name"]: r["status"] for r in c.execute("SELECT name, status FROM connectors").fetchall()}
+
+
+# --- Settings (key/value, e.g. automation + posting prefs) ------------------
+def get_settings() -> dict:
+    with _conn() as c:
+        return {r["key"]: r["value"] for r in c.execute("SELECT key, value FROM settings").fetchall()}
+
+def set_settings(d: dict) -> None:
+    with _conn() as c:
+        for k, v in d.items():
+            c.execute("INSERT INTO settings (key, value) VALUES (?,?) "
+                      "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(k), str(v)))
 
 
 # --- Workforce (tasks per agent, last 7 days) -------------------------------
