@@ -1427,15 +1427,30 @@ async function loadAdmin() {
 }
 function renderAdminKeys() {
   const wrap = $("adm_keys"), ks = ADM.keys || [];
-  wrap.innerHTML = ks.length ? ks.map(k => `
-    <div style="display:flex; align-items:center; gap:10px; background:#0f1b33; border:1px solid #1e293b; border-radius:10px; padding:10px 12px">
+  // how many agents each key is paired with → "ใช้งานอยู่" status
+  const counts = {};
+  Object.values(ADM.map || {}).forEach(kid => { counts[kid] = (counts[kid] || 0) + 1; });
+  wrap.innerHTML = ks.length ? ks.map(k => {
+    const n = counts[k.id] || 0;
+    const active = n > 0;
+    const status = active
+      ? `<span style="color:#4ade80; font-weight:700">🟢 ใช้งานอยู่ · ${n} เอเจนต์</span>`
+      : `<span style="color:#64748b">⚪️ ยังไม่ถูกจับคู่</span>`;
+    // show enough of the key to tell them apart, never the full secret
+    const hint = k.base_url ? escapeHtml(k.base_url) : (k.masked ? escapeHtml(k.masked) : "—");
+    return `
+    <div style="display:flex; align-items:center; gap:12px; background:#0f1b33; border:1px solid #1e293b; border-radius:10px; padding:11px 13px">
       <span style="font-size:18px">🔑</span>
       <div style="flex:1; min-width:0">
-        <div style="color:#fff; font-weight:700">${escapeHtml(k.label)}</div>
-        <div style="font-size:11px; color:#64748b">${escapeHtml(k.provider||"")}${k.base_url?(" · "+escapeHtml(k.base_url)):""}${k.masked?(" · "+escapeHtml(k.masked)):""}</div>
+        <div style="color:#fff; font-weight:700; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+          ${escapeHtml(k.label)}
+          <span class="tag" style="background:#1e293b; color:#a5b4fc; text-transform:none">${escapeHtml(k.provider||"—")}</span>
+        </div>
+        <div style="font-size:12px; color:#94a3b8; margin-top:3px">${status} · <span style="color:#64748b">${hint}</span></div>
       </div>
       <button class="qbtn" data-delkey="${k.id}" title="ลบ key นี้">🗑️</button>
-    </div>`).join("") : `<div style="color:#64748b">ยังไม่มี API key — กด ➕ เพิ่ม</div>`;
+    </div>`;
+  }).join("") : `<div style="color:#64748b">ยังไม่มี API key — กด ➕ เพิ่ม API key เพื่อเชื่อม</div>`;
   wrap.querySelectorAll("[data-delkey]").forEach(b => b.addEventListener("click", () => delAdminKey(+b.dataset.delkey)));
 }
 function renderAdminAssign() {
@@ -1470,7 +1485,13 @@ async function loadAdminUsage() {
 function openAddKey() {
   openGen("➕ เพิ่ม API key", [
     {key:"label", label:"ชื่อเรียก (ของคุณ)", type:"input", placeholder:"เช่น Key หลัก, Key สำรอง"},
-    {key:"provider", label:"Provider", type:"input", placeholder:"anthropic / local / openrouter ..."},
+    {key:"provider", label:"Provider", type:"select", value:"anthropic", options:[
+      {value:"anthropic",  label:"Anthropic (Claude) — ใช้คีย์ sk-ant-"},
+      {value:"local",      label:"Local / Custom (Base URL) — Anthropic-compatible"},
+      {value:"openrouter", label:"OpenRouter — ผ่าน Base URL"},
+      {value:"openai",     label:"OpenAI — ผ่าน proxy Anthropic-compatible"},
+      {value:"gemini",     label:"Google Gemini — ผ่าน proxy"},
+    ]},
     {key:"base_url", label:"Base URL (โลคัล/custom — Anthropic-compatible; ว่างได้ถ้าใช้ Anthropic)", type:"input", placeholder:"http://localhost:4000"},
     {key:"secret", label:"API key (sk-ant-... ; โลคัลปล่อยว่างได้)", type:"input", placeholder:"วางคีย์ที่นี่"},
   ], async (v) => {
@@ -1780,9 +1801,22 @@ function openGen(title, fields, onSave){
   const body = $("genBody"); body.innerHTML = "";
   fields.forEach(f => {
     const lab = document.createElement("label"); lab.textContent = f.label; body.appendChild(lab);
-    const el = document.createElement(f.type === "textarea" ? "textarea" : "input");
-    if (f.type === "textarea") el.rows = 4;
-    el.id = "gen_" + f.key; if (f.placeholder) el.placeholder = f.placeholder; body.appendChild(el);
+    let el;
+    if (f.type === "select") {
+      el = document.createElement("select");
+      (f.options || []).forEach(o => {
+        const op = document.createElement("option");
+        op.value = (o.value !== undefined) ? o.value : o;
+        op.textContent = (o.label !== undefined) ? o.label : o;
+        el.appendChild(op);
+      });
+      if (f.value) el.value = f.value;
+    } else {
+      el = document.createElement(f.type === "textarea" ? "textarea" : "input");
+      if (f.type === "textarea") el.rows = 4;
+      if (f.placeholder) el.placeholder = f.placeholder;
+    }
+    el.id = "gen_" + f.key; body.appendChild(el);
   });
   const btn = document.createElement("button"); btn.className = "save"; btn.textContent = "บันทึก";
   btn.onclick = () => { const v = {}; fields.forEach(f => v[f.key] = ($("gen_"+f.key).value || "").trim()); onSave(v); };
