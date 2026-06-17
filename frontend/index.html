@@ -239,7 +239,8 @@
   body.light .conn-card { background:#fff; border-color:var(--bd); }
   body.light .conn-card .cc-ti { color:var(--ink); }
   body.light .conn-card .cc-ds { color:var(--muted); }
-  body.light .conn-cta.off { border:1px solid var(--bd); color:var(--ink2); }
+  body.light .conn-cta { background:var(--ink); }            /* day mode: green accent */
+  body.light .conn-cta.off { background:transparent; border:1px solid var(--bd); color:var(--ink2); }
 
   /* image studio cards */
   .img-card { width:230px; cursor:pointer; border:1px solid #1e293b; border-radius:12px; overflow:hidden; background:#0b1220; }
@@ -2301,9 +2302,9 @@ const CONN_CAT = [
   ["Storage / Content", ["Notion","WordPress","Shopify","Google Drive","Google Sheets","GitHub"]],
   ["Social / Publish", ["Facebook & Instagram","YouTube","TikTok","X (Twitter)","Shopee Affiliate"]],
 ];
-const CONN_COLOR = {"Webhook → Make/Zapier":"#7c5cff","Slack":"#611f69","Discord":"#5865F2","Telegram":"#2AABEE",
-  "LINE OA":"#06C755","Binance Futures":"#F0B90B","Bybit":"#F7A600","MetaTrader 5 (Forex)":"#7c5cff","Meta Ads":"#1877F2",
-  "Google Ads":"#4285F4","Email":"#7c5cff","Notion":"#191919","WordPress":"#21759B","Facebook & Instagram":"#E4405F",
+const CONN_COLOR = {"Webhook → Make/Zapier":"#1C2E1E","Slack":"#611f69","Discord":"#5865F2","Telegram":"#2AABEE",
+  "LINE OA":"#06C755","Binance Futures":"#F0B90B","Bybit":"#F7A600","MetaTrader 5 (Forex)":"#4D6D47","Meta Ads":"#1877F2",
+  "Google Ads":"#4285F4","Email":"#4D6D47","Notion":"#191919","WordPress":"#21759B","Facebook & Instagram":"#E4405F",
   "Shopify":"#95BF47","Google Drive":"#1FA463","Google Sheets":"#0F9D58","YouTube":"#FF0000","TikTok":"#111",
   "Shopee Affiliate":"#EE4D2D","X (Twitter)":"#111","GitHub":"#24292e"};
 
