@@ -2313,10 +2313,10 @@ async function loadDirectory(){
       ${agentPicker}
       ${(!c.connected && c.oauth) ? `<a class="qbtn" href="/oauth/mcp/${c.id}/start" style="display:inline-flex;align-items:center;gap:6px;font-weight:800;background:#4f46e5;color:#fff;border-color:#4f46e5;align-self:flex-start">🔐 เชื่อมด้วย OAuth (คลิกเดียว — ไม่ต้องก๊อป token)</a>` : ''}
       <div class="dir-form" style="display:${c.connected?'none':'flex'};gap:6px;flex-wrap:wrap;align-items:center">
-        ${c.oauth ? '<div style="width:100%;font-size:12px;color:#64748b">หรือวาง token เอง:</div>' : ''}
+        ${c.oauth ? '<div style="width:100%;font-size:12px;color:#94a3b8">⚠️ ตัวนี้ต้องเชื่อมด้วย OAuth ด้านบน — วาง token เองไม่ได้</div>' : ''}
         <input class="numfld dir-url" data-id="${c.id}" style="flex:1;min-width:220px;margin:0;padding:7px 9px" value="${c.url}" placeholder="MCP server URL">
         <input class="numfld dir-tok" data-id="${c.id}" type="password" style="width:180px;margin:0;padding:7px 9px" placeholder="token / secret_ref">
-        <button class="qbtn dir-conn" data-id="${c.id}" style="font-weight:700">🔗 เชื่อม API</button>
+        <button class="qbtn dir-conn" data-id="${c.id}" data-ta="${c.token_auth?1:0}" style="font-weight:700">🔗 เชื่อม API</button>
         <a href="${c.get}" target="_blank" rel="noopener" style="font-size:12px;color:#a5b4fc">ขอ token ↗</a>
       </div>
     </div>`;
@@ -2335,6 +2335,10 @@ async function loadDirectory(){
   });
   $("dirList").querySelectorAll(".dir-conn").forEach(b => b.onclick = async () => {
     const id = b.dataset.id;
+    if (b.dataset.ta !== "1"){
+      toastNote("⚠️ " + id + " เชื่อมแบบวาง token (API) ไม่ได้ — ต้องใช้ปุ่ม 🔐 เชื่อมด้วย OAuth", "#f59e0b");
+      return;
+    }
     const url = $("dirList").querySelector(`.dir-url[data-id="${id}"]`).value.trim();
     const token = $("dirList").querySelector(`.dir-tok[data-id="${id}"]`).value.trim();
     const r = await postJSON("/api/mcp/connect", { conn_id: id, url, token });

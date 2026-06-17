@@ -51,7 +51,7 @@ CATALOG = [
         "match": ["developer", "โค้ด", "api", "เว็บ", "แอป", "bug", "issue", "pr"],
     },
     {
-        "id": "github", "name": "GitHub", "emoji": "🐙",
+        "id": "github", "token_auth": True, "name": "GitHub", "emoji": "🐙",
         "url": "https://api.githubcopilot.com/mcp/",
         "desc": "อ่าน/จัดการ repo, PR, issue บน GitHub — รีวิวโค้ดและติดตามงานพัฒนา",
         "get": "https://github.com/settings/tokens",
@@ -72,7 +72,7 @@ CATALOG = [
         "match": ["developer", "bug", "error", "ดีบั๊ก", "api"],
     },
     {
-        "id": "stripe", "name": "Stripe", "emoji": "💳",
+        "id": "stripe", "token_auth": True, "name": "Stripe", "emoji": "💳",
         "url": "https://mcp.stripe.com",
         "desc": "ดูยอดขาย ลูกค้า และการชำระเงินใน Stripe — สรุปรายได้/ธุรกรรม",
         "get": "https://dashboard.stripe.com/apikeys",
@@ -86,7 +86,7 @@ CATALOG = [
         "match": ["admin", "marketing", "ลูกค้า", "แชท", "support", "อีเมล"],
     },
     {
-        "id": "zapier", "name": "Zapier", "emoji": "⚡",
+        "id": "zapier", "token_auth": True, "name": "Zapier", "emoji": "⚡",
         "url": "https://mcp.zapier.com/api/mcp/mcp",
         "desc": "เชื่อมแอปนับพันผ่าน Zapier — ทริกเกอร์ ออโตเมชัน และซิงก์ข้อมูล",
         "get": "https://mcp.zapier.com/",

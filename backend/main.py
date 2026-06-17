@@ -1258,6 +1258,7 @@ async def mcp_directory() -> dict:
             "get": c["get"], "default_url": c["url"],
             "connected": is_conn,
             "oauth": bool(c.get("oauth")),
+            "token_auth": bool(c.get("token_auth")),
             "url": (conn or {}).get("url") or c["url"],
             "agents": [m["name"] for m in matched],
             "matched": matched,
@@ -1271,6 +1272,8 @@ async def mcp_connect(p: dict) -> dict:
     entry = mcp_catalog.CATALOG_BY_ID.get(cid)
     if not entry:
         return {"error": "unknown connector"}
+    if not entry.get("token_auth"):
+        return {"error": "connector นี้เชื่อมแบบวาง token (API) ไม่ได้ — ใช้ปุ่ม 🔐 เชื่อมด้วย OAuth"}
     url = (p.get("url") or "").strip() or entry["url"]
     token = (p.get("token") or "").strip()
     db.connect_mcp(cid, entry["name"], url, token)
