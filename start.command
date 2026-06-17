@@ -22,7 +22,21 @@ if [ -z "$PY" ]; then
   pause_exit 1
 fi
 
-# 1) ตรวจ API key — ถ้ายังไม่ตั้ง ให้พิมพ์ใส่ตรงนี้เลย แล้วไปต่อในรอบเดียว
+# 1) อัปเดตเป็นเวอร์ชันล่าสุดเสมอ — ถ้ามีของใหม่ ให้รันตัวเปิดเวอร์ชันใหม่ทันที
+if [ -d .git ] && [ -z "$AGENTOS_REEXEC" ]; then
+  echo "⬇️  กำลังตรวจอัปเดต..."
+  before="$(git rev-parse HEAD 2>/dev/null)"
+  git pull --ff-only 2>/dev/null || echo "   (ข้ามการอัปเดต — ใช้เวอร์ชันที่มีอยู่)"
+  after="$(git rev-parse HEAD 2>/dev/null)"
+  if [ -n "$after" ] && [ "$before" != "$after" ]; then
+    echo "   อัปเดตเป็นเวอร์ชันล่าสุดแล้ว ✓ (กำลังรีสตาร์ตตัวเปิด)"
+    export AGENTOS_REEXEC=1
+    exec "$0" "$@"     # รันตัวเปิดเวอร์ชันใหม่ที่เพิ่งดึงมา
+  fi
+  echo "   เป็นเวอร์ชันล่าสุดแล้ว ✓"
+fi
+
+# 2) ตรวจ API key — ถ้ายังไม่ตั้ง ให้พิมพ์ใส่ตรงนี้เลย แล้วไปต่อในรอบเดียว
 key_ok() {
   [ -f .env ] || return 1
   local v
@@ -60,12 +74,6 @@ if ! key_ok; then
   esac
 fi
 
-# 2) ดึงโค้ดเวอร์ชันล่าสุด (ถ้าเป็น git repo)
-if [ -d .git ]; then
-  echo "⬇️  กำลังอัปเดตเป็นเวอร์ชันล่าสุด..."
-  git pull --ff-only 2>/dev/null || echo "   (ข้ามการอัปเดต — ใช้เวอร์ชันที่มีอยู่)"
-fi
-
 # 3) ติดตั้งสิ่งที่ต้องใช้ (ครั้งแรกอาจช้าหน่อย) — ถ้าพลาดให้แสดง log จริง
 echo "📦 กำลังตรวจสอบ/ติดตั้งสิ่งที่ต้องใช้..."
 if ! "$PY" -m pip install -q -r requirements.txt; then
@@ -87,13 +95,13 @@ echo "🚀 กำลังเริ่มเซิร์ฟเวอร์ที
 "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port "$PORT" > "$LOG" 2>&1 &
 SERVER_PID=$!
 
-# 6) รอจนเซิร์ฟเวอร์ตอบจริง แล้วค่อยเปิดเบราว์เซอร์ (สูงสุด ~40 วินาที)
+# 6) รอจนเซิร์ฟเวอร์ตอบจริง แล้วเปิดเบราว์เซอร์ให้ทันที (เช็กถี่ทุก 0.5 วิ สูงสุด ~40 วิ)
 echo "⏳ รอเซิร์ฟเวอร์พร้อม..."
 UP=0
-for _ in $(seq 1 40); do
+for _ in $(seq 1 80); do
   kill -0 "$SERVER_PID" 2>/dev/null || break          # เซิร์ฟเวอร์ดับไปแล้ว
-  if curl -s -o /dev/null "$URL"; then UP=1; break; fi  # ตอบแล้ว
-  sleep 1
+  if curl -s -o /dev/null "$URL"; then UP=1; break; fi  # ตอบแล้ว → เปิดทันที
+  sleep 0.5
 done
 
 if [ "$UP" = "1" ]; then
