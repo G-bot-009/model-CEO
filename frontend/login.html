@@ -21,15 +21,16 @@
 <body>
 <div class="relative bg-white text-neutral-900 font-sans selection:bg-[#EAECE9] selection:text-[#1C2E1E] antialiased overflow-hidden min-h-screen">
 
-  <!-- background character video — centered, full screen -->
+  <!-- background character video — shifted to sit centered behind the form -->
   <div class="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-neutral-50">
     <video id="bgvid" muted playsinline preload="auto"
       class="w-full h-full object-cover object-center"
+      style="transform: translateX(-20%) scale(1.25); transform-origin:center;"
       src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260601_110537_3a579fa0-7bbc-4d94-9d25-0e816c7840f5.mp4"></video>
   </div>
 
   <!-- login form — centered, over the character's chest -->
-  <div class="relative z-10 min-h-screen flex items-start justify-center px-6" style="padding-top:46vh">
+  <div class="relative z-10 min-h-screen flex items-start justify-center px-6" style="padding-top:42vh">
     <form id="loginForm" class="drop-in w-full max-w-sm bg-white/85 backdrop-blur-md rounded-2xl shadow-2xl shadow-black/20 p-6">
       <label class="block text-sm font-medium text-[#1C2E1E] mb-1">Username</label>
       <input id="lg_user" autocomplete="username" placeholder="admin"
