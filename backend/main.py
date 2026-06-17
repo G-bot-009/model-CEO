@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 
 from . import db
 from .agents import AGENTS, JARVIS
-from .orchestrator import Orchestrator
+from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
 JARVIS_ROUTINE = (
     "รันรูทีนเช้าของฉันให้ครบ 5 ข้อ แล้วสรุปแบบผู้ช่วยส่วนตัว:\n"
@@ -61,6 +61,7 @@ def usage_payload() -> dict:
 @app.on_event("startup")
 async def _startup() -> None:
     db.init()
+    set_model(db.get_settings().get("model"))  # apply saved model choice
 
 
 @app.get("/")
@@ -198,9 +199,9 @@ async def generate_image(p: dict) -> dict:
     )
     try:
         resp = await _client.messages.create(
-            model="claude-opus-4-8",
+            model=get_model(),
             max_tokens=8000,
-            thinking={"type": "adaptive"},
+            **thinking_kwargs(),
             system=AGENTS[agent].system,
             messages=[{"role": "user", "content": instr}],
         )
@@ -242,6 +243,8 @@ async def get_settings() -> dict:
 @app.post("/api/settings")
 async def post_settings(p: dict) -> dict:
     db.set_settings(p)
+    if p.get("model"):
+        set_model(p["model"])
     return {"ok": True, "settings": db.get_settings()}
 
 
@@ -300,9 +303,9 @@ async def run_jarvis(send, goal: str, client, session_id: int) -> None:
     await send({"type": "jarvis_status", "status": "working"})
     collected: list[str] = []
     async with client.messages.stream(
-        model="claude-opus-4-8",
+        model=get_model(),
         max_tokens=8000,
-        thinking={"type": "adaptive"},
+        **thinking_kwargs(),
         system=JARVIS.system,
         messages=[{"role": "user", "content": goal}],
     ) as stream:

@@ -23,6 +23,19 @@ from .agents import SUB_AGENTS, get_agent
 
 MODEL = "claude-opus-4-8"
 
+def get_model() -> str:
+    return MODEL
+
+def set_model(m: str) -> None:
+    """Switch the model used by all agents (e.g. to Haiku to cut token cost)."""
+    global MODEL
+    if m:
+        MODEL = m
+
+def thinking_kwargs() -> dict:
+    """Adaptive thinking on Opus/Sonnet/Fable; omit on Haiku (not supported)."""
+    return {} if MODEL.startswith("claude-haiku") else {"thinking": {"type": "adaptive"}}
+
 # Emit signature: emit(event_dict) -> awaitable
 Emit = Callable[[dict], Awaitable[None]]
 
@@ -90,7 +103,7 @@ class Orchestrator:
         resp = await self.client.messages.create(
             model=MODEL,
             max_tokens=2000,
-            thinking={"type": "adaptive"},
+            **thinking_kwargs(),
             system=ceo.system,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -116,7 +129,7 @@ class Orchestrator:
         async with self.client.messages.stream(
             model=MODEL,
             max_tokens=4000,
-            thinking={"type": "adaptive"},
+            **thinking_kwargs(),
             system=agent.system,
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
@@ -154,7 +167,7 @@ class Orchestrator:
         async with self.client.messages.stream(
             model=MODEL,
             max_tokens=4000,
-            thinking={"type": "adaptive"},
+            **thinking_kwargs(),
             system=ceo.system,
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
