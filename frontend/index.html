@@ -411,7 +411,6 @@
       <div class="menu-item" data-view="agents"><span class="ico">🧑‍💼</span><span class="label">Agents</span></div>
       <div class="menu-item" data-view="tasks"><span class="ico">📋</span><span class="label">งาน (Tasks)</span></div>
       <div class="menu-item" data-view="connectors"><span class="ico">🔌</span><span class="label">Connectors</span></div>
-      <div class="menu-item" data-view="social"><span class="ico">🌐</span><span class="label">Social</span></div>
       <div class="menu-item" data-view="inbox"><span class="ico">💬</span><span class="label">Social Inbox</span></div>
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
@@ -754,6 +753,7 @@
           <h2 style="margin:0">📥 กล่องโซเชียล</h2>
           <span style="flex:1"></span>
           <button class="qbtn ib-tab active" data-ibtab="main">📥 กล่อง</button>
+          <button class="qbtn ib-tab" data-ibtab="connect">🔗 เชื่อมต่อ</button>
           <button class="qbtn ib-tab" data-ibtab="contacts">👥 ผู้ติดต่อ</button>
           <button class="qbtn ib-tab" data-ibtab="broadcast">📣 บรอดแคสต์</button>
           <button class="qbtn ib-tab" data-ibtab="stats">📊 สถิติ</button>
@@ -780,6 +780,13 @@
             เชื่อมข้อความเข้ากล่องนี้: ตั้งให้ LINE / Make / Zapier ส่ง <b>POST</b> มาที่ <code id="ib_url" style="word-break:break-all">—</code>
             <br>รูปแบบ JSON: <code>{platform, sender, text, kind:"chat"|"comment", thread}</code>
           </div>
+        </div>
+
+        <!-- pane: connect (social OAuth grid) -->
+        <div id="ib_pane_connect" style="display:none">
+          <p style="color:#94a3b8; font-size:13px; margin:0 0 4px">เชื่อมครั้งเดียว — AI โพสต์/อ่าน-ตอบคอมเมนต์/แชตให้ทั้งหมด · เลือกแพลตฟอร์มที่อยากเชื่อม จะกี่อันก็ได้</p>
+          <p style="color:#64748b; font-size:12px; margin:0 0 14px; max-width:640px">ใช้ <b>OAuth จริง (BYO app)</b> — สร้าง OAuth App ในพอร์ทัลของแต่ละแพลตฟอร์ม วาง Client ID/Secret แล้วกดยินยอม (บางแพลตฟอร์มต้องผ่านรีวิวก่อนโพสต์จริงได้)</p>
+          <div class="soc-grid" id="socialGrid"></div>
         </div>
 
         <!-- pane: contacts -->
@@ -833,16 +840,6 @@
         </div>
       </section>
 
-      <!-- SOCIAL CONNECT -->
-      <section class="view" id="view-social">
-        <h2 style="margin:0 0 4px">เชื่อมโซเชียล</h2>
-        <p style="color:#94a3b8; font-size:13px; margin:0 0 6px; max-width:640px">
-          เชื่อมครั้งเดียว — AI โพสต์/อ่าน-ตอบคอมเมนต์/แชตให้ทั้งหมด · เลือกแพลตฟอร์มที่อยากเชื่อม จะกี่อันก็ได้</p>
-        <p style="color:#64748b; font-size:12px; margin:0 0 16px; max-width:640px">
-          ใช้ <b>OAuth จริง (BYO app)</b> — สร้าง OAuth App ในพอร์ทัลของแต่ละแพลตฟอร์มเอง วาง Client ID/Secret แล้วกดยินยอม
-          (บางแพลตฟอร์มต้องผ่านรีวิวก่อนโพสต์จริงได้)</p>
-        <div class="soc-grid" id="socialGrid"></div>
-      </section>
 
       <!-- n8n AUTOMATIONS -->
       <section class="view" id="view-n8n">
@@ -2273,7 +2270,6 @@ function showView(v) {
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
-  if (v === "social") loadSocial();
   if (v === "inbox") loadInbox();
   if (v === "automation") loadAutomation();
   if (v === "tokens") loadTokensRange();
@@ -2679,8 +2675,7 @@ function openSocialConnect(platform, connected){
 window.addEventListener("message", (e) => {
   if (e.data === "social-connected"){
     toastNote("เชื่อมโซเชียลสำเร็จ ✅", "#22c55e");
-    if (document.getElementById("view-social").classList.contains("active")) loadSocial();
-    if (document.getElementById("view-inbox").classList.contains("active")) ibChips();
+    if (document.getElementById("view-inbox").classList.contains("active")) { ibChips(); loadSocial(); }
   }
 });
 
@@ -2690,8 +2685,8 @@ let ibFilter = "all", ibItems = [], ibTab = "main", ibQuick = [];
 function ibSwitch(tab){
   ibTab = tab;
   document.querySelectorAll(".ib-tab").forEach(b => b.classList.toggle("active", b.dataset.ibtab === tab));
-  ["main","contacts","broadcast","stats","auto"].forEach(t => { const el = $("ib_pane_" + t); if (el) el.style.display = (t === tab) ? "" : "none"; });
-  ({ main:loadInbox, contacts:loadContacts, broadcast:loadBroadcast, stats:loadStats, auto:loadAutomation }[tab] || loadInbox)();
+  ["main","connect","contacts","broadcast","stats","auto"].forEach(t => { const el = $("ib_pane_" + t); if (el) el.style.display = (t === tab) ? "" : "none"; });
+  ({ main:loadInbox, connect:loadSocial, contacts:loadContacts, broadcast:loadBroadcast, stats:loadStats, auto:loadAutomation }[tab] || loadInbox)();
 }
 async function ibChips(){
   let social = {}, conn = {};
@@ -2708,7 +2703,7 @@ async function ibChips(){
     defs.map((d, i) => `<button class="qbtn ib-conn" data-i="${i}" style="${d.on ? 'background:#EAF6EE;color:#166534' : ''}">${d.ic} ${d.label} ${d.on ? '✓' : '· เชื่อม'}</button>`).join("") +
     `<button class="qbtn" id="ib_more">＋ เพิ่มเติม</button>`;
   wrap.querySelectorAll(".ib-conn").forEach(b => b.onclick = () => defs[+b.dataset.i].act());
-  $("ib_more").onclick = () => showView("social");
+  $("ib_more").onclick = () => ibSwitch("connect");
 }
 function parseQuick(s){
   return (s || "").split("\n").map(l => l.trim()).filter(Boolean).map(l => {
