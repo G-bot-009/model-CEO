@@ -126,7 +126,7 @@ async def create_agent(p: dict) -> dict:
     chosen = skills.valid_skill_ids(chosen)[:12]   # cap to protect token budget
     # auto-fill skill chips on the card from the first few chosen skills
     if chosen:
-        chip_titles = [skills.skill_meta(c)["title"] for c in chosen[:3]]
+        chip_titles = [skills.skill_meta(c)["th"] for c in chosen[:3]]
         tags = ",".join(chip_titles)
     else:
         tags = ",".join([t.strip() for t in (p.get("tags") or "").split(",") if t.strip()][:3])

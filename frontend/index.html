@@ -1175,36 +1175,36 @@ async function openAddAgent(){
     </div>
     <label>หัวข้อสกิล (เลือกหมวด)</label>
     <select id="na_cat">${catOpts || '<option value="">— ไม่มีสกิล —</option>'}</select>
-    <label>เลือกสกิลให้เอเจนต์ <span id="na_count" style="color:#7c5cff;font-weight:800">(0)</span></label>
-    <input id="na_search" placeholder="🔎 ค้นหาสกิลในหมวดนี้...">
-    <div id="na_skills" style="max-height:260px;overflow:auto;border:1px solid #d6cdbb;border-radius:12px;padding:6px;margin:6px 0 14px;background:#fff"></div>
+    <label>เลือกสกิล (1 ตัวต่อ 1 เอเจนต์ เพื่อความแม่นยำสูงสุด)</label>
+    <select id="na_skill"></select>
+    <div id="na_desc" class="note" style="margin:-6px 0 14px;font-size:12px;display:none"></div>
     <button class="save" id="na_save">บันทึกเอเจนต์</button>`;
-  const sel = new Set();
   function renderSkills(){
     const cat = cats.find(c => c.id === $("na_cat").value);
-    const q = ($("na_search").value || "").toLowerCase();
-    const list = (cat ? cat.skills : []).filter(s =>
-      !q || s.name.toLowerCase().includes(q) || (s.desc || "").toLowerCase().includes(q));
-    $("na_skills").innerHTML = list.map(s => `
-      <label style="display:flex;gap:8px;align-items:flex-start;padding:7px 6px;border-radius:8px;cursor:pointer;color:#1f2937">
-        <input type="checkbox" data-sk="${s.id}" ${sel.has(s.id) ? "checked" : ""} style="width:auto;margin:3px 0 0">
-        <span><b>${s.name}</b><br><span style="font-size:11px;color:#6b7280">${(s.desc || "").slice(0,120)}</span></span>
-      </label>`).join("") || `<div style="color:#9ca3af;padding:10px">ไม่พบสกิล</div>`;
-    $("na_skills").querySelectorAll("[data-sk]").forEach(cb => cb.addEventListener("change", e => {
-      if (e.target.checked) sel.add(e.target.dataset.sk); else sel.delete(e.target.dataset.sk);
-      $("na_count").textContent = `(${sel.size})`;
-    }));
+    const list = cat ? cat.skills : [];
+    $("na_skill").innerHTML = list.length
+      ? list.map(s => `<option value="${s.id}">${s.th || s.name} · ${s.name}</option>`).join("")
+      : `<option value="">— ไม่มีสกิลในหมวดนี้ —</option>`;
+    showDesc();
+  }
+  function showDesc(){
+    const cat = cats.find(c => c.id === $("na_cat").value);
+    const s = (cat ? cat.skills : []).find(x => x.id === $("na_skill").value);
+    const d = $("na_desc");
+    if (s && s.desc) { d.style.display = "block"; d.textContent = s.desc; }
+    else { d.style.display = "none"; }
   }
   $("na_cat").addEventListener("change", renderSkills);
-  $("na_search").addEventListener("input", renderSkills);
+  $("na_skill").addEventListener("change", showDesc);
   renderSkills();
   $("na_save").addEventListener("click", async () => {
     const name = ($("na_name").value || "").trim();
     if (!name) { toastNote("กรุณาใส่ชื่อเอเจนต์", "#ef4444"); return; }
+    const skill = $("na_skill").value;
     const r = await postJSON("/api/agent/create", {
       name, title: ($("na_title").value || "").trim(),
       emoji: ($("na_emoji").value || "").trim(), color: $("na_color").value,
-      category: $("na_cat").value, skills: Array.from(sel),
+      category: $("na_cat").value, skills: skill ? [skill] : [],
     });
     if (r.error) { toastNote(r.error, "#ef4444"); return; }
     closeModal("genModal");

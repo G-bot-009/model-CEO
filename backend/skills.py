@@ -49,11 +49,27 @@ def catalog() -> list[dict]:
     return _catalog()
 
 
+@lru_cache(maxsize=1)
+def _th_index() -> dict:
+    """skill_id -> Thai name, from the catalog."""
+    idx = {}
+    for c in _catalog():
+        for s in c.get("skills", []):
+            if s.get("th"):
+                idx[s["id"]] = s["th"]
+    return idx
+
+
 def skill_meta(skill_id: str) -> dict | None:
     d = _data().get(skill_id)
     if not d:
         return None
-    return {"id": skill_id, "title": d.get("title", skill_id), "desc": d.get("desc", "")}
+    return {
+        "id": skill_id,
+        "title": d.get("title", skill_id),
+        "th": _th_index().get(skill_id, d.get("title", skill_id)),
+        "desc": d.get("desc", ""),
+    }
 
 
 def valid_skill_ids(ids: list[str]) -> list[str]:
