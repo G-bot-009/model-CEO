@@ -100,6 +100,21 @@ def usage_payload() -> dict:
     }
 
 
+def _friendly_err(exc: Exception) -> str:
+    """Turn raw SDK errors into a Thai hint the user can act on."""
+    name = type(exc).__name__
+    s = str(exc)
+    if "authentication" in s.lower() or "invalid x-api-key" in s.lower() or name == "AuthenticationError":
+        return "❌ API key ไม่ถูกต้อง — ใส่ ANTHROPIC_API_KEY ที่ถูกต้องในไฟล์ .env หรือไปผูกคีย์ที่เมนู Admin Usage แล้วลองใหม่"
+    if "credit" in s.lower() or "billing" in s.lower():
+        return "❌ เครดิต/ยอดเงินไม่พอ — เติมเครดิตที่ console.anthropic.com แล้วลองใหม่"
+    if name in ("RateLimitError", "OverloadedError") or "rate" in s.lower() or "overloaded" in s.lower():
+        return "⚠️ ใช้งานถี่เกินไป/ระบบหนาแน่น — รอสักครู่แล้วลองใหม่"
+    if name in ("APIConnectionError", "APITimeoutError") or "connect" in s.lower() or "timeout" in s.lower():
+        return "⚠️ เชื่อมต่อ Anthropic ไม่ได้ — เช็กอินเทอร์เน็ตแล้วลองใหม่"
+    return f"{name}: {s}"
+
+
 def _spend_usd(inp: int, out: int) -> float:
     return inp / 1e6 * PRICING["input_per_mtok_usd"] + out / 1e6 * PRICING["output_per_mtok_usd"]
 
@@ -514,7 +529,7 @@ async def tools_register_ai(p: dict) -> dict:
             system=_REGISTRAR_PROMPT, messages=[{"role": "user", "content": wf[:8000]}])
         text = next((b.text for b in resp.content if b.type == "text"), "{}")
     except Exception as exc:
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"error": _friendly_err(exc)}
     m = re.search(r"\{.*\}", text, re.DOTALL)
     raw = m.group(0) if m else text
     try:
@@ -946,7 +961,7 @@ async def connector_send(p: dict) -> dict:
     try:
         res = await _send_to_connector(name, row.get("config") or "", text)
     except Exception as exc:
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"error": _friendly_err(exc)}
     if res.get("ok"):
         db.add_decision("connector_send", f"{name}: {text[:60]}")
     return res
@@ -1013,7 +1028,7 @@ async def generate_image(p: dict) -> dict:
             messages=[{"role": "user", "content": instr}],
         )
     except Exception as exc:
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"error": _friendly_err(exc)}
     text = next((b.text for b in resp.content if b.type == "text"), "")
     svg = _extract_svg(text)
     if not svg:
@@ -1347,7 +1362,7 @@ async def ws(websocket: WebSocket) -> None:
                         db.cache_set(tkey, agent, task, result)
                     db.add_decision("agent_task", f"{agent}: {task[:80]}")
                 except Exception as exc:
-                    await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+                    await send({"type": "error", "message": _friendly_err(exc)})
                 await send({"type": "done"})
                 await send(usage_payload())
                 continue
@@ -1372,7 +1387,7 @@ async def ws(websocket: WebSocket) -> None:
                     if out:
                         db.cache_set(ckey, "jarvis", jgoal, out)
                 except Exception as exc:
-                    await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+                    await send({"type": "error", "message": _friendly_err(exc)})
                     await send({"type": "jarvis_done"})
                 await send(usage_payload())
                 continue
@@ -1395,7 +1410,7 @@ async def ws(websocket: WebSocket) -> None:
                 await orch.run(goal, recorder, paused=paused_set)
                 db.add_decision("run", goal[:120])
             except Exception as exc:  # surface to the UI rather than dropping the socket
-                await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+                await send({"type": "error", "message": _friendly_err(exc)})
                 await send({"type": "done"})
             # Refresh the session list and usage totals after a run.
             await send({"type": "sessions", "sessions": db.list_sessions()})
