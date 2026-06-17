@@ -212,6 +212,9 @@
   .modal .conn-doc { display:inline-flex; align-items:center; gap:6px; margin-top:12px; background:#E8A33D; color:#3a2a06;
                      font-weight:800; padding:11px 16px; border-radius:12px; text-decoration:none; }
   .modal .conn-doc:hover { filter:brightness(1.04); }
+  .modal .conn-vid { display:inline-flex; align-items:center; gap:6px; margin:10px 0 0 8px; background:#4D6D47; color:#fff;
+                     font-weight:800; padding:11px 16px; border-radius:12px; text-decoration:none; }
+  .modal .conn-vid:hover { filter:brightness(1.06); }
   .modal .conn-note { font-size:12px; color:#6b7280; line-height:1.6; margin:-2px 0 14px; }
 
   /* automation / connectors controls */
@@ -2234,14 +2237,36 @@ const CONN_GUIDE = {
       "วาง Webhook URL ด้านล่าง — เมื่อกด “ส่ง” ที่ผลงานชิ้นใด Make จะส่งต่อให้ทันที (เราส่ง JSON: title, text, caption, imageUrl, mediaUrl)"
     ]
   },
-  "Slack": { field: "Incoming Webhook URL", placeholder: "https://hooks.slack.com/services/...", doc: "https://api.slack.com/messaging/webhooks", docLabel: "เปิดหน้า Slack Webhooks",
-    desc: "ส่งข้อความ/แจ้งเตือนเข้าแชนเนล Slack ของคุณ", steps: ["สร้าง Slack App → เปิด Incoming Webhooks → Add New Webhook to Workspace", "เลือกแชนเนลปลายทาง แล้วคัดลอก Webhook URL", "วาง URL ด้านล่าง"] },
-  "Discord": { field: "Webhook URL", placeholder: "https://discord.com/api/webhooks/...", doc: "https://support.discord.com/hc/en-us/articles/228383668", docLabel: "วิธีสร้าง Discord Webhook",
-    desc: "ส่งข้อความเข้าห้อง Discord", steps: ["ในเซิร์ฟเวอร์ → Server Settings → Integrations → Webhooks → New Webhook", "เลือกห้อง แล้วกด Copy Webhook URL", "วาง URL ด้านล่าง"] },
-  "Telegram": { field: "Bot Token", placeholder: "123456:ABC-DEF...", doc: "https://core.telegram.org/bots/features#botfather", docLabel: "เปิด @BotFather (วิธีสร้างบอท)",
-    desc: "ส่งข้อความผ่านบอท Telegram ของคุณ", steps: ["ทักหา @BotFather ใน Telegram → /newbot → ตั้งชื่อบอท", "คัดลอก Bot Token ที่ได้", "วาง Token ด้านล่าง"] },
-  "LINE OA": { field: "Channel access token", placeholder: "วาง access token", doc: "https://developers.line.biz/console/", docLabel: "เปิด LINE Developers Console",
-    desc: "ส่งข้อความผ่าน LINE Official Account", steps: ["สร้าง Messaging API channel ใน LINE Developers", "ออก Channel access token (long-lived)", "วาง token ด้านล่าง"] },
+  "Slack": { doc: "https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/", docLabel: "เปิด Slack Incoming Webhooks",
+    desc: "โพสต์ผลงานของเอเจนต์เข้าแชนเนล Slack ผ่าน Incoming Webhook",
+    steps: ["เปิดลิงก์ → “Create your Slack app” → From scratch → เลือก workspace ของคุณ",
+            "เปิด “Incoming Webhooks” เป็น ON → “Add New Webhook to Workspace” → เลือกแชนเนล",
+            "คัดลอก Webhook URL (ขึ้นต้น https://hooks.slack.com/...) แล้ววางด้านล่าง"],
+    fields: [{key:"config", label:"Incoming Webhook URL", placeholder:"https://hooks.slack.com/services/..."}] },
+  "Discord": { doc: "https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks", docLabel: "Discord: Intro to Webhooks",
+    desc: "โพสต์เข้าห้อง Discord ผ่าน Webhook URL",
+    steps: ["ในเซิร์ฟเวอร์ Discord: Edit Channel → Integrations → Webhooks → New Webhook",
+            "กด “Copy Webhook URL”",
+            "วางด้านล่าง"],
+    fields: [{key:"config", label:"Webhook URL", placeholder:"https://discord.com/api/webhooks/..."}] },
+  "Telegram": { doc: "https://t.me/BotFather", docLabel: "เปิด @BotFather",
+    desc: "เชื่อมบอท Telegram → เปิดแชตบอตตอบกลับอัตโนมัติ และสั่งงานออฟฟิศจากบอทได้",
+    steps: ["ทักหา @BotFather → ส่ง /newbot → ตั้งชื่อ แล้วคัดลอก Bot Token ที่ได้",
+            "ส่งข้อความอะไรก็ได้หาบอทใหม่ (หรือเพิ่มบอทเข้ากลุ่ม/แชนเนลเป็นแอดมิน)",
+            "หา Chat ID: เปิด https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates แล้วคัดลอกค่า “id” ของแชต",
+            "วางทั้งสองค่าด้านล่าง"],
+    fields: [{key:"bot_token", label:"Bot Token", placeholder:"123456:ABC-..."},
+             {key:"chat_id", label:"Chat ID", placeholder:"-1001234567890"}] },
+  "LINE OA": { doc: "https://developers.line.biz/console/", docLabel: "เปิด LINE Developers Console",
+    video: "https://www.youtube.com/results?search_query=LINE+Messaging+API+webhook+setup", videoLabel: "ดูวิดีโอสอน",
+    desc: "เชื่อม LINE Official Account → บรอดแคสต์จากทีม AI, เปิดแชตบอตตอบกลับลูกค้าอัตโนมัติ และเห็นทุกแชตใน Social Inbox",
+    steps: ["สร้าง (หรือเปิด) Provider → สร้าง channel แบบ “Messaging API” สำหรับ Official Account ของคุณ",
+            "แท็บ “Basic settings”: คัดลอก Channel ID (10 หลัก) และ Channel secret — แค่นี้พอ (ระบบจัดการ access token ให้อัตโนมัติ; จะวาง Channel access token แบบ long-lived ในช่องแรกแทนก็ได้)",
+            "วางทั้งสองค่าด้านล่าง แล้วกด Connect — ระบบจะตั้ง webhook ให้อัตโนมัติ (ไม่ต้องคัดลอก URL)",
+            "สำคัญ — ก่อนบอทจะตอบได้: เปิด LINE Official Account Manager (manager.line.biz) → Settings → Response settings แล้วเปิด “Webhook” เป็น ON และปิด “ข้อความตอบกลับอัตโนมัติ” ของ LINE เอง (ไม่งั้น LINE จะตอบสำเร็จรูปแทน AI ของคุณ)",
+            "เสร็จ — ทุกข้อความลูกค้าจะเข้ามาที่ Social Inbox (เมนู Social) เป็นแชต LINE ตอบได้ในที่เดียว"],
+    fields: [{key:"channel_id", label:"Channel ID (หรือ Channel access token)", placeholder:"Channel ID 10 หลัก จาก Basic settings"},
+             {key:"channel_secret", label:"Channel secret", placeholder:"จาก Basic settings ใต้ Channel ID"}] },
   "Notion": { field: "Internal Integration Token", placeholder: "secret_...", doc: "https://www.notion.so/my-integrations", docLabel: "เปิดหน้า Notion Integrations",
     desc: "อ่าน/เขียนฐานข้อมูลและหน้า Notion", steps: ["สร้าง Integration ใหม่ → คัดลอก Internal Integration Token", "แชร์เพจ/ฐานข้อมูลให้ integration นั้น", "วาง token ด้านล่าง"] },
   "Meta Ads": { field: "Access token", doc: "https://developers.facebook.com/tools/explorer/", docLabel: "เปิด Meta Graph API Explorer", desc: "ดู/จัดการแคมเปญโฆษณา Meta" },
@@ -2264,20 +2289,24 @@ const CONN_GUIDE = {
 function openConnect(name, after){
   const g = CONN_GUIDE[name] || {};
   $("genTitle").textContent = "เชื่อม " + name;
-  const steps = (g.steps && g.steps.length) ? `<ol class="conn-steps">${g.steps.map(s => `<li>${s}</li>`).join("")}</ol>` : "";
+  const steps = (g.steps && g.steps.length) ? `<ol class="conn-steps">${g.steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>` : "";
   const doc = g.doc ? `<a class="conn-doc" href="${g.doc}" target="_blank" rel="noopener">${escapeHtml(g.docLabel || "เปิดหน้าขอคีย์ / เว็บผู้ให้บริการ")} ↗</a>` : "";
+  const vid = g.video ? `<a class="conn-vid" href="${g.video}" target="_blank" rel="noopener">${escapeHtml(g.videoLabel || "ดูวิดีโอสอน")} ▶</a>` : "";
+  const fields = g.fields || [{ key:"config", label:(g.field || "API token / Webhook URL"), placeholder:(g.placeholder || "วางคีย์ / URL ที่นี่") }];
+  const inputs = fields.map((f, i) => `<label>${escapeHtml(f.label)}</label><input id="conn_f${i}" placeholder="${escapeHtml(f.placeholder || "")}">`).join("");
   $("genBody").innerHTML = `
     ${g.desc ? `<p class="conn-desc">${escapeHtml(g.desc)}</p>` : ""}
-    ${(steps || doc) ? `<div class="conn-howto"><div class="conn-howto-h">วิธีขอคีย์ / เชื่อม</div>${steps}${doc}</div>` : ""}
-    <label>${escapeHtml(g.field || "API token / Webhook URL")}</label>
-    <input id="conn_val" placeholder="${escapeHtml(g.placeholder || "วางคีย์ / URL ที่นี่")}">
+    ${(steps || doc || vid) ? `<div class="conn-howto"><div class="conn-howto-h">วิธีขอคีย์ / เชื่อม</div>${steps}${doc}${vid}</div>` : ""}
+    ${inputs}
     <p class="conn-note">นี่คือ<b>บัญชีของคุณเอง</b> — เอเจนต์จะทำงานก็ต่อเมื่อคุณสั่งเท่านั้น ToonOffice แค่รันคำสั่งที่คุณกด ไม่มีอะไรเกิดขึ้นเอง</p>
     <button class="save" id="conn_save">บันทึก / เชื่อม</button>`;
   $("conn_save").addEventListener("click", async () => {
-    const config = ($("conn_val").value || "").trim();
+    let config;
+    if (fields.length === 1 && fields[0].key === "config") config = ($("conn_f0").value || "").trim();
+    else { const o = {}; fields.forEach((f, i) => o[f.key] = ($("conn_f" + i).value || "").trim()); config = JSON.stringify(o); }
     await postJSON("/api/connector", { name, status: "connected", config });
     closeModal("genModal");
-    toastNote(name + " เชื่อมแล้ว — เก็บคีย์ไว้แล้ว (การยิงจริงจะเปิดเมื่อพร้อม)", "#22c55e");
+    toastNote(name + " เชื่อมแล้ว — เก็บคีย์ไว้แล้ว", "#22c55e");
     (after || loadConsole)();
   });
   openModal("genModal");
