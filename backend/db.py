@@ -136,6 +136,9 @@ def init() -> None:
                 task_id TEXT PRIMARY KEY, tool_id TEXT, trace_id TEXT, status TEXT,
                 inputs TEXT, outputs TEXT, error TEXT, created_at TEXT, finished_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS files (
+                id TEXT PRIMARY KEY, name TEXT, mime TEXT, path TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -586,6 +589,18 @@ def list_tool_runs(limit: int = 50) -> list[dict]:
     with _conn() as c:
         rows = c.execute("SELECT * FROM tool_runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- Shared Storage files (file_ref) ----------------------------------------
+def add_file(fid: str, name: str, mime: str, path: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO files (id, name, mime, path, created_at) VALUES (?,?,?,?,?)",
+                  (fid, name, mime, path, _now()))
+
+def get_file(fid: str) -> Optional[dict]:
+    with _conn() as c:
+        r = c.execute("SELECT id, name, mime, path FROM files WHERE id=?", (fid,)).fetchone()
+    return dict(r) if r else None
 
 
 # --- Social Inbox (unified comments/chats) ----------------------------------

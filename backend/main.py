@@ -21,7 +21,7 @@ from typing import Optional
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from . import db
@@ -524,6 +524,35 @@ async def tools_register_ai(p: dict) -> dict:
     return {"ok": True, "entry": entry}
 
 
+SHARED_DIR = Path(__file__).resolve().parent / "shared"
+
+
+@app.post("/api/files/upload")
+async def file_upload(file: UploadFile = File(...), storage: str = "vol") -> dict:
+    """Shared Storage: store the file and return a file_ref (never the binary).
+    Default 'vol' (self-host). gdrive/s3 need configured creds → AUTH_FAILED if missing."""
+    if storage == "gdrive" and not (db.get_social("google") or {}).get("access_token"):
+        return JSONResponse({"error": {"code": "AUTH_FAILED", "message": "ยังไม่ได้เชื่อม Google Drive"}}, status_code=401)
+    if storage == "s3" and not _resolve_secret("S3_BUCKET"):
+        return JSONResponse({"error": {"code": "AUTH_FAILED", "message": "ยังไม่ได้ตั้งค่า S3"}}, status_code=401)
+    SHARED_DIR.mkdir(exist_ok=True)
+    fid = secrets.token_hex(8)
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", file.filename or "file")[:80] or "file"
+    dest = SHARED_DIR / f"{fid}__{safe}"
+    dest.write_bytes(await file.read())
+    mime = file.content_type or "application/octet-stream"
+    db.add_file(fid, file.filename or safe, mime, str(dest))
+    return {"file_ref": f"vol://{fid}", "name": file.filename or safe, "mime": mime}
+
+
+@app.get("/api/files/{fid}")
+async def file_download(fid: str):
+    f = db.get_file(fid)
+    if not f or not Path(f["path"]).exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(f["path"], filename=f["name"], media_type=f["mime"])
+
+
 @app.get("/api/tools")
 async def tools_list() -> dict:
     return {"tools": db.list_tools(), "runs": db.list_tool_runs(40)}
@@ -560,7 +589,10 @@ async def tools_run(p: dict, request: Request) -> dict:
         return {"error": "tool นี้ไม่มี trigger.url"}
     task_id = "tsk_" + secrets.token_hex(8)
     trace_id = "trc_" + secrets.token_hex(8)
-    inputs = p.get("inputs") or {}
+    inputs = dict(p.get("inputs") or {})
+    files = p.get("files") or []
+    if files:                                  # files travel as file_ref only, never binary
+        inputs["files"] = files
     callback_url = str(request.base_url).rstrip("/") + "/api/n8n/callback"
     payload = {
         "task_id": task_id, "trace_id": trace_id, "tool_id": tool["tool_id"],

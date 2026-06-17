@@ -1880,6 +1880,7 @@ async function loadN8n() {
   loadTools();
 }
 /* ---------- Tool Registry (G Office × n8n contract) ---------- */
+let TR_RUNS = [];
 async function loadTools(){
   let d; try { d = await (await fetch("/api/tools")).json(); } catch(e){ return; }
   const tools = d.tools || [];
@@ -1895,28 +1896,76 @@ async function loadTools(){
   $("tr_tools").querySelectorAll("[data-runtool]").forEach(b => b.onclick = () => runTool(b.dataset.runtool, tools.find(t => t.tool_id === b.dataset.runtool)));
   $("tr_tools").querySelectorAll("[data-deltool]").forEach(b => b.onclick = async () => { if (!confirm("ลบ tool นี้?")) return; await postJSON("/api/tools/delete", { tool_id: b.dataset.deltool }); loadTools(); });
   const runs = d.runs || [], cmap = { pending:"#f59e0b", success:"#22c55e", done:"#22c55e", error:"#ef4444", partial:"#a855f7" };
-  $("tr_runs").innerHTML = runs.length ? runs.map(r => `
-    <div style="display:flex; gap:10px; align-items:center; border:1px solid var(--bd,#1e293b); border-radius:10px; padding:8px 10px">
+  TR_RUNS = runs;
+  $("tr_runs").innerHTML = runs.length ? runs.map((r, i) => `
+    <div class="tr-run" data-i="${i}" style="display:flex; gap:10px; align-items:center; border:1px solid var(--bd,#1e293b); border-radius:10px; padding:8px 10px; cursor:pointer">
       <span class="tag" style="background:${cmap[r.status]||'#64748b'}; color:#fff">${r.status}</span>
       <span style="font-size:12px; color:#94a3b8">${escapeHtml(r.tool_id||"")}</span>
       <span style="flex:1"></span>
       <span style="font-size:11px; color:#64748b">${escapeHtml(r.task_id||"")}</span>
     </div>`).join("") : `<div style="color:#64748b">ยังไม่มีการรัน</div>`;
+  $("tr_runs").querySelectorAll(".tr-run").forEach(b => b.onclick = () => showRunDetail(TR_RUNS[+b.dataset.i]));
+}
+function fileHref(ref){
+  if (!ref) return "#";
+  if (ref.startsWith("vol://")) return "/api/files/" + ref.slice(6);
+  if (ref.startsWith("gdrive://")) return "https://drive.google.com/file/d/" + ref.slice(9) + "/view";
+  return "#";
+}
+function fileChips(files){
+  return (files || []).map(f => {
+    const href = fileHref(f.file_ref);
+    return `<a href="${href}" target="_blank" rel="noopener" class="qbtn" style="text-decoration:none; display:inline-flex; gap:6px; margin:4px 6px 0 0">📎 ${escapeHtml(f.name || f.file_ref)}</a>`;
+  }).join("");
+}
+function showRunDetail(r){
+  if (!r) return;
+  let outputs = {}, err = {}, inputs = {};
+  try { outputs = JSON.parse(r.outputs || "{}"); } catch(e){}
+  try { err = JSON.parse(r.error || "{}"); } catch(e){}
+  try { inputs = JSON.parse(r.inputs || "{}"); } catch(e){}
+  const outFiles = outputs.files || [], inFiles = inputs.files || [];
+  showInfo("🏃 " + (r.tool_id || "run"), `
+    <div style="font-size:13px; color:#374151; line-height:1.8">
+      <div><b>task_id:</b> <code>${escapeHtml(r.task_id||"")}</code></div>
+      <div><b>สถานะ:</b> ${escapeHtml(r.status||"")}</div>
+      ${inFiles.length ? `<div style="margin-top:8px"><b>ไฟล์เข้า:</b><br>${fileChips(inFiles)}</div>` : ""}
+      ${outFiles.length ? `<div style="margin-top:8px"><b>ไฟล์ผลลัพธ์ (ดาวน์โหลด):</b><br>${fileChips(outFiles)}</div>` : ""}
+      ${err && err.message ? `<div style="margin-top:8px; color:#b91c1c"><b>error:</b> ${escapeHtml(err.code||"")} — ${escapeHtml(err.message)}</div>` : ""}
+      ${Object.keys(outputs).filter(k=>k!=="files").length ? `<div style="margin-top:8px"><b>outputs:</b><pre style="white-space:pre-wrap; font-size:12px; background:#F4F1E8; padding:10px; border-radius:8px">${escapeHtml(JSON.stringify(Object.fromEntries(Object.entries(outputs).filter(([k])=>k!=="files")), null, 2))}</pre></div>` : ""}
+    </div>`);
 }
 function runTool(id, tool){
   const schema = (tool && tool.input_schema) || {};
-  const fields = Object.keys(schema).map(k => ({ key:k, label:`${k}${schema[k].required?' *':''} — ${schema[k].desc||''}`, type:"input", placeholder:(schema[k].default!=null?String(schema[k].default):"") }));
-  if (!fields.length) fields.push({ key:"_raw", label:"inputs (JSON)", type:"textarea", placeholder:'{"url":"..."}' });
-  openGen("▶️ รัน " + id, fields, async (v) => {
-    let inputs = {};
-    if (v._raw !== undefined){ try { inputs = JSON.parse(v._raw || "{}"); } catch(e){ toastNote("inputs ต้องเป็น JSON", "#ef4444"); return; } }
-    else inputs = v;
+  const keys = Object.keys(schema).filter(k => k !== "files");
+  const fhtml = keys.map(k => `<label>${escapeHtml(k)}${schema[k].required?' *':''} — ${escapeHtml(schema[k].desc||"")}</label><input id="rt_${escapeHtml(k)}" placeholder="${schema[k].default!=null?escapeHtml(String(schema[k].default)):''}">`).join("");
+  $("genTitle").textContent = "▶️ รัน " + id;
+  $("genBody").innerHTML = `
+    ${fhtml || ""}
+    <label>แนบไฟล์ (อัปโหลดเข้า Shared Storage → ส่งเป็น file_ref ไม่ส่งไฟล์ดิบ)</label>
+    <input type="file" id="rt_files" multiple class="numfld">
+    <p style="font-size:11px; color:#64748b; margin:4px 0 12px">ไฟล์จะถูกอ้างด้วย file_ref (vol://…) — n8n อ่านจาก Shared Storage เอง</p>
+    <button class="save" id="rt_go">รัน</button>`;
+  $("rt_go").addEventListener("click", async () => {
+    const inputs = {}; keys.forEach(k => inputs[k] = ($("rt_" + k).value || "").trim());
+    const files = [];
+    const fl = $("rt_files").files;
+    if (fl && fl.length){
+      $("rt_go").textContent = "⏳ อัปโหลดไฟล์...";
+      for (const f of fl){
+        const fd = new FormData(); fd.append("file", f);
+        try { const r = await (await fetch("/api/files/upload", { method:"POST", body:fd })).json();
+          if (r.file_ref) files.push(r); else { toastNote((r.error&&r.error.message)||"อัปโหลดไม่สำเร็จ","#ef4444"); $("rt_go").textContent="รัน"; return; } }
+        catch(e){ toastNote("อัปโหลดไฟล์ไม่สำเร็จ","#ef4444"); $("rt_go").textContent="รัน"; return; }
+      }
+    }
     closeModal("genModal");
-    const r = await postJSON("/api/tools/run", { tool_id:id, inputs });
+    const r = await postJSON("/api/tools/run", { tool_id:id, inputs, files });
     if (r.error || r.status === "error") toastNote(r.message || r.error || "รันไม่สำเร็จ", "#ef4444");
     else toastNote(`สั่งรันแล้ว · ${r.task_id} (${r.status})`, "#22c55e");
     loadTools();
   });
+  openModal("genModal");
 }
 function n8nShow(i) {
   const it = N8N[i]; if (!it) return;
