@@ -745,9 +745,8 @@
 
       <!-- SOCIAL INBOX -->
       <section class="view" id="view-inbox">
-        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px">
           <h2 style="margin:0">📥 กล่องโซเชียล</h2>
-          <span id="ib_chips" style="display:flex; gap:6px; flex-wrap:wrap"></span>
           <span style="flex:1"></span>
           <button class="qbtn ib-tab active" data-ibtab="main">📥 กล่อง</button>
           <button class="qbtn ib-tab" data-ibtab="contacts">👥 ผู้ติดต่อ</button>
@@ -756,6 +755,7 @@
           <button class="qbtn ib-tab" data-ibtab="auto">⚙️ อัตโนมัติ</button>
           <button class="qbtn" id="ib_refresh">🔄 รีเฟรช</button>
         </div>
+        <div id="ib_chips" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px"></div>
 
         <!-- pane: inbox -->
         <div id="ib_pane_main">
@@ -2217,8 +2217,8 @@ function showView(v) {
   if (v === "admin") loadAdmin();
   if (v === "n8n") loadN8n();
   if (v === "settings") initSettingsForm();
-  // เฉพาะ Dashboard ไม่ต้องมีช่องส่งคำสั่งถึง CEO
-  const cb = $("chatbar"); if (cb) cb.style.display = (v === "dashboard") ? "none" : "";
+  // ช่องส่งคำสั่งถึง CEO โผล่เฉพาะ CEO Console และ Jarvis
+  const cb = $("chatbar"); if (cb) cb.style.display = (v === "console" || v === "jarvis") ? "" : "none";
 }
 
 /* ---------- company + agent names (Settings) ---------- */
