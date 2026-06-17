@@ -711,6 +711,15 @@
   </div>
 </div>
 
+<!-- Image lightbox (click an image to view it large) -->
+<div class="modal-overlay" id="imgLightbox" hidden style="z-index:200">
+  <div style="width:min(1150px,96vw); max-height:94vh; overflow:auto; background:#0b1220; border:1px solid #1e293b; border-radius:16px; padding:16px; position:relative">
+    <button id="lbClose" class="qbtn" style="position:absolute; top:12px; right:14px; z-index:2">✕ ปิด</button>
+    <div id="lbTitle" style="color:#fff; font-weight:800; margin:2px 56px 12px 2px"></div>
+    <div id="lbBody" style="background:#fff; border-radius:12px; padding:10px"></div>
+  </div>
+</div>
+
 <div id="toasts"></div>
 
 <script>
@@ -1804,10 +1813,20 @@ function jarvisToggleVoice(){
 }
 
 /* ---------- image studio (SVG) ---------- */
+function openLightbox(svg, title){
+  $("lbTitle").textContent = title || "";
+  $("lbBody").innerHTML = svg;
+  const s = $("lbBody").querySelector("svg");
+  if (s){ s.removeAttribute("width"); s.removeAttribute("height"); s.style.width = "100%"; s.style.height = "auto"; s.style.display = "block"; }
+  $("imgLightbox").hidden = false;
+}
 function imgCard(svg, prompt, size){
   const c = document.createElement("div"); c.className = "img-card";
-  c.innerHTML = `<div class="img-wrap">${svg}</div><div class="img-cap">${prompt} · ${size}</div>`;
-  c.addEventListener("click", () => genImage(prompt, size));
+  c.innerHTML = `<div class="img-wrap" title="คลิกเพื่อดูภาพใหญ่" style="cursor:zoom-in">${svg}</div>
+    <div class="img-cap">${prompt} · ${size} · <span class="img-regen" style="color:#a5b4fc;cursor:pointer">🔄 สร้างใหม่</span></div>`;
+  c.querySelector(".img-wrap").addEventListener("click", () => openLightbox(svg, prompt));
+  const rg = c.querySelector(".img-regen");
+  if (rg) rg.addEventListener("click", (e) => { e.stopPropagation(); genImage(prompt, size); });
   return c;
 }
 async function genImage(prompt, size){
@@ -2132,6 +2151,11 @@ $("tk_savebudget").addEventListener("click", async () => {
 /* admin usage: keys + assignment */
 $("adm_addkey").addEventListener("click", openAddKey);
 $("adm_period").addEventListener("change", loadAdminUsage);
+
+/* image lightbox close: ✕ / คลิกพื้นหลัง / Esc */
+$("lbClose").addEventListener("click", () => $("imgLightbox").hidden = true);
+$("imgLightbox").addEventListener("click", (e) => { if (e.target.id === "imgLightbox") $("imgLightbox").hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("imgLightbox").hidden = true; });
 
 /* n8n automations: search suggestions + dropdown + how-to diagram */
 $("n8n_search").addEventListener("input", n8nSuggest);
