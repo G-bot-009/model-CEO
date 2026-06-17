@@ -429,8 +429,7 @@
       <span class="burger" id="burger">☰</span>
       <span class="top-title" id="topTitle">Dashboard</span>
       <div style="flex:1"></div>
-      <div class="pill" title="โทเค็นที่ใช้วันนี้">🪙 <span id="tokTotal">0</span><small>tokens</small></div>
-      <div class="pill" title="ค่าใช้จ่ายวันนี้">💵 $<span id="costUsd">0.00</span></div>
+      <span id="tokTotal" hidden></span><span id="costUsd" hidden></span>
       <div class="pill"><span class="conn-dot" id="connDot"></span><span id="clock">--:--:--</span></div>
       <div class="icon-btn" id="bell">🔔<span class="badge" id="bellBadge" style="display:none">0</span></div>
       <div class="icon-btn" id="themeToggle" title="สลับโหมดกลางวัน/กลางคืน">🌙</div>
@@ -2217,8 +2216,8 @@ function showView(v) {
   if (v === "admin") loadAdmin();
   if (v === "n8n") loadN8n();
   if (v === "settings") initSettingsForm();
-  // ช่องส่งคำสั่งถึง CEO โผล่เฉพาะ CEO Console และ Jarvis
-  const cb = $("chatbar"); if (cb) cb.style.display = (v === "console" || v === "jarvis") ? "" : "none";
+  // ช่องส่งคำสั่งถึง CEO โผล่ที่ Dashboard, CEO Console และ Jarvis
+  const cb = $("chatbar"); if (cb) cb.style.display = (v === "dashboard" || v === "console" || v === "jarvis") ? "" : "none";
 }
 
 /* ---------- company + agent names (Settings) ---------- */
@@ -3014,7 +3013,7 @@ setInterval(checkSchedule, 30000);
 setTimeout(checkSchedule, 2500);
 
 loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); refreshPause(); });
-$("chatbar").style.display = "none";   // เริ่มที่ Dashboard — ไม่ต้องมีช่องคำสั่ง
+$("chatbar").style.display = "";   // เริ่มที่ Dashboard — แสดงช่องคำสั่ง CEO
 </script>
 </body>
 </html>
