@@ -2348,11 +2348,15 @@ async function loadConnectors(){
     names.forEach(n => {
       const isOn = conn[n] === "connected";
       const g = CONN_GUIDE[n] || {};
+      const canSend = isOn && CONN_SENDABLE.has(n);
       html += `<div class="conn-card">
         <div class="cc-ic" style="background:${CONN_COLOR[n] || '#7c5cff'}">${CONN_ICON[n] || '•'}</div>
         <div class="cc-bd"><div class="cc-ti">${escapeHtml(n)}${isOn ? '<span class="cc-on">· เชื่อมแล้ว</span>' : ''}</div>
           <div class="cc-ds">${escapeHtml(g.desc || 'เชื่อมบัญชีของคุณเพื่อให้ทีม AI ใช้งาน')}</div></div>
-        <button class="conn-cta ${isOn ? 'off' : ''}" data-c="${escapeHtml(n)}" data-on="${isOn ? 1 : 0}">${isOn ? 'Disconnect' : 'Connect'}</button>
+        <div style="display:flex; gap:8px; flex:0 0 auto; align-items:center">
+          ${canSend ? `<button class="conn-cta" data-test="${escapeHtml(n)}">ส่งทดสอบ</button>` : ''}
+          <button class="conn-cta ${isOn ? 'off' : ''}" data-c="${escapeHtml(n)}" data-on="${isOn ? 1 : 0}">${isOn ? 'Disconnect' : 'Connect'}</button>
+        </div>
       </div>`;
     });
   });
@@ -2370,15 +2374,25 @@ async function loadConnectors(){
     if (b.dataset.on === "1") disconnectConnector(b.dataset.c);
     else openConnect(b.dataset.c, loadConnectors);
   });
+  $("connGrid").querySelectorAll("[data-test]").forEach(b => b.onclick = () => sendTest(b.dataset.test));
   $("inboundBtn").onclick = enableInbound;
   try {
     const inb = await (await fetch("/api/inbound")).json();
     if (inb && inb.enabled) showInbound(inb.path);
   } catch(e){}
 }
+/* connectors ที่ "ส่งจริง" ได้แล้ว (webhook ตรง ไม่ต้อง OAuth) */
+const CONN_SENDABLE = new Set(["Slack", "Discord", "Telegram", "Webhook → Make/Zapier"]);
 async function disconnectConnector(name){
   await postJSON("/api/connector", { name, status: "disconnected", config: "" });
   toastNote(name + " ตัดการเชื่อมแล้ว", "#a855f7"); loadConnectors();
+}
+async function sendTest(name){
+  toastNote("กำลังส่งทดสอบไป " + name + "…", "#7c5cff");
+  let r; try { r = await postJSON("/api/connector/send", { name, text: "🔔 ทดสอบจาก ToonOffice — เชื่อมต่อสำเร็จ!" }); }
+  catch(e){ r = { error: "ส่งไม่สำเร็จ" }; }
+  if (r && r.ok) toastNote(name + ": ส่งสำเร็จ ✅ ไปเช็กที่แชนเนล/แชตได้เลย", "#22c55e");
+  else toastNote(name + ": " + (r && r.error || "ส่งไม่สำเร็จ"), "#ef4444");
 }
 function showInbound(path){
   const f = $("inboundUrl"); if (!f) return;

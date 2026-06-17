@@ -468,6 +468,11 @@ def list_connectors() -> dict:
     with _conn() as c:
         return {r["name"]: r["status"] for r in c.execute("SELECT name, status FROM connectors").fetchall()}
 
+def get_connector(name: str) -> Optional[dict]:
+    with _conn() as c:
+        r = c.execute("SELECT status, config FROM connectors WHERE name=?", (name,)).fetchone()
+    return dict(r) if r else None
+
 
 # --- Custom agents (user-created, add/remove from the dashboard) -------------
 def add_custom_agent(aid: str, name: str, title: str, emoji: str, color: str, tags: str,

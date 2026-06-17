@@ -382,6 +382,51 @@ async def api_connector(p: dict) -> dict:
     return {"ok": True, "connectors": db.list_connectors()}
 
 
+async def _send_to_connector(name: str, cfg_raw: str, text: str) -> dict:
+    """Real outbound for webhook-based connectors (no OAuth needed)."""
+    import httpx
+    data = None
+    try:
+        data = json.loads(cfg_raw)
+    except Exception:
+        data = None
+    cfg = (cfg_raw or "").strip()
+    async with httpx.AsyncClient(timeout=15) as client:
+        if name == "Slack":
+            r = await client.post(cfg, json={"text": text})
+        elif name == "Discord":
+            r = await client.post(cfg, json={"content": text})
+        elif name == "Telegram":
+            d = data or {}
+            tok, chat = d.get("bot_token", ""), d.get("chat_id", "")
+            if not tok or not chat:
+                return {"error": "ต้องมี Bot Token และ Chat ID — เชื่อมใหม่อีกครั้ง"}
+            r = await client.post(f"https://api.telegram.org/bot{tok}/sendMessage", json={"chat_id": chat, "text": text})
+        elif name == "Webhook → Make/Zapier":
+            r = await client.post(cfg, json={"title": "ToonOffice", "text": text, "caption": text, "imageUrl": "", "mediaUrl": ""})
+        else:
+            return {"error": f"{name} ยังไม่รองรับการส่งจริงในตอนนี้ (เก็บคีย์ไว้แล้ว — ส่วนใหญ่ต้องใช้ OAuth)"}
+        if r.status_code >= 400:
+            return {"error": f"{name} ตอบกลับ {r.status_code}: {r.text[:180]}"}
+    return {"ok": True}
+
+
+@app.post("/api/connector/send")
+async def connector_send(p: dict) -> dict:
+    name = (p.get("name") or "").strip()
+    text = (p.get("text") or "🔔 ทดสอบจาก ToonOffice — เชื่อมต่อสำเร็จ!").strip()
+    row = db.get_connector(name)
+    if not row or row.get("status") != "connected":
+        return {"error": "ยังไม่ได้เชื่อม connector นี้"}
+    try:
+        res = await _send_to_connector(name, row.get("config") or "", text)
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    if res.get("ok"):
+        db.add_decision("connector_send", f"{name}: {text[:60]}")
+    return res
+
+
 @app.get("/api/agent/{agent_id}")
 async def agent_detail(agent_id: str, period: str = "day") -> dict:
     _ag = all_agents()
