@@ -22,16 +22,42 @@ if [ -z "$PY" ]; then
   pause_exit 1
 fi
 
-# 1) ครั้งแรก: เตรียมไฟล์ .env และให้ผู้ใช้ใส่ API key
-if [ ! -f .env ] || grep -q 'ANTHROPIC_API_KEY=sk-ant-\.\.\.' .env; then
-  [ -f .env ] || cp .env.example .env
-  echo "⚠️  ยังไม่ได้ตั้งค่า API key"
-  echo "    กำลังเปิดไฟล์ .env ให้ใส่คีย์..."
-  echo "    1) วาง ANTHROPIC_API_KEY ของคุณต่อท้ายเครื่องหมาย ="
-  echo "    2) กด Command(⌘)+S เพื่อบันทึก แล้วปิดหน้าต่าง"
-  echo "    3) ดับเบิลคลิกไฟล์ start.command นี้อีกครั้ง"
-  open -e .env
-  pause_exit 0
+# 1) ตรวจ API key — ถ้ายังไม่ตั้ง ให้พิมพ์ใส่ตรงนี้เลย แล้วไปต่อในรอบเดียว
+key_ok() {
+  [ -f .env ] || return 1
+  local v
+  v="$(grep -E '^ANTHROPIC_API_KEY=' .env | head -1 | cut -d= -f2- | tr -d ' \r\"')"
+  case "$v" in
+    sk-ant-...*|"") return 1 ;;   # ค่าตัวอย่าง/ว่าง = ยังไม่ตั้ง
+    sk-ant-*)      return 0 ;;    # คีย์จริง
+    *)             return 1 ;;
+  esac
+}
+
+if ! key_ok; then
+  echo "🔑 ยังไม่ได้ตั้งค่า ANTHROPIC API KEY"
+  echo "   หาคีย์ได้ที่:  https://console.anthropic.com/settings/keys"
+  echo "   (คีย์ขึ้นต้นด้วย sk-ant-... — เก็บในเครื่องนี้เท่านั้น ไม่ส่งไปไหน)"
+  echo ""
+  read -r -p "วางคีย์แล้วกด Enter: " NEWKEY
+  NEWKEY="$(printf '%s' "$NEWKEY" | tr -d ' \r\"')"
+  case "$NEWKEY" in
+    sk-ant-*)
+      [ -f .env ] || cp .env.example .env 2>/dev/null || touch .env
+      grep -v '^ANTHROPIC_API_KEY=' .env > .env.tmp 2>/dev/null || : > .env.tmp
+      echo "ANTHROPIC_API_KEY=$NEWKEY" >> .env.tmp
+      mv .env.tmp .env
+      echo "✅ บันทึกคีย์แล้ว — เริ่มเซิร์ฟเวอร์ต่อเลย"
+      echo ""
+      ;;
+    *)
+      echo "❌ คีย์ต้องขึ้นต้นด้วย sk-ant- — ยังไม่ได้บันทึก"
+      echo "   เปิดไฟล์ .env ให้แก้เองแทน แล้วดับเบิลคลิก start.command อีกครั้ง"
+      [ -f .env ] || cp .env.example .env 2>/dev/null
+      open -e .env
+      pause_exit 1
+      ;;
+  esac
 fi
 
 # 2) ดึงโค้ดเวอร์ชันล่าสุด (ถ้าเป็น git repo)
