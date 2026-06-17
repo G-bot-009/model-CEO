@@ -580,7 +580,11 @@
 
       <!-- TASKS -->
       <section class="view" id="view-tasks">
-        <h2 style="color:#fff; margin:0 0 14px">งานในเซสชันนี้</h2>
+        <div style="display:flex; align-items:center; gap:10px; margin:0 0 14px">
+          <h2 style="margin:0">งานในเซสชันนี้</h2>
+          <span style="flex:1"></span>
+          <button class="qbtn" id="clearTasks">🗑️ ล้างงานทั้งหมด</button>
+        </div>
         <div class="card" style="padding:14px"><div id="tasksBody" style="display:flex; flex-direction:column; gap:10px;"></div></div>
       </section>
 
@@ -2904,6 +2908,11 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("imgLigh
   const t = todayStr();
   ["tk_from","tk_to","hist_from","hist_to"].forEach(id => { const el = $(id); if (el && !el.value) el.value = t; });
 })();
+$("clearTasks").addEventListener("click", () => {
+  if (!confirm("ล้างงานทั้งหมดในเซสชันนี้?")) return;
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "clear_tasks" }));
+  toastNote("ล้างงานแล้ว", "#a855f7");
+});
 $("hist_apply").addEventListener("click", () => {
   const f = $("hist_from").value, to = $("hist_to").value;
   if (!f || !to) { toastNote("เลือกวันเริ่มและวันสิ้นสุดก่อน", "#ef4444"); return; }

@@ -1083,6 +1083,11 @@ async def ws(websocket: WebSocket) -> None:
                     await send_session_state({"id": sid, "name": name})
                 continue
 
+            if action == "clear_tasks":
+                db.clear_tasks(current_id)
+                await send({"type": "history", **db.get_history(current_id)})
+                continue
+
             if action == "delete_session":
                 sid = msg.get("id")
                 if sid:

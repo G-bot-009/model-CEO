@@ -221,6 +221,11 @@ def create_task(session_id: int, agent_name: str, task: str) -> int:
         return cur.lastrowid
 
 
+def clear_tasks(session_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM tasks WHERE session_id=?", (session_id,))
+
+
 def update_task(task_id: int, status: Optional[str] = None, result: Optional[str] = None) -> None:
     with _conn() as c:
         if status is not None:

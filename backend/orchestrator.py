@@ -107,8 +107,9 @@ class Orchestrator:
             f"Available specialists:\n{roster}\n\n"
             "Assign 2-5 focused sub-tasks to the specialists best suited to them.\n\n"
             "Respond with ONLY a JSON object and no other text, in this exact shape:\n"
-            '{"subtasks": [{"agent": "<id>", "task": "<what to do>"}]}\n'
-            f'where "agent" is one of: {valid}.'
+            '{"subtasks": [{"agent": "<id>", "task": "<สิ่งที่ต้องทำ — เขียนเป็นภาษาไทย>"}]}\n'
+            f'where "agent" is one of: {valid}. '
+            'IMPORTANT: เขียนข้อความใน "task" เป็นภาษาไทยที่กระชับ เข้าใจง่าย (ชื่อเฉพาะ/โค้ดคงภาษาเดิมได้).'
         )
 
         resp = await self.client_for("ceo").messages.create(
