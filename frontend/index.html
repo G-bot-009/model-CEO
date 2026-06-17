@@ -272,6 +272,7 @@
       <div class="menu-item" data-view="tasks"><span class="ico">📋</span><span class="label">Tasks</span></div>
       <div class="menu-item" data-view="connectors"><span class="ico">🔌</span><span class="label">Connectors</span></div>
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
+      <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
       <div class="menu-item" data-view="admin"><span class="ico">🔑</span><span class="label">Admin Usage</span></div>
@@ -582,6 +583,37 @@
             <option value="30d" selected>1 เดือน</option>
           </select></h3>
           <div id="adm_bykey" style="display:flex; flex-direction:column; gap:10px"></div>
+        </div>
+      </section>
+
+      <!-- n8n AUTOMATIONS -->
+      <section class="view" id="view-n8n">
+        <h2 style="color:#fff; margin:0 0 4px">🔄 n8n Automations</h2>
+        <p style="color:#94a3b8; font-size:13px; margin:0 0 16px">
+          คลังเวิร์กโฟลว์ n8n พร้อมใช้ — <b id="n8n_count" style="color:#cbd5e1">0</b> รายการ
+          (แสดงเฉพาะอันที่มีลิงก์ดาวน์โหลด) · ค้นหา / เลือกจากรายการ แล้วกดแปลงเป็นภาพอธิบายวิธีทำได้
+        </p>
+
+        <div class="panel">
+          <h3>🔎 ค้นหา / เลือกเวิร์กโฟลว์</h3>
+          <div style="position:relative; max-width:640px">
+            <input id="n8n_search" class="numfld" style="margin:0" placeholder="พิมพ์ชื่อที่ต้องการ เช่น Telegram, OpenAI, โพสต์..." autocomplete="off">
+            <div id="n8n_sugg" style="display:none; position:absolute; left:0; right:0; top:46px; z-index:30; background:#0f1b33; border:1px solid #334155; border-radius:10px; max-height:280px; overflow:auto; box-shadow:0 18px 40px rgba(0,0,0,.5)"></div>
+          </div>
+          <div style="margin-top:12px">
+            <label style="font-size:12px; color:#94a3b8">หรือเลือกจากรายการทั้งหมด</label>
+            <select id="n8n_select" class="numfld" style="margin-top:6px; max-width:640px"></select>
+          </div>
+        </div>
+
+        <div class="panel" id="n8n_detail" style="display:none">
+          <h3 id="n8n_name" style="display:block">—</h3>
+          <div id="n8n_desc" style="color:#cbd5e1; font-size:14px; line-height:1.7; white-space:pre-wrap; margin-bottom:14px"></div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap">
+            <a id="n8n_dl" class="send" href="#" target="_blank" rel="noopener" style="text-decoration:none; padding:11px 22px">⬇️ ดาวน์โหลดเวิร์กโฟลว์</a>
+            <button class="qbtn" id="n8n_diagram" style="font-weight:700">🖼️ แปลงเป็นภาพอธิบายวิธีทำ</button>
+          </div>
+          <div id="n8n_img" style="margin-top:14px"></div>
         </div>
       </section>
 
@@ -1506,6 +1538,68 @@ async function delAdminKey(id) {
   if (r.error) { toastNote(r.error, "#ef4444"); return; }
   toastNote("ลบ key แล้ว", "#a855f7"); loadAdmin();
 }
+
+/* ---------- n8n Automations (catalog + search + how-to diagram) ---------- */
+let N8N = [];
+async function loadN8n() {
+  if (N8N.length === 0) {
+    try { N8N = (await (await fetch("/api/n8n")).json()).items || []; } catch(e){ N8N = []; }
+    $("n8n_count").textContent = fmt(N8N.length);
+    // populate the full dropdown once
+    const sel = $("n8n_select");
+    sel.innerHTML = `<option value="">— เลือกเวิร์กโฟลว์ —</option>` +
+      N8N.map((it, i) => `<option value="${i}">${escapeHtml(it.name)}</option>`).join("");
+  }
+}
+function n8nShow(i) {
+  const it = N8N[i]; if (!it) return;
+  $("n8n_detail").style.display = "block";
+  $("n8n_name").textContent = it.name;
+  $("n8n_desc").textContent = it.desc || "(ไม่มีคำอธิบาย)";
+  $("n8n_dl").href = it.url;
+  $("n8n_img").innerHTML = "";
+  $("n8n_select").value = String(i);
+  $("n8n_diagram").dataset.idx = String(i);
+  $("n8n_detail").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function n8nSuggest() {
+  const q = ($("n8n_search").value || "").trim().toLowerCase();
+  const box = $("n8n_sugg");
+  if (!q) { box.style.display = "none"; return; }
+  // close matches: names starting with the query rank first, then containing it
+  const starts = [], has = [];
+  for (let i = 0; i < N8N.length; i++) {
+    const nm = N8N[i].name.toLowerCase();
+    if (nm.startsWith(q)) starts.push(i);
+    else if (nm.includes(q)) has.push(i);
+    if (starts.length + has.length >= 60) break;
+  }
+  const hits = starts.concat(has).slice(0, 12);
+  if (!hits.length) { box.innerHTML = `<div style="padding:10px 12px; color:#64748b">ไม่พบชื่อที่ใกล้เคียง</div>`; box.style.display = "block"; return; }
+  const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
+  box.innerHTML = hits.map(i => {
+    const hl = escapeHtml(N8N[i].name).replace(re, "<b style='color:#a5b4fc'>$1</b>");
+    return `<div class="n8n-opt" data-idx="${i}" style="padding:9px 12px; cursor:pointer; border-bottom:1px solid #1e293b; color:#cbd5e1; font-size:13px">${hl}</div>`;
+  }).join("");
+  box.style.display = "block";
+  box.querySelectorAll(".n8n-opt").forEach(o => {
+    o.addEventListener("mousedown", (e) => { e.preventDefault(); n8nShow(+o.dataset.idx); box.style.display = "none"; $("n8n_search").value = N8N[+o.dataset.idx].name; });
+    o.addEventListener("mouseenter", () => o.style.background = "#1b2742");
+    o.addEventListener("mouseleave", () => o.style.background = "");
+  });
+}
+async function n8nDiagram() {
+  const i = +($("n8n_diagram").dataset.idx || -1);
+  const it = N8N[i]; if (!it) return;
+  const box = $("n8n_img");
+  box.innerHTML = `<div style="color:#94a3b8">⏳ กำลังสร้างภาพอธิบายขั้นตอน... (ใช้ AI วาด flowchart)</div>`;
+  const prompt = `สร้างไดอะแกรม flowchart แนวนอนอธิบายขั้นตอนการทำงานของ n8n workflow นี้ ให้เห็นเป็นบล็อกขั้นตอน (trigger → ประมวลผล → ผลลัพธ์) เรียงต่อกันด้วยลูกศร พร้อมป้ายข้อความสั้นๆ ภาษาไทยในแต่ละบล็อก ทำให้ดูเข้าใจง่ายว่าทำงานยังไง\n\nชื่อ: ${it.name}\nรายละเอียด: ${it.desc}`;
+  try {
+    const r = await postJSON("/api/generate-image", { agent: "ops_bot", prompt, size: "1024x576" });
+    if (r.error) { box.innerHTML = `<div style="color:#fca5a5">${escapeHtml(r.error)}</div>`; return; }
+    box.innerHTML = ""; box.appendChild(imgCard(r.svg, "วิธีทำ: " + it.name, r.size));
+  } catch(e) { box.innerHTML = `<div style="color:#fca5a5">สร้างภาพไม่สำเร็จ ลองใหม่อีกครั้ง</div>`; }
+}
 function setUsage(p) {
   usage = p.today && p.today.per_agent ? p.today : { per_agent:{}, input:0, output:0 };
   if (!usage.per_agent) usage.per_agent = {};
@@ -1761,13 +1855,14 @@ function send(text) {
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", admin:"Admin Usage", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
   if (v === "automation") loadAutomation();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
+  if (v === "n8n") loadN8n();
   if (v === "settings") initSettingsForm();
 }
 
@@ -2037,6 +2132,13 @@ $("tk_savebudget").addEventListener("click", async () => {
 /* admin usage: keys + assignment */
 $("adm_addkey").addEventListener("click", openAddKey);
 $("adm_period").addEventListener("change", loadAdminUsage);
+
+/* n8n automations: search suggestions + dropdown + how-to diagram */
+$("n8n_search").addEventListener("input", n8nSuggest);
+$("n8n_search").addEventListener("focus", n8nSuggest);
+$("n8n_search").addEventListener("blur", () => setTimeout(() => $("n8n_sugg").style.display = "none", 150));
+$("n8n_select").addEventListener("change", (e) => { if (e.target.value !== "") n8nShow(+e.target.value); });
+$("n8n_diagram").addEventListener("click", n8nDiagram);
 
 /* console add buttons */
 $("addSop").addEventListener("click", () => openGen("เพิ่ม SOP",

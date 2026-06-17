@@ -10,8 +10,10 @@ Requires:  ANTHROPIC_API_KEY in the environment (or a .env file).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import date, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -398,6 +400,23 @@ async def post_settings(p: dict) -> dict:
     if p.get("model"):
         set_model(p["model"])
     return {"ok": True, "settings": db.get_settings()}
+
+
+@lru_cache(maxsize=1)
+def _n8n_data() -> list:
+    p = Path(__file__).resolve().parent / "n8n" / "automations.json"
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+@app.get("/api/n8n")
+async def n8n_list() -> dict:
+    """n8n automation catalog (only entries that have a download link)."""
+    return {"items": _n8n_data()}
 
 
 @app.get("/api/cache")
