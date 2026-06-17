@@ -532,6 +532,7 @@ async def list_agents() -> dict:
                 "custom": a.id.startswith("x_"),
                 "category": a.category,
                 "skills": list(a.skills),
+                "desc": a.desc or a.title,
             }
             for a in all_agents().values()
         ]
@@ -800,6 +801,7 @@ async def agent_detail(agent_id: str, period: str = "day") -> dict:
         "id": agent_id,
         "name": s.get(f"agent_name_{agent_id}") or a.name,
         "title": a.title,
+        "desc": a.desc or a.title,
         "emoji": a.emoji,
         "period": period,
         "summary": db.agent_summary(agent_id, period),

@@ -23,6 +23,7 @@ class Agent:
     color: str = ""  # accent color (set for custom agents; built-ins use the UI map)
     category: str = ""      # skill category id (custom agents only)
     skills: tuple = ()      # selected skill ids (custom agents only)
+    desc: str = ""          # 1-line Thai description shown in the UI
 
 
 _SPECIALIST_FOOTER = """
@@ -46,6 +47,7 @@ CEO = Agent(
     id="ceo",
     name="Mochi",
     title="CEO — รับคำสั่ง วางแผน มอบหมายงาน",
+    desc="หัวหน้าทีม AI — รับโจทย์จากคุณ แตกเป็นงานย่อย มอบหมายให้ผู้เชี่ยวชาญ แล้วสรุปผลรวมให้",
     emoji="🧠",
     tags=("วางแผน", "มอบหมาย", "สรุปผล"),
     system="""You are Mochi, the CEO of an autonomous AI company. You coordinate a
@@ -147,6 +149,7 @@ _AGENTS: list[Agent] = [
         id="developer",
         name="Developer",
         title="เขียนโค้ด ดีบั๊ก รีวิว PR",
+        desc="วิศวกรซอฟต์แวร์ — เปลี่ยนโจทย์เป็นแผนเทคนิคและโค้ดที่รันได้จริง รีวิวหาบั๊ก ไม่มั่ว API",
         emoji="💻",
         tags=("PR / commits", "API", "เว็บ/แอป"),
         system="""You are a pragmatic Senior Software Engineer. You turn
@@ -159,6 +162,7 @@ and never invent APIs."""
         id="content",
         name="Content",
         title="ตัดวิดีโอ ทำคลิปสั้น โพสต์",
+        desc="ครีเอเตอร์คลิปสั้น — วางสคริปต์ Reels/TikTok เขียนฮุกและแคปชั่น เสนอมุมโพสต์ที่คนดูเยอะ",
         emoji="🎬",
         tags=("วิดีโอ", "Reels/TikTok", "แคปชั่น"),
         system="""You are a short-form Content Creator. You plan and script
@@ -171,6 +175,7 @@ caption copy."""
         id="trader",
         name="Trader",
         title="รันบอท เทรด ดูพอร์ต",
+        desc="นักวิเคราะห์เทรด — อ่านตลาด สรุป PnL อธิบายกลยุทธ์/ความเสี่ยง (ให้สัญญาณ ไม่เทรดจริงแทนคุณ)",
         emoji="📈",
         tags=("บอทเทรด", "รายงาน PnL", "สัญญาณ"),
         system="""You are a disciplined Trading Analyst. You analyze markets,
@@ -183,6 +188,7 @@ place real trades — you produce analysis and clearly-labeled signals."""
         id="marketing",
         name="Marketing",
         title="ยิงแอด วางแคมเปญ",
+        desc="นักการตลาดสายยิงแอด — ออกแบบแคมเปญ/กลุ่มเป้าหมาย/ฟันเนล เขียนคำโฆษณา แนะนำงบและ KPI",
         emoji="📣",
         tags=("Ad set", "Landing", "อีเมล"),
         system="""You are a performance Marketer. You design ad campaigns,
@@ -195,6 +201,7 @@ week."""
         id="designer",
         name="Designer",
         title="ทำกราฟิก thumbnail แบรนด์",
+        desc="ดีไซเนอร์แบรนด์ — กำหนดทิศทางภาพ (สี/ฟอนต์/เลย์เอาต์) ออกแบบ thumbnail โลโก้ แบนเนอร์ ให้ตรงแบรนด์",
         emoji="🎨",
         tags=("Thumbnail", "โลโก้", "แบนเนอร์"),
         system="""You are a Brand & Graphic Designer. You define visual direction
@@ -207,6 +214,7 @@ specifications."""
         id="research",
         name="Research",
         title="สรุปข้อมูล วิเคราะห์",
+        desc="นักวิจัย/วิเคราะห์ — ค้นคว้าอย่างเป็นระบบ แยกข้อเท็จจริงกับสมมติฐาน สรุปประเด็นสำคัญเป็นรายงาน/ตาราง",
         emoji="🔬",
         tags=("สรุป", "รีพอร์ต", "ตาราง"),
         system="""You are a Senior Research Analyst. You investigate questions
@@ -219,6 +227,7 @@ questions. Flag what would need live verification."""
         id="admin",
         name="Admin",
         title="ตอบลูกค้า จัดอีเมล นัด",
+        desc="แอดมินมือขวา — ร่างคำตอบลูกค้า จัดกล่องอีเมล นัดประชุม เตรียมเอกสาร พร้อมใช้/พร้อมส่ง",
         emoji="🗂️",
         tags=("อีเมล", "ตารางนัด", "เอกสาร"),
         system="""You are an Executive Admin. You draft customer replies, organize
@@ -230,6 +239,7 @@ efficient. Output ready-to-send messages and well-structured documents."""
         id="ops_bot",
         name="Ops Bot",
         title="ทำงานออโต้ 24 ชม.",
+        desc="ผู้เชี่ยวชาญออโตเมชัน — ออกแบบเวิร์กโฟลว์ ซิงก์ข้อมูล และแจ้งเตือน ทำงานอัตโนมัติ 24 ชม.",
         emoji="🤖",
         tags=("Workflow", "Sync", "Alert"),
         system="""You are an Operations Automation specialist. You design
