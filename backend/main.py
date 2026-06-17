@@ -19,7 +19,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from . import db
-from .agents import AGENTS, JARVIS
+from .agents import AGENTS, JARVIS, all_agents, compose_custom_system
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
 JARVIS_ROUTINE = (
@@ -88,10 +88,42 @@ async def list_agents() -> dict:
                 "title": a.title,
                 "emoji": a.emoji,
                 "tags": list(a.tags),
+                "color": a.color,
+                "custom": a.id.startswith("x_"),
             }
-            for a in AGENTS.values()
+            for a in all_agents().values()
         ]
     }
+
+
+@app.post("/api/agent/create")
+async def create_agent(p: dict) -> dict:
+    name = (p.get("name") or "").strip()
+    if not name:
+        return {"error": "name required"}
+    slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:24] or "agent"
+    existing = all_agents()
+    aid = base = "x_" + slug
+    i = 1
+    while aid in existing:
+        aid = f"{base}_{i}"; i += 1
+    role = (p.get("title") or "ผู้ช่วยทั่วไป").strip()
+    emoji = (p.get("emoji") or "🧩").strip()[:4]
+    color = (p.get("color") or "#64748b").strip()
+    tags = ",".join([t.strip() for t in (p.get("tags") or "").split(",") if t.strip()][:3])
+    db.add_custom_agent(aid, name, role, emoji, color, tags, compose_custom_system(name, role))
+    db.add_decision("agent", f"created {name}")
+    return {"ok": True, "id": aid}
+
+
+@app.post("/api/agent/delete")
+async def delete_agent(p: dict) -> dict:
+    aid = p.get("id", "")
+    if not aid.startswith("x_"):
+        return {"error": "ลบได้เฉพาะเอเจนต์ที่สร้างเอง"}
+    db.delete_custom_agent(aid)
+    db.add_decision("agent", f"deleted {aid}")
+    return {"ok": True}
 
 
 @app.get("/api/usage")
@@ -115,7 +147,7 @@ async def console() -> dict:
         "stats": {
             "pending": summary["pending"],
             "decisions_today": db.decisions_today(),
-            "agents": len(AGENTS),
+            "agents": len(all_agents()),
             "systems": connected,
             "bot": "OFF",
         },
@@ -158,9 +190,10 @@ async def api_connector(p: dict) -> dict:
 
 @app.get("/api/agent/{agent_id}")
 async def agent_detail(agent_id: str, period: str = "day") -> dict:
-    if agent_id not in AGENTS:
+    _ag = all_agents()
+    if agent_id not in _ag:
         return {"error": "unknown agent"}
-    a = AGENTS[agent_id]
+    a = _ag[agent_id]
     s = db.get_settings()
     return {
         "id": agent_id,
@@ -191,7 +224,8 @@ def _extract_svg(text: str) -> str:
 
 @app.post("/api/generate-image")
 async def generate_image(p: dict) -> dict:
-    agent = p.get("agent") if p.get("agent") in AGENTS else "designer"
+    _ag = all_agents()
+    agent = p.get("agent") if p.get("agent") in _ag else "designer"
     prompt = (p.get("prompt") or "").strip()
     size = p.get("size", "1:1")
     if not prompt:
@@ -210,7 +244,7 @@ async def generate_image(p: dict) -> dict:
             model=get_model(),
             max_tokens=8000,
             **thinking_kwargs(),
-            system=AGENTS[agent].system,
+            system=_ag[agent].system,
             messages=[{"role": "user", "content": instr}],
         )
     except Exception as exc:
@@ -411,12 +445,12 @@ async def ws(websocket: WebSocket) -> None:
             if action == "agent_task":
                 agent = msg.get("agent")
                 task = (msg.get("task") or "").strip()
-                if agent not in AGENTS or not task:
+                if agent not in all_agents() or not task:
                     await send({"type": "error", "message": "Invalid agent task."})
                     continue
                 ps = db.pause_state()
                 if ps["company"] or ps["agents"].get(agent):
-                    await send({"type": "error", "message": f"⏸️ {AGENTS[agent].name} ถูกพักงานอยู่ — กดทำงานต่อก่อนสั่งงาน"})
+                    await send({"type": "error", "message": f"⏸️ {all_agents()[agent].name} ถูกพักงานอยู่ — กดทำงานต่อก่อนสั่งงาน"})
                     await send({"type": "done"})
                     continue
                 db.save_message(current_id, "user", "user", f"[{agent}] {task}")

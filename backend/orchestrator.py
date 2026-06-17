@@ -19,7 +19,7 @@ from typing import Awaitable, Callable
 
 import anthropic
 
-from .agents import SUB_AGENTS, get_agent
+from .agents import get_agent, sub_agents
 
 MODEL = "claude-opus-4-8"
 
@@ -46,7 +46,7 @@ def _extract_subtasks(text: str, allowed: set | None = None) -> list[dict]:
     The CEO is instructed to return only JSON, but we tolerate stray prose by
     grabbing the outermost ``{ ... }`` block. Agents not in ``allowed`` are dropped.
     """
-    allowed = allowed if allowed is not None else set(SUB_AGENTS.keys())
+    allowed = allowed if allowed is not None else set(sub_agents().keys())
     candidate = text.strip()
     if not candidate.startswith("{"):
         match = re.search(r"\{.*\}", candidate, re.DOTALL)
@@ -84,7 +84,7 @@ class Orchestrator:
         await emit({"type": "agent_status", "agent": "ceo", "status": "working"})
         await emit({"type": "log", "agent": "ceo", "text": "Breaking the goal into sub-tasks…"})
 
-        available = [a for a in SUB_AGENTS.values() if a.id not in paused]
+        available = [a for a in sub_agents().values() if a.id not in paused]
         if not available:
             await emit({"type": "agent_status", "agent": "ceo", "status": "idle"})
             await emit({"type": "error", "message": "ทุกเอเจนต์ถูกพักงานอยู่ — ไม่มีใครรับงานได้"})

@@ -388,7 +388,11 @@
 
       <!-- AGENTS -->
       <section class="view" id="view-agents">
-        <h2 style="color:#fff; margin:0 0 14px">ทีมเอเจนต์</h2>
+        <div style="display:flex;align-items:center;gap:12px;margin:0 0 14px">
+          <h2 style="color:#fff; margin:0">ทีมเอเจนต์</h2>
+          <span style="flex:1"></span>
+          <button class="qbtn" id="addAgent" style="font-weight:700">➕ เพิ่มเอเจนต์</button>
+        </div>
         <div id="agentCards" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;"></div>
       </section>
 
@@ -1114,6 +1118,7 @@ async function loadAgents() {
   const list = $("agentList"), cards = $("agentCards");
   data.agents.forEach(a => {
     AGENTS[a.id] = a;
+    if (a.color) COLORS[a.id] = a.color;   // custom agents bring their own accent color
     // sidebar row (click → per-agent detail)
     const row = document.createElement("div");
     row.className = "agent-row"; row.style.cursor = "pointer"; row.dataset.agent = a.id;
@@ -1137,12 +1142,40 @@ async function loadAgents() {
       <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
         <span style="flex:1;font-size:12px;color:${color(a.id)};font-weight:700">✍️ คลิกเพื่อสั่งงาน</span>
         <button class="qbtn" data-pause="${a.id}">⏸️ พัก</button>
+        ${a.custom ? `<button class="qbtn" data-del="${a.id}" title="ลบเอเจนต์นี้">🗑️</button>` : ""}
       </div>`;
     card.addEventListener("click", () => openAgentCmd(a.id));
     card.querySelector("[data-pause]").addEventListener("click", (e) => { e.stopPropagation(); togglePause(a.id); });
+    const delBtn = card.querySelector("[data-del]");
+    if (delBtn) delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteAgent(a.id, a.name); });
     cards.appendChild(card);
   });
   Office3D.init(data.agents);
+}
+
+/* ---------- add / remove agent ---------- */
+function openAddAgent(){
+  openGen("➕ เพิ่มเอเจนต์ใหม่", [
+    {key:"name",  label:"ชื่อเอเจนต์",         type:"input", placeholder:"เช่น Lawyer, Accountant"},
+    {key:"title", label:"บทบาท (ทำอะไร)",      type:"input", placeholder:"เช่น ดูแลสัญญาและกฎหมาย"},
+    {key:"emoji", label:"อิโมจิ",              type:"input", placeholder:"🧩"},
+    {key:"tags",  label:"ป้ายทักษะ (คั่นด้วย ,)", type:"input", placeholder:"สัญญา, กฎหมาย, ตรวจเอกสาร"},
+    {key:"color", label:"สีประจำตัว (hex)",     type:"input", placeholder:"#64748b"},
+  ], async (v) => {
+    if (!v.name) { toastNote("กรุณาใส่ชื่อเอเจนต์", "#ef4444"); return; }
+    const r = await postJSON("/api/agent/create", v);
+    if (r.error) { toastNote(r.error, "#ef4444"); return; }
+    closeModal("genModal");
+    toastNote("เพิ่มเอเจนต์ " + v.name + " แล้ว 🎉", "#22c55e");
+    setTimeout(() => location.reload(), 600);
+  });
+}
+async function deleteAgent(id, name){
+  if (!confirm("ลบเอเจนต์ \"" + name + "\" ออกถาวร?")) return;
+  const r = await postJSON("/api/agent/delete", {id});
+  if (r.error) { toastNote(r.error, "#ef4444"); return; }
+  toastNote("ลบ " + name + " แล้ว", "#a855f7");
+  setTimeout(() => location.reload(), 500);
 }
 
 /* ---------- status / animation ---------- */
@@ -1746,6 +1779,9 @@ $("sessionSelect").addEventListener("change", e => { const id=parseInt(e.target.
 /* modal close (✕ and overlay click) */
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => closeModal(b.dataset.close));
 ["byokModal","genModal"].forEach(id => $(id).addEventListener("click", e => { if (e.target.id===id) closeModal(id); }));
+
+/* agents page: add agent */
+$("addAgent").addEventListener("click", openAddAgent);
 
 /* console add buttons */
 $("addSop").addEventListener("click", () => openGen("เพิ่ม SOP",

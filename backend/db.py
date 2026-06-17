@@ -114,6 +114,10 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS response_cache (
                 hash TEXT PRIMARY KEY, agent TEXT, prompt TEXT, answer TEXT, created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS custom_agents (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, title TEXT, emoji TEXT,
+                color TEXT, tags TEXT, system TEXT, created_at TEXT NOT NULL
+            );
             """
         )
 
@@ -323,6 +327,25 @@ def set_connector(name: str, status: str, config: str = "") -> None:
 def list_connectors() -> dict:
     with _conn() as c:
         return {r["name"]: r["status"] for r in c.execute("SELECT name, status FROM connectors").fetchall()}
+
+
+# --- Custom agents (user-created, add/remove from the dashboard) -------------
+def add_custom_agent(aid: str, name: str, title: str, emoji: str, color: str, tags: str, system: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO custom_agents (id, name, title, emoji, color, tags, system, created_at) "
+                  "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                  "name=excluded.name, title=excluded.title, emoji=excluded.emoji, "
+                  "color=excluded.color, tags=excluded.tags, system=excluded.system",
+                  (aid, name, title, emoji, color, tags, system, _now()))
+
+def list_custom_agents() -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT id, name, title, emoji, color, tags, system FROM custom_agents ORDER BY created_at").fetchall()]
+
+def delete_custom_agent(aid: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM custom_agents WHERE id=?", (aid,))
 
 
 # --- Response cache (repeated question = 0 tokens) --------------------------

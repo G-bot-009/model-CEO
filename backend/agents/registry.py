@@ -20,6 +20,7 @@ class Agent:
     emoji: str       # avatar shown in the dashboard
     tags: tuple      # short capability chips shown on the role card
     system: str      # system prompt sent to Claude
+    color: str = ""  # accent color (set for custom agents; built-ins use the UI map)
 
 
 _SPECIALIST_FOOTER = """
@@ -241,5 +242,36 @@ AGENTS: dict[str, Agent] = {a.id: a for a in _AGENTS}
 SUB_AGENTS: dict[str, Agent] = {a.id: a for a in _AGENTS if a.id != "ceo"}
 
 
+def custom_agents() -> dict[str, Agent]:
+    """User-created agents stored in the DB (ids prefixed with 'x_')."""
+    from .. import db
+    out: dict[str, Agent] = {}
+    try:
+        rows = db.list_custom_agents()
+    except Exception:
+        return out
+    for r in rows:
+        tags = tuple(t for t in (r.get("tags") or "").split(",") if t)
+        out[r["id"]] = Agent(
+            id=r["id"], name=r["name"], title=r.get("title") or "", emoji=r.get("emoji") or "🧩",
+            tags=tags, system=r.get("system") or "", color=r.get("color") or "#64748b",
+        )
+    return out
+
+
+def all_agents() -> dict[str, Agent]:
+    """Built-in team + user-created agents (built-ins win on id clash)."""
+    return {**custom_agents(), **AGENTS}
+
+
+def sub_agents() -> dict[str, Agent]:
+    """Everyone the CEO can delegate to (all agents except the CEO)."""
+    return {k: v for k, v in all_agents().items() if k != "ceo"}
+
+
+def compose_custom_system(name: str, role: str) -> str:
+    return f"You are {name}, {role}." + _SPECIALIST_FOOTER
+
+
 def get_agent(agent_id: str) -> Agent:
-    return AGENTS[agent_id]
+    return all_agents()[agent_id]
