@@ -28,6 +28,11 @@
                color:#9fb0c9; font-weight:600; font-size:14px; }
   .menu-item:hover { background:#1b2742; color:#fff; }
   .menu-item.active { background:#2563eb; color:#fff; }
+  .topbar { position:relative; }
+  .gear-menu { position:absolute; top:54px; right:10px; background:#0f1b33; border:1px solid #334155; border-radius:12px; padding:6px; min-width:190px; z-index:140; box-shadow:0 18px 44px rgba(0,0,0,.55); }
+  .gear-menu[hidden] { display:none; }
+  .gear-item { display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:8px; color:#cbd5e1; cursor:pointer; font-size:14px; }
+  .gear-item:hover { background:#1b2742; color:#fff; }
   .menu-item .ico { font-size:18px; width:22px; text-align:center; }
   .side-title { padding:14px 16px 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
   .agent-list { padding:0 8px 12px; }
@@ -294,7 +299,11 @@
       <div class="pill"><span class="conn-dot" id="connDot"></span><span id="clock">--:--:--</span></div>
       <div class="icon-btn" id="byok" title="ใช้ API key ของคุณเอง">🔑</div>
       <div class="icon-btn" id="bell">🔔<span class="badge" id="bellBadge" style="display:none">0</span></div>
-      <div class="icon-btn" id="gear" data-view="settings">⚙️</div>
+      <div class="icon-btn" id="gear" title="ตั้งค่า">⚙️</div>
+      <div id="gearMenu" class="gear-menu" hidden>
+        <div class="gear-item" data-view="admin">🔑 Admin Usage</div>
+        <div class="gear-item" data-view="settings">⚙️ Settings</div>
+      </div>
     </div>
 
     <!-- CONTENT -->
@@ -393,6 +402,7 @@
         <div style="display:flex;align-items:center;gap:12px;margin:0 0 14px">
           <h2 style="color:#fff; margin:0">ทีมเอเจนต์</h2>
           <span style="flex:1"></span>
+          <button class="qbtn" id="agentGuide">📖 วิธีสร้างเอเจนต์</button>
           <button class="qbtn" id="addAgent" style="font-weight:700">➕ เพิ่มเอเจนต์</button>
         </div>
         <div id="agentCards" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;"></div>
@@ -444,7 +454,10 @@
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
           <h2 style="color:#fff; margin:0">ประวัติ</h2>
           <select id="sessionSelect" class="card" style="padding:8px 12px; background:#10182b; color:#e2e8f0;"></select>
-          <button class="qbtn" id="newSession">+ New Session</button>
+          <button class="qbtn" id="newSession">+ เซสชันใหม่</button>
+        </div>
+        <div class="panel"><h3>เซสชันทั้งหมด (เปิดดู / ลบได้)</h3>
+          <div id="sessionList" style="display:flex; flex-direction:column; gap:8px"></div>
         </div>
         <div class="card" style="padding:14px"><div id="historyBody" style="display:flex; flex-direction:column; gap:12px;"></div></div>
       </section>
@@ -655,14 +668,14 @@
     </div>
 
     <!-- BOTTOM CHAT -->
-    <div class="chatbar">
+    <div class="chatbar" id="chatbar">
       <div class="quick">
-        <button class="qbtn" data-q="Give me a daily briefing across research, marketing, and sales.">📊 Daily Briefing</button>
-        <button class="qbtn" data-q="Find our best leads and suggest an outreach strategy.">🎯 Check Leads</button>
-        <button class="qbtn" data-q="Generate a status report summarizing current priorities and recommended next steps.">📝 Generate Report</button>
+        <button class="qbtn" data-q="ขอสรุปงานประจำวันจากทีม Research, Marketing และ Sales">📊 สรุปงานประจำวัน</button>
+        <button class="qbtn" data-q="หาลูกค้าเป้าหมายที่ดีที่สุดของเรา แล้วเสนอกลยุทธ์การติดต่อ">🎯 หาลูกค้าเป้าหมาย</button>
+        <button class="qbtn" data-q="สร้างรายงานสรุปสถานะงาน ลำดับความสำคัญตอนนี้ และขั้นตอนถัดไปที่แนะนำ">📝 สร้างรายงาน</button>
       </div>
       <div class="chat-input">
-        <input id="goal" placeholder="ส่งคำสั่งถึง CEO… เช่น Find our best leads and suggest an outreach strategy" />
+        <input id="goal" placeholder="ส่งคำสั่งถึง CEO เช่น วันนี้งานเป็นอย่างไรบ้าง" />
         <button class="send" id="send">ส่ง 🚀</button>
       </div>
     </div>
@@ -1269,16 +1282,34 @@ async function openAddAgent(){
   body.innerHTML = `
     <label>ชื่อเอเจนต์</label><input id="na_name" placeholder="เช่น Lawyer, Accountant">
     <label>บทบาท (ทำอะไร)</label><input id="na_title" placeholder="เช่น ดูแลสัญญาและกฎหมาย">
-    <div style="display:flex;gap:10px">
-      <div style="flex:1"><label>อิโมจิ</label><input id="na_emoji" placeholder="🧩"></div>
-      <div style="width:110px"><label>สี</label><input id="na_color" type="color" value="#7c5cff" style="height:44px;padding:4px"></div>
-    </div>
+    <label>อิโมจิ <span id="na_emoji_cur" style="font-size:18px">🧩</span></label>
+    <div id="na_emoji_pick" style="display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 12px"></div>
+    <input id="na_emoji" type="hidden" value="🧩">
+    <label>สีประจำตัว</label>
+    <div id="na_color_pick" style="display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 14px"></div>
+    <input id="na_color" type="hidden" value="#7c5cff">
     <label>หัวข้อสกิล (เลือกหมวด)</label>
     <select id="na_cat">${catOpts || '<option value="">— ไม่มีสกิล —</option>'}</select>
     <label>เลือกสกิล (1 ตัวต่อ 1 เอเจนต์ เพื่อความแม่นยำสูงสุด)</label>
     <select id="na_skill"></select>
     <div id="na_desc" class="note" style="margin:-6px 0 14px;font-size:12px;display:none"></div>
     <button class="save" id="na_save">บันทึกเอเจนต์</button>`;
+  // emoji picker — click to choose
+  const EMOJIS = ["🧩","💼","⚖️","📊","💰","🧮","🎯","🛡️","🤝","🩺","🍳","✈️","🏠","🔧","🧠","📞","🛒","🚚","🎓","🧪","🔍","📷","🎤","🌱"];
+  $("na_emoji_pick").innerHTML = EMOJIS.map(e =>
+    `<button type="button" class="na-emo" data-e="${e}" style="font-size:20px; width:40px; height:40px; border-radius:10px; border:1px solid #d6cdbb; background:#fff; cursor:pointer">${e}</button>`).join("");
+  function pickEmoji(e){ $("na_emoji").value = e; $("na_emoji_cur").textContent = e;
+    $("na_emoji_pick").querySelectorAll(".na-emo").forEach(b => b.style.outline = (b.dataset.e===e) ? "3px solid #7c5cff" : "none"); }
+  $("na_emoji_pick").querySelectorAll(".na-emo").forEach(b => b.addEventListener("click", () => pickEmoji(b.dataset.e)));
+  pickEmoji("🧩");
+  // color picker — 10 clickable swatches
+  const SWATCHES = ["#7c5cff","#ef4444","#22c55e","#3b82f6","#ec4899","#f59e0b","#10b981","#a855f7","#06b6d4","#eab308"];
+  $("na_color_pick").innerHTML = SWATCHES.map(c =>
+    `<button type="button" class="na-col" data-c="${c}" title="${c}" style="width:34px; height:34px; border-radius:50%; border:2px solid #fff; background:${c}; cursor:pointer"></button>`).join("");
+  function pickColor(c){ $("na_color").value = c;
+    $("na_color_pick").querySelectorAll(".na-col").forEach(b => b.style.outline = (b.dataset.c===c) ? "3px solid #1f2937" : "none"); }
+  $("na_color_pick").querySelectorAll(".na-col").forEach(b => b.addEventListener("click", () => pickColor(b.dataset.c)));
+  pickColor("#7c5cff");
   function renderSkills(){
     const cat = cats.find(c => c.id === $("na_cat").value);
     const list = cat ? cat.skills : [];
@@ -1319,6 +1350,26 @@ async function deleteAgent(id, name){
   if (r.error) { toastNote(r.error, "#ef4444"); return; }
   toastNote("ลบ " + name + " แล้ว", "#a855f7");
   setTimeout(() => location.reload(), 500);
+}
+function showInfo(title, html){
+  $("genTitle").textContent = title;
+  const body = $("genBody"); body.innerHTML = html;
+  const btn = document.createElement("button"); btn.className = "save"; btn.textContent = "เข้าใจแล้ว 👍";
+  btn.onclick = () => closeModal("genModal"); body.appendChild(btn);
+  openModal("genModal");
+}
+function openAgentGuide(){
+  showInfo("📖 วิธีสร้างเอเจนต์ทีละขั้นตอน", `
+    <ol style="margin:0; padding-left:20px; line-height:1.9; color:#374151; font-size:14px">
+      <li>กดปุ่ม <b>➕ เพิ่มเอเจนต์</b></li>
+      <li><b>ตั้งชื่อเอเจนต์</b> — เช่น Lawyer, Accountant, Closer</li>
+      <li><b>ใส่บทบาท</b> — เอเจนต์นี้ทำอะไร (เช่น "ดูแลสัญญาและกฎหมาย")</li>
+      <li><b>เลือกอิโมจิ</b> จากชุดที่ให้ — คลิกได้เลย</li>
+      <li><b>เลือกสีประจำตัว</b> จาก 10 สี — ใช้แยกตัวละครในออฟฟิศ 3D</li>
+      <li><b>เลือกหัวข้อสกิล</b> (หมวด) แล้ว <b>เลือก 1 สกิล</b> ที่ต้องการ — 1 สกิลต่อ 1 เอเจนต์ เพื่อให้ผลแม่นยำที่สุด</li>
+      <li>กด <b>บันทึกเอเจนต์</b> — เสร็จแล้ว! เอเจนต์จะขึ้นในทีม, CEO มอบงานให้ได้, และโผล่ในออฟฟิศ 3D</li>
+    </ol>
+    <div style="margin-top:12px; font-size:12px; color:#6b7280">💡 ลบเอเจนต์ที่สร้างเองได้ที่ปุ่ม 🗑️ บนการ์ด (ทีมหลัก 9 ตัวลบไม่ได้)</div>`);
 }
 
 /* ---------- status / animation ---------- */
@@ -1652,12 +1703,38 @@ function renderHistory(messages, tasks) {
 }
 
 /* ---------- sessions ---------- */
+let SESSIONS = [];
 function populateSessions(sessions) {
+  SESSIONS = sessions || [];
   const sel = $("sessionSelect"); sel.innerHTML = "";
   sessions.forEach(s => {
     const o = document.createElement("option"); o.value=s.id; o.textContent=`${s.name} · ${s.created_at}`;
     if (s.id===currentSessionId) o.selected=true; sel.appendChild(o);
   });
+  const list = $("sessionList");
+  if (list) {
+    list.innerHTML = sessions.length ? sessions.map(s => {
+      const active = s.id === currentSessionId;
+      return `<div style="display:flex; align-items:center; gap:10px; background:#0f1b33; border:1px solid ${active?'#2563eb':'#1e293b'}; border-radius:10px; padding:10px 12px">
+        <div style="flex:1; min-width:0; cursor:pointer" data-open="${s.id}">
+          <div style="color:#fff; font-weight:700">${escapeHtml(s.name)} ${active?'<span class="tag" style="background:#1e3a8a;color:#bfdbfe">กำลังใช้</span>':''}</div>
+          <div style="font-size:11px; color:#64748b">${escapeHtml(s.created_at||"")}</div>
+        </div>
+        <button class="qbtn" data-del-sess="${s.id}" title="ลบเซสชันนี้">🗑️ ลบ</button>
+      </div>`;
+    }).join("") : `<div style="color:#64748b">ยังไม่มีเซสชัน</div>`;
+    list.querySelectorAll("[data-open]").forEach(el => el.addEventListener("click", () => {
+      const id = +el.dataset.open;
+      if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"load_session", id}));
+    }));
+    list.querySelectorAll("[data-del-sess]").forEach(b => b.addEventListener("click", () => deleteSession(+b.dataset.delSess)));
+  }
+}
+function deleteSession(id) {
+  const s = SESSIONS.find(x => x.id === id);
+  if (!confirm(`ลบ "${s ? s.name : 'เซสชัน'}" และประวัติทั้งหมดในเซสชันนี้?`)) return;
+  if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"delete_session", id}));
+  toastNote("ลบเซสชันแล้ว", "#a855f7");
 }
 
 /* ---------- websocket ---------- */
@@ -1883,6 +1960,8 @@ function showView(v) {
   if (v === "admin") loadAdmin();
   if (v === "n8n") loadN8n();
   if (v === "settings") initSettingsForm();
+  // เฉพาะ Dashboard ไม่ต้องมีช่องส่งคำสั่งถึง CEO
+  const cb = $("chatbar"); if (cb) cb.style.display = (v === "dashboard") ? "none" : "";
 }
 
 /* ---------- company + agent names (Settings) ---------- */
@@ -2114,7 +2193,11 @@ async function saveSettings(partial){ try { await postJSON("/api/settings", part
 
 /* ---------- wire up ---------- */
 $("menu").addEventListener("click", e => { const it=e.target.closest(".menu-item"); if(it) showView(it.dataset.view); });
-$("gear").addEventListener("click", () => showView("settings"));
+// gear = dropdown (Admin Usage + Settings)
+$("gear").addEventListener("click", (e) => { e.stopPropagation(); $("gearMenu").hidden = !$("gearMenu").hidden; });
+$("gearMenu").addEventListener("click", (e) => { const it = e.target.closest(".gear-item"); if (it) { showView(it.dataset.view); $("gearMenu").hidden = true; } });
+document.addEventListener("click", (e) => { if (!e.target.closest("#gear") && !e.target.closest("#gearMenu")) $("gearMenu").hidden = true; });
+$("agentGuide").addEventListener("click", openAgentGuide);
 $("burger").addEventListener("click", () => $("sidebar").classList.toggle("collapsed"));
 $("send").addEventListener("click", () => send());
 $("goal").addEventListener("keydown", e => { if(e.key==="Enter") send(); });
@@ -2259,6 +2342,7 @@ setInterval(checkSchedule, 30000);
 setTimeout(checkSchedule, 2500);
 
 loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); refreshPause(); });
+$("chatbar").style.display = "none";   // เริ่มที่ Dashboard — ไม่ต้องมีช่องคำสั่ง
 </script>
 </body>
 </html>

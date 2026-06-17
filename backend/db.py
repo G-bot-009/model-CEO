@@ -168,6 +168,14 @@ def list_sessions() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def delete_session(session_id: int) -> None:
+    """Delete a session and everything attached to it."""
+    with _conn() as c:
+        for tbl in ("messages", "tasks", "token_usage"):
+            c.execute(f"DELETE FROM {tbl} WHERE session_id=?", (session_id,))
+        c.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+
+
 def latest_session() -> Optional[dict]:
     with _conn() as c:
         row = c.execute(

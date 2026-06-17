@@ -592,6 +592,19 @@ async def ws(websocket: WebSocket) -> None:
                     await send_session_state({"id": sid, "name": name})
                 continue
 
+            if action == "delete_session":
+                sid = msg.get("id")
+                if sid:
+                    db.delete_session(sid)
+                    # if we deleted the active session, fall back to the latest/new one
+                    if sid == current_id:
+                        current = db.get_or_create_current()
+                        current_id = current["id"]
+                        await send_session_state(current)
+                    else:
+                        await send({"type": "sessions", "sessions": db.list_sessions()})
+                continue
+
             # BYOK: use the user's own API key, or point at a local/custom
             # Anthropic-compatible endpoint (e.g. Ollama via a LiteLLM proxy = $0).
             if action == "set_key":
