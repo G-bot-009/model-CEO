@@ -13,6 +13,7 @@ import hashlib
 import re
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Optional
 
 import anthropic
 from dotenv import load_dotenv
@@ -60,7 +61,7 @@ def _build_client(base_url: str, secret: str) -> anthropic.AsyncAnthropic:
     return c
 
 
-def client_for_agent(agent_id: str, default: anthropic.AsyncAnthropic | None = None) -> anthropic.AsyncAnthropic:
+def client_for_agent(agent_id: str, default: Optional[anthropic.AsyncAnthropic] = None) -> anthropic.AsyncAnthropic:
     """Resolve the client an agent should use: its assigned key, else ``default``/env."""
     default = default or _client
     try:
@@ -201,7 +202,7 @@ async def delete_agent(p: dict) -> dict:
 
 
 @app.get("/api/usage")
-async def usage(period: str = "today", start: str | None = None, end: str | None = None) -> dict:
+async def usage(period: str = "today", start: Optional[str] = None, end: Optional[str] = None) -> dict:
     s, e, label, period = _resolve_range(period, start, end)
     rng = db.usage_between(s, e)
     today = date.today()
