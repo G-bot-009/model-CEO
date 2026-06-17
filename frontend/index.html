@@ -2617,6 +2617,7 @@ window.addEventListener("message", (e) => {
   if (e.data === "social-connected"){
     toastNote("เชื่อมโซเชียลสำเร็จ ✅", "#22c55e");
     if (document.getElementById("view-social").classList.contains("active")) loadSocial();
+    if (document.getElementById("view-inbox").classList.contains("active")) ibChips();
   }
 });
 
@@ -2630,13 +2631,21 @@ function ibSwitch(tab){
   ({ main:loadInbox, contacts:loadContacts, broadcast:loadBroadcast, stats:loadStats, auto:loadAutomation }[tab] || loadInbox)();
 }
 async function ibChips(){
-  try {
-    const s = await (await fetch("/api/social")).json();
-    const on = (s.platforms || []).filter(p => p.connected);
-    $("ib_chips").innerHTML = on.length
-      ? on.map(p => `<span class="tag" style="background:#EAF6EE;color:#1C2E1E">${SOC_ICON[p.id] || "🌐"} ${p.label}</span>`).join("")
-      : `<span style="font-size:12px;color:#94a3b8">+ LINE เชื่อมที่เมนู Connectors</span>`;
-  } catch(e){}
+  let social = {}, conn = {};
+  try { const s = await (await fetch("/api/social")).json(); (s.platforms || []).forEach(p => social[p.id] = p.connected); } catch(e){}
+  try { const c = await (await fetch("/api/console")).json(); conn = c.connectors || {}; } catch(e){}
+  const defs = [
+    { label:"LINE",      ic:"💚", on: conn["LINE OA"] === "connected", act:() => openConnect("LINE OA", () => { loadInbox(); ibChips(); }) },
+    { label:"Facebook",  ic:"📘", on: !!social.facebook,  act:() => openSocialConnect("facebook",  !!social.facebook) },
+    { label:"Instagram", ic:"📷", on: !!social.instagram, act:() => openSocialConnect("instagram", !!social.instagram) },
+    { label:"TikTok",    ic:"🎵", on: !!social.tiktok,    act:() => openSocialConnect("tiktok",    !!social.tiktok) },
+  ];
+  const wrap = $("ib_chips");
+  wrap.innerHTML = `<span style="font-size:12px;color:#94a3b8">เชื่อมบัญชี:</span>` +
+    defs.map((d, i) => `<button class="qbtn ib-conn" data-i="${i}" style="${d.on ? 'background:#EAF6EE;color:#166534' : ''}">${d.ic} ${d.label} ${d.on ? '✓' : '· เชื่อม'}</button>`).join("") +
+    `<button class="qbtn" id="ib_more">＋ เพิ่มเติม</button>`;
+  wrap.querySelectorAll(".ib-conn").forEach(b => b.onclick = () => defs[+b.dataset.i].act());
+  $("ib_more").onclick = () => showView("social");
 }
 function parseQuick(s){
   return (s || "").split("\n").map(l => l.trim()).filter(Boolean).map(l => {
