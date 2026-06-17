@@ -128,6 +128,14 @@ def init() -> None:
                 platform TEXT, sender TEXT, text TEXT, kind TEXT,
                 status TEXT, thread TEXT, reply TEXT, created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS tools (
+                tool_id TEXT PRIMARY KEY, entry TEXT, owner_department TEXT,
+                owner_agent TEXT, status TEXT, updated_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS tool_runs (
+                task_id TEXT PRIMARY KEY, tool_id TEXT, trace_id TEXT, status TEXT,
+                inputs TEXT, outputs TEXT, error TEXT, created_at TEXT, finished_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -526,6 +534,58 @@ def list_social() -> dict:
 def delete_social(platform: str) -> None:
     with _conn() as c:
         c.execute("DELETE FROM social_oauth WHERE platform=?", (platform,))
+
+
+# --- Tool Registry (G Office × n8n contract) --------------------------------
+import json as _json
+
+def upsert_tool(entry: dict) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO tools (tool_id, entry, owner_department, owner_agent, status, updated_at) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(tool_id) DO UPDATE SET entry=excluded.entry, "
+            "owner_department=excluded.owner_department, owner_agent=excluded.owner_agent, "
+            "status=excluded.status, updated_at=excluded.updated_at",
+            (entry.get("tool_id"), _json.dumps(entry, ensure_ascii=False), entry.get("owner_department", ""),
+             entry.get("owner_agent", ""), entry.get("status", "active"), _now()))
+
+def list_tools() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT entry FROM tools ORDER BY tool_id").fetchall()
+    out = []
+    for r in rows:
+        try: out.append(_json.loads(r["entry"]))
+        except Exception: pass
+    return out
+
+def get_tool(tool_id: str) -> Optional[dict]:
+    with _conn() as c:
+        r = c.execute("SELECT entry FROM tools WHERE tool_id=?", (tool_id,)).fetchone()
+    if not r: return None
+    try: return _json.loads(r["entry"])
+    except Exception: return None
+
+def delete_tool(tool_id: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM tools WHERE tool_id=?", (tool_id,))
+
+def add_tool_run(task_id: str, tool_id: str, trace_id: str, inputs: dict) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO tool_runs (task_id, tool_id, trace_id, status, inputs, created_at) "
+                  "VALUES (?,?,?,?,?,?)",
+                  (task_id, tool_id, trace_id, "pending", _json.dumps(inputs, ensure_ascii=False), _now()))
+
+def finish_tool_run(task_id: str, status: str, outputs=None, error=None) -> bool:
+    with _conn() as c:
+        cur = c.execute("UPDATE tool_runs SET status=?, outputs=?, error=?, finished_at=? WHERE task_id=?",
+                        (status, _json.dumps(outputs or {}, ensure_ascii=False),
+                         _json.dumps(error or {}, ensure_ascii=False), _now(), task_id))
+        return cur.rowcount > 0
+
+def list_tool_runs(limit: int = 50) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM tool_runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 # --- Social Inbox (unified comments/chats) ----------------------------------

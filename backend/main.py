@@ -477,6 +477,136 @@ async def inbox_reply(p: dict) -> dict:
     return {"ok": True, "sent": sent}
 
 
+# --- Tool Registry (G Office × n8n contract) --------------------------------
+_REGISTRAR_PROMPT = """You are the Automation Registrar of the G Office system.
+Convert an n8n workflow (given as JSON, a description, or a flow image caption)
+into ONE valid Tool Registry entry.
+
+Rules:
+- 1 workflow = 1 tool. Map owner_department to an EXISTING department only
+  (marketing, research, trader, admin, developer, ops) — never invent one.
+- tool_id is a slug "{dept_prefix}_{action}", e.g. "mkt_url_to_article".
+- Summarize the inputs the flow needs and outputs it returns into input_schema
+  and output_schema. Read the trigger node for method/url (prefer a Webhook).
+- NEVER hardcode tokens/secrets — reference them via auth.secret_ref.
+- Output ONLY the JSON object (no prose, no code fences), with these keys:
+  tool_id, version, status, display_name_th, display_name_en, description,
+  owner_department, owner_agent, category, tags, trigger{type,method,url,
+  auth{type,header,secret_ref}}, input_schema, output_schema,
+  callback{expected,mode,timeout_sec}, limits, cost, metadata.
+Write Thai for display_name_th and description."""
+
+
+def _resolve_secret(ref: str) -> str:
+    if not ref:
+        return ""
+    return os.getenv(ref) or db.get_settings().get(ref) or ""
+
+
+@app.post("/api/tools/register-ai")
+async def tools_register_ai(p: dict) -> dict:
+    wf = (p.get("workflow") or "").strip()
+    if not wf:
+        return {"error": "วาง workflow (JSON/คำอธิบาย) ก่อน"}
+    try:
+        resp = await _client.messages.create(
+            model=get_model(), max_tokens=2500, **thinking_kwargs(),
+            system=_REGISTRAR_PROMPT, messages=[{"role": "user", "content": wf[:8000]}])
+        text = next((b.text for b in resp.content if b.type == "text"), "{}")
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    raw = m.group(0) if m else text
+    try:
+        entry = json.loads(raw)
+    except Exception:
+        return {"error": "AI ไม่ได้คืน JSON ที่ถูกต้อง", "raw": text[:1500]}
+    return {"ok": True, "entry": entry}
+
+
+@app.get("/api/tools")
+async def tools_list() -> dict:
+    return {"tools": db.list_tools(), "runs": db.list_tool_runs(40)}
+
+
+@app.post("/api/tools")
+async def tools_save(entry: dict) -> dict:
+    tid = (entry.get("tool_id") or "").strip()
+    if not tid:
+        return {"error": "ต้องมี tool_id"}
+    if not (entry.get("trigger") or {}).get("url"):
+        return {"error": "ต้องมี trigger.url (Webhook URL ของ n8n)"}
+    entry.setdefault("status", "active")
+    db.upsert_tool(entry)
+    db.add_decision("tool", f"registered {tid}")
+    return {"ok": True, "tools": db.list_tools()}
+
+
+@app.post("/api/tools/delete")
+async def tools_delete(p: dict) -> dict:
+    db.delete_tool(p.get("tool_id", ""))
+    return {"ok": True, "tools": db.list_tools()}
+
+
+@app.post("/api/tools/run")
+async def tools_run(p: dict, request: Request) -> dict:
+    import httpx
+    tool = db.get_tool(p.get("tool_id", ""))
+    if not tool:
+        return {"error": "ไม่พบ tool นี้"}
+    trig = tool.get("trigger", {})
+    url = trig.get("url")
+    if not url:
+        return {"error": "tool นี้ไม่มี trigger.url"}
+    task_id = "tsk_" + secrets.token_hex(8)
+    trace_id = "trc_" + secrets.token_hex(8)
+    inputs = p.get("inputs") or {}
+    callback_url = str(request.base_url).rstrip("/") + "/api/n8n/callback"
+    payload = {
+        "task_id": task_id, "trace_id": trace_id, "tool_id": tool["tool_id"],
+        "version": tool.get("version", "1.0.0"),
+        "requested_by": {"type": "user", "id": "admin", "department": tool.get("owner_department", "")},
+        "inputs": inputs, "callback_url": callback_url, "idempotency_key": task_id,
+        "issued_at": db._now(),
+    }
+    headers = {"Content-Type": "application/json"}
+    auth = trig.get("auth") or {}
+    if auth.get("type") == "header_token" and auth.get("header"):
+        headers[auth["header"]] = _resolve_secret(auth.get("secret_ref", ""))
+    db.add_tool_run(task_id, tool["tool_id"], trace_id, inputs)
+    method = (trig.get("method") or "POST").upper()
+    sync = (tool.get("callback") or {}).get("mode") == "sync"
+    try:
+        async with httpx.AsyncClient(timeout=(tool.get("callback") or {}).get("timeout_sec", 60)) as client:
+            r = await client.request(method, url, json=payload, headers=headers)
+        if r.status_code >= 400:
+            db.finish_tool_run(task_id, "error", error={"code": "UPSTREAM_API_ERROR", "message": f"HTTP {r.status_code}: {r.text[:200]}"})
+            return {"task_id": task_id, "status": "error", "message": f"n8n ตอบ {r.status_code}"}
+        if sync:
+            try:
+                body = r.json()
+                db.finish_tool_run(task_id, body.get("status", "success"), outputs=body.get("outputs"), error=body.get("error"))
+            except Exception:
+                db.finish_tool_run(task_id, "success", outputs={"raw": r.text[:500]})
+    except Exception as exc:
+        db.finish_tool_run(task_id, "error", error={"code": "INTERNAL_ERROR", "message": str(exc)})
+        return {"task_id": task_id, "status": "error", "message": str(exc)}
+    return {"task_id": task_id, "status": "pending" if not sync else "done"}
+
+
+@app.post("/api/n8n/callback")
+async def n8n_callback(p: dict) -> dict:
+    task_id = p.get("task_id")
+    if not task_id:
+        return JSONResponse({"error": "task_id required"}, status_code=400)
+    status = p.get("status", "success")
+    ok = db.finish_tool_run(task_id, status, outputs=p.get("outputs"), error=p.get("error"))
+    if not ok:
+        return JSONResponse({"error": "unknown task_id"}, status_code=404)
+    db.add_decision("tool_callback", f"{p.get('tool_id','')}: {status}")
+    return {"ok": True}
+
+
 @app.post("/api/inbox/inbound/{token}")
 async def inbox_inbound(token: str, p: dict) -> dict:
     if token != db.get_settings().get("inbound_token"):

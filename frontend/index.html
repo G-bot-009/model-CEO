@@ -873,6 +873,20 @@
           </div>
           <div id="n8n_img" style="margin-top:14px"></div>
         </div>
+
+        <!-- Tool Registry (G Office × n8n contract) -->
+        <div class="panel"><h3>🛠 Tool Registry — เชื่อม n8n เป็น Tool จริง</h3>
+          <p style="color:#94a3b8; font-size:13px; margin:0 0 10px">วาง n8n workflow (JSON หรือคำอธิบาย) → AI แปลงเป็น Tool ตามมาตรฐานกลาง (1 flow = 1 tool, มี task_id + callback)</p>
+          <textarea id="tr_wf" rows="4" class="numfld" placeholder="วาง workflow JSON หรืออธิบาย flow ที่ต้องการ เช่น: รับ URL → ดึงเนื้อหา → GPT เขียนบทความ + SEO → คืน article/summary"></textarea>
+          <div style="display:flex; gap:8px; margin-top:8px">
+            <button class="qbtn" id="tr_convert">🤖 แปลงเป็น Tool (AI)</button>
+            <button class="qbtn" id="tr_save" style="display:none">💾 บันทึก Tool</button>
+          </div>
+          <textarea id="tr_json" rows="8" class="numfld" placeholder="registry JSON จะขึ้นที่นี่ — แก้ได้ก่อนบันทึก" style="display:none; margin-top:10px; font-family:ui-monospace,monospace; font-size:12px"></textarea>
+          <div style="font-size:12px;color:#64748b;margin-top:8px">หมายเหตุ: token ใช้ <code>secret_ref</code> (อ้างอิง env/ตั้งค่า) — ห้าม hardcode · callback_url ระบบใส่ให้อัตโนมัติ</div>
+        </div>
+        <div class="panel"><h3>📦 Tools ที่ลงทะเบียน</h3><div id="tr_tools" style="display:flex; flex-direction:column; gap:10px"></div></div>
+        <div class="panel"><h3>🏃 การรันล่าสุด (task_id ↔ callback)</h3><div id="tr_runs" style="display:flex; flex-direction:column; gap:8px"></div></div>
       </section>
 
       <!-- SETTINGS -->
@@ -1866,6 +1880,46 @@ async function loadN8n() {
     sel.innerHTML = `<option value="">— เลือกเวิร์กโฟลว์ —</option>` +
       N8N.map((it, i) => `<option value="${i}">${escapeHtml(it.name)}</option>`).join("");
   }
+  loadTools();
+}
+/* ---------- Tool Registry (G Office × n8n contract) ---------- */
+async function loadTools(){
+  let d; try { d = await (await fetch("/api/tools")).json(); } catch(e){ return; }
+  const tools = d.tools || [];
+  $("tr_tools").innerHTML = tools.length ? tools.map(t => `
+    <div class="card" style="padding:12px; display:flex; gap:10px; align-items:center">
+      <div style="flex:1; min-width:0">
+        <div style="font-weight:800; color:var(--ink,#fff)">${escapeHtml(t.display_name_th || t.display_name_en || t.tool_id)} <span class="tag">${escapeHtml(t.tool_id)}</span></div>
+        <div style="font-size:12px; color:#94a3b8">${escapeHtml(t.owner_department||"")}/${escapeHtml(t.owner_agent||"")} · ${escapeHtml((t.description||"").slice(0,90))}</div>
+      </div>
+      <button class="qbtn" data-runtool="${escapeHtml(t.tool_id)}">▶️ รัน</button>
+      <button class="qbtn" data-deltool="${escapeHtml(t.tool_id)}">🗑️</button>
+    </div>`).join("") : `<div style="color:#64748b">ยังไม่มี tool — แปลงจาก workflow ด้านบน</div>`;
+  $("tr_tools").querySelectorAll("[data-runtool]").forEach(b => b.onclick = () => runTool(b.dataset.runtool, tools.find(t => t.tool_id === b.dataset.runtool)));
+  $("tr_tools").querySelectorAll("[data-deltool]").forEach(b => b.onclick = async () => { if (!confirm("ลบ tool นี้?")) return; await postJSON("/api/tools/delete", { tool_id: b.dataset.deltool }); loadTools(); });
+  const runs = d.runs || [], cmap = { pending:"#f59e0b", success:"#22c55e", done:"#22c55e", error:"#ef4444", partial:"#a855f7" };
+  $("tr_runs").innerHTML = runs.length ? runs.map(r => `
+    <div style="display:flex; gap:10px; align-items:center; border:1px solid var(--bd,#1e293b); border-radius:10px; padding:8px 10px">
+      <span class="tag" style="background:${cmap[r.status]||'#64748b'}; color:#fff">${r.status}</span>
+      <span style="font-size:12px; color:#94a3b8">${escapeHtml(r.tool_id||"")}</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px; color:#64748b">${escapeHtml(r.task_id||"")}</span>
+    </div>`).join("") : `<div style="color:#64748b">ยังไม่มีการรัน</div>`;
+}
+function runTool(id, tool){
+  const schema = (tool && tool.input_schema) || {};
+  const fields = Object.keys(schema).map(k => ({ key:k, label:`${k}${schema[k].required?' *':''} — ${schema[k].desc||''}`, type:"input", placeholder:(schema[k].default!=null?String(schema[k].default):"") }));
+  if (!fields.length) fields.push({ key:"_raw", label:"inputs (JSON)", type:"textarea", placeholder:'{"url":"..."}' });
+  openGen("▶️ รัน " + id, fields, async (v) => {
+    let inputs = {};
+    if (v._raw !== undefined){ try { inputs = JSON.parse(v._raw || "{}"); } catch(e){ toastNote("inputs ต้องเป็น JSON", "#ef4444"); return; } }
+    else inputs = v;
+    closeModal("genModal");
+    const r = await postJSON("/api/tools/run", { tool_id:id, inputs });
+    if (r.error || r.status === "error") toastNote(r.message || r.error || "รันไม่สำเร็จ", "#ef4444");
+    else toastNote(`สั่งรันแล้ว · ${r.task_id} (${r.status})`, "#22c55e");
+    loadTools();
+  });
 }
 function n8nShow(i) {
   const it = N8N[i]; if (!it) return;
@@ -2949,6 +3003,24 @@ $("n8n_search").addEventListener("focus", n8nSuggest);
 $("n8n_search").addEventListener("blur", () => setTimeout(() => $("n8n_sugg").style.display = "none", 150));
 $("n8n_select").addEventListener("change", (e) => { if (e.target.value !== "") n8nShow(+e.target.value); });
 $("n8n_diagram").addEventListener("click", n8nDiagram);
+
+/* tool registry: convert + save */
+$("tr_convert").addEventListener("click", async () => {
+  const wf = $("tr_wf").value.trim(); if (!wf){ toastNote("วาง workflow ก่อน", "#ef4444"); return; }
+  $("tr_convert").textContent = "⏳ กำลังแปลง...";
+  const r = await postJSON("/api/tools/register-ai", { workflow: wf });
+  $("tr_convert").textContent = "🤖 แปลงเป็น Tool (AI)";
+  if (r.error){ toastNote(r.error, "#ef4444"); if (r.raw){ $("tr_json").style.display="block"; $("tr_json").value = r.raw; } return; }
+  $("tr_json").style.display = "block"; $("tr_json").value = JSON.stringify(r.entry, null, 2);
+  $("tr_save").style.display = "inline-block";
+});
+$("tr_save").addEventListener("click", async () => {
+  let entry; try { entry = JSON.parse($("tr_json").value); } catch(e){ toastNote("JSON ไม่ถูกต้อง", "#ef4444"); return; }
+  const r = await postJSON("/api/tools", entry);
+  if (r.error){ toastNote(r.error, "#ef4444"); return; }
+  toastNote("บันทึก Tool แล้ว ✅", "#22c55e");
+  $("tr_json").style.display = "none"; $("tr_save").style.display = "none"; $("tr_wf").value = ""; loadTools();
+});
 
 /* console add buttons */
 $("addSop").addEventListener("click", () => openGen("เพิ่ม SOP",
