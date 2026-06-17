@@ -143,6 +143,9 @@ def init() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_id TEXT, name TEXT, url TEXT, token TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS mcp_connections (
+                conn_id TEXT PRIMARY KEY, name TEXT, url TEXT, token TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -163,6 +166,10 @@ def init() -> None:
         ucols = {r[1] for r in c.execute("PRAGMA table_info(token_usage)").fetchall()}
         if "key_id" not in ucols:
             c.execute("ALTER TABLE token_usage ADD COLUMN key_id INTEGER")
+        # link agent_mcp rows back to a directory connector (NULL = manual entry)
+        mcols = {r[1] for r in c.execute("PRAGMA table_info(agent_mcp)").fetchall()}
+        if "conn_id" not in mcols:
+            c.execute("ALTER TABLE agent_mcp ADD COLUMN conn_id TEXT")
 
 
 def _now() -> str:
@@ -608,20 +615,61 @@ def get_file(fid: str) -> Optional[dict]:
 
 
 # --- Per-agent MCP connectors -----------------------------------------------
-def add_agent_mcp(agent_id: str, name: str, url: str, token: str) -> int:
+def add_agent_mcp(agent_id: str, name: str, url: str, token: str, conn_id: str = "") -> int:
     with _conn() as c:
-        cur = c.execute("INSERT INTO agent_mcp (agent_id, name, url, token, created_at) VALUES (?,?,?,?,?)",
-                        (agent_id, name, url, token, _now()))
+        cur = c.execute(
+            "INSERT INTO agent_mcp (agent_id, name, url, token, conn_id, created_at) VALUES (?,?,?,?,?,?)",
+            (agent_id, name, url, token, conn_id or None, _now()))
         return cur.lastrowid
 
 def list_agent_mcp(agent_id: str) -> list[dict]:
     with _conn() as c:
-        rows = c.execute("SELECT id, name, url, token FROM agent_mcp WHERE agent_id=? ORDER BY id", (agent_id,)).fetchall()
+        rows = c.execute("SELECT id, name, url, token, conn_id FROM agent_mcp WHERE agent_id=? ORDER BY id", (agent_id,)).fetchall()
     return [dict(r) for r in rows]
 
 def delete_agent_mcp(mcp_id: int) -> None:
     with _conn() as c:
         c.execute("DELETE FROM agent_mcp WHERE id=?", (mcp_id,))
+
+def agent_mcp_conn_ids(agent_id: str) -> set:
+    """Directory connector ids currently enabled for this agent."""
+    with _conn() as c:
+        rows = c.execute("SELECT conn_id FROM agent_mcp WHERE agent_id=? AND conn_id IS NOT NULL", (agent_id,)).fetchall()
+    return {r[0] for r in rows}
+
+def delete_agent_mcp_conn(agent_id: str, conn_id: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM agent_mcp WHERE agent_id=? AND conn_id=?", (agent_id, conn_id))
+
+
+# --- Directory connector credentials (connect once, reuse per agent) ---------
+def connect_mcp(conn_id: str, name: str, url: str, token: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO mcp_connections (conn_id, name, url, token, created_at) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(conn_id) DO UPDATE SET name=excluded.name, url=excluded.url, token=excluded.token",
+            (conn_id, name, url, token, _now()))
+
+def get_mcp_connection(conn_id: str) -> Optional[dict]:
+    with _conn() as c:
+        r = c.execute("SELECT conn_id, name, url, token FROM mcp_connections WHERE conn_id=?", (conn_id,)).fetchone()
+    return dict(r) if r else None
+
+def list_mcp_connections() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT conn_id, name, url, token FROM mcp_connections ORDER BY conn_id").fetchall()
+    return [dict(r) for r in rows]
+
+def connected_mcp_ids() -> set:
+    with _conn() as c:
+        rows = c.execute("SELECT conn_id FROM mcp_connections").fetchall()
+    return {r[0] for r in rows}
+
+def disconnect_mcp(conn_id: str) -> None:
+    """Remove the connection and detach it from every agent that used it."""
+    with _conn() as c:
+        c.execute("DELETE FROM mcp_connections WHERE conn_id=?", (conn_id,))
+        c.execute("DELETE FROM agent_mcp WHERE conn_id=?", (conn_id,))
 
 
 # --- Social Inbox (unified comments/chats) ----------------------------------

@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from . import db
 from . import skills
+from . import mcp_catalog
 from .agents import AGENTS, JARVIS, all_agents, compose_custom_system, SPECIALIST_FOOTER as _SPECIALIST_FOOTER
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
@@ -1192,6 +1193,83 @@ async def agent_mcp_delete(p: dict) -> dict:
     if p.get("id"):
         db.delete_agent_mcp(int(p["id"]))
     return {"ok": True}
+
+
+# --- Connector directory (connect API once → toggle onto matching agents) ----
+@app.get("/api/mcp/directory")
+async def mcp_directory() -> dict:
+    """The whole connector catalog with connection state + which agents each fits."""
+    connected = db.connected_mcp_ids()
+    conns = {c["conn_id"]: c for c in db.list_mcp_connections()}
+    agents = all_agents().values()
+    out = []
+    for c in mcp_catalog.CATALOG:
+        conn = conns.get(c["id"])
+        out.append({
+            "id": c["id"], "name": c["name"], "emoji": c["emoji"], "desc": c["desc"],
+            "get": c["get"], "default_url": c["url"],
+            "connected": c["id"] in connected,
+            "url": (conn or {}).get("url") or c["url"],
+            "agents": [a.name for a in agents if mcp_catalog.matches(a, c)],
+        })
+    return {"connectors": out}
+
+
+@app.post("/api/mcp/connect")
+async def mcp_connect(p: dict) -> dict:
+    cid = (p.get("conn_id") or "").strip()
+    entry = mcp_catalog.CATALOG_BY_ID.get(cid)
+    if not entry:
+        return {"error": "unknown connector"}
+    url = (p.get("url") or "").strip() or entry["url"]
+    token = (p.get("token") or "").strip()
+    db.connect_mcp(cid, entry["name"], url, token)
+    return {"ok": True}
+
+
+@app.post("/api/mcp/disconnect")
+async def mcp_disconnect(p: dict) -> dict:
+    cid = (p.get("conn_id") or "").strip()
+    if cid:
+        db.disconnect_mcp(cid)
+    return {"ok": True}
+
+
+@app.get("/api/agent/{agent_id}/connectors")
+async def agent_connectors(agent_id: str) -> dict:
+    """Connectors that BOTH match this agent AND are connected — each toggleable."""
+    agents = all_agents()
+    if agent_id not in agents:
+        return {"connectors": []}
+    agent = agents[agent_id]
+    connected = db.connected_mcp_ids()
+    enabled = db.agent_mcp_conn_ids(agent_id)
+    out = []
+    for c in mcp_catalog.CATALOG:
+        if c["id"] not in connected or not mcp_catalog.matches(agent, c):
+            continue          # only connected + matching connectors are shown
+        out.append({
+            "id": c["id"], "name": c["name"], "emoji": c["emoji"], "desc": c["desc"],
+            "enabled": c["id"] in enabled,
+        })
+    return {"connectors": out}
+
+
+@app.post("/api/agent/connector/toggle")
+async def agent_connector_toggle(p: dict) -> dict:
+    agent_id = (p.get("agent_id") or "").strip()
+    cid = (p.get("conn_id") or "").strip()
+    on = bool(p.get("on"))
+    if agent_id not in all_agents():
+        return {"error": "unknown agent"}
+    entry = mcp_catalog.CATALOG_BY_ID.get(cid)
+    conn = db.get_mcp_connection(cid)
+    if not entry or not conn:
+        return {"error": "ยังไม่ได้เชื่อม API ของ connector นี้"}
+    db.delete_agent_mcp_conn(agent_id, cid)          # avoid duplicates
+    if on:
+        db.add_agent_mcp(agent_id, conn["name"], conn["url"], conn.get("token") or "", conn_id=cid)
+    return {"ok": True, "enabled": on}
 
 
 @app.post("/api/agent/model")
