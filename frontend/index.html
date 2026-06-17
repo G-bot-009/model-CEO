@@ -1954,8 +1954,12 @@ function renderHistory(messages, tasks) {
        <span style="font-size:20px">${a.emoji}</span>
        <div style="flex:1"><div style="font-weight:700;color:#fff">${a.name}</div>
        <div style="font-size:13px;color:#cbd5e1">${t.task}</div></div>
-       <span class="tag" style="background:${cmap[t.status]||'#1e293b'};color:#fff">${t.status}</span></div>`;
+       <span class="tag" style="background:${cmap[t.status]||'#1e293b'};color:#fff">${t.status}</span>
+       ${t.id ? `<button class="qbtn" data-deltask="${t.id}" title="ลบงานนี้">🗑️</button>` : ""}</div>`;
   }).join("") : `<div style="color:#64748b">ยังไม่มีงานในเซสชันนี้</div>`;
+  tb.querySelectorAll("[data-deltask]").forEach(b => b.addEventListener("click", () => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "delete_task", id: +b.dataset.deltask }));
+  }));
 }
 
 /* ---------- sessions ---------- */

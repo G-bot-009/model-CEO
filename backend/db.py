@@ -701,9 +701,14 @@ def get_history(session_id: int) -> dict:
         tasks = [
             dict(r)
             for r in c.execute(
-                "SELECT agent_name, task, status, result FROM tasks "
+                "SELECT id, agent_name, task, status, result FROM tasks "
                 "WHERE session_id = ? ORDER BY id",
                 (session_id,),
             ).fetchall()
         ]
     return {"messages": messages, "tasks": tasks}
+
+
+def delete_task(task_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM tasks WHERE id=?", (task_id,))

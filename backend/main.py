@@ -1088,6 +1088,13 @@ async def ws(websocket: WebSocket) -> None:
                 await send({"type": "history", **db.get_history(current_id)})
                 continue
 
+            if action == "delete_task":
+                tid = msg.get("id")
+                if tid:
+                    db.delete_task(int(tid))
+                    await send({"type": "history", **db.get_history(current_id)})
+                continue
+
             if action == "translate_tasks":
                 import re as _re
                 for t in db.list_session_tasks(current_id)[:30]:
