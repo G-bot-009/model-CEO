@@ -90,7 +90,26 @@ def model_for_agent(agent_id: str) -> str:
     return get_model()
 
 
+def mcp_for_agent(agent_id: str) -> list:
+    """Per-agent MCP servers → mcp_servers entries for the Messages API."""
+    out = []
+    try:
+        for m in db.list_agent_mcp(agent_id):
+            if not m.get("url"):
+                continue
+            e = {"type": "url", "name": m.get("name") or "mcp", "url": m["url"]}
+            tok = (m.get("token") or "").strip()
+            tok = _resolve_secret(tok) or tok          # accept a secret_ref or a raw token
+            if tok:
+                e["authorization_token"] = tok
+            out.append(e)
+    except Exception:
+        pass
+    return out
+
+
 _orchestrator = Orchestrator(lambda aid: client_for_agent(aid), model_for_agent)
+_orchestrator.mcp_for = mcp_for_agent
 
 # Pricing / limits for the token-usage panel. claude-opus-4-8: $5 / $25 per 1M.
 PRICING = {
@@ -1146,6 +1165,35 @@ async def del_api_key(p: dict) -> dict:
     return {"ok": True, "keys": db.list_api_keys(), "map": db.agent_key_map()}
 
 
+@app.get("/api/agent/{agent_id}/mcp")
+async def agent_mcp_list(agent_id: str) -> dict:
+    rows = db.list_agent_mcp(agent_id)
+    for r in rows:                     # mask the token
+        t = r.get("token") or ""
+        r["has_token"] = bool(t)
+        r["token"] = (t[:4] + "…") if t else ""
+    return {"mcp": rows}
+
+
+@app.post("/api/agent/mcp")
+async def agent_mcp_add(p: dict) -> dict:
+    agent_id = (p.get("agent_id") or "").strip()
+    if agent_id not in all_agents():
+        return {"error": "unknown agent"}
+    url = (p.get("url") or "").strip()
+    if not url:
+        return {"error": "ต้องมี MCP server URL"}
+    db.add_agent_mcp(agent_id, (p.get("name") or "mcp").strip(), url, (p.get("token") or "").strip())
+    return {"ok": True}
+
+
+@app.post("/api/agent/mcp/delete")
+async def agent_mcp_delete(p: dict) -> dict:
+    if p.get("id"):
+        db.delete_agent_mcp(int(p["id"]))
+    return {"ok": True}
+
+
 @app.post("/api/agent/model")
 async def assign_agent_model(p: dict) -> dict:
     """Per-agent model override ('' = use global)."""
@@ -1256,6 +1304,7 @@ async def ws(websocket: WebSocket) -> None:
     # set in Admin Usage) wins; otherwise this connection's BYOK/default client.
     conn = {"default": _client}
     orch = Orchestrator(lambda aid: client_for_agent(aid, default=conn["default"]), model_for_agent)
+    orch.mcp_for = mcp_for_agent
 
     async def send_session_state(session: dict) -> None:
         await send({"type": "sessions", "sessions": db.list_sessions()})

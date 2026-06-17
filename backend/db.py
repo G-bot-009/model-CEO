@@ -139,6 +139,10 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS files (
                 id TEXT PRIMARY KEY, name TEXT, mime TEXT, path TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS agent_mcp (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT, name TEXT, url TEXT, token TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -601,6 +605,23 @@ def get_file(fid: str) -> Optional[dict]:
     with _conn() as c:
         r = c.execute("SELECT id, name, mime, path FROM files WHERE id=?", (fid,)).fetchone()
     return dict(r) if r else None
+
+
+# --- Per-agent MCP connectors -----------------------------------------------
+def add_agent_mcp(agent_id: str, name: str, url: str, token: str) -> int:
+    with _conn() as c:
+        cur = c.execute("INSERT INTO agent_mcp (agent_id, name, url, token, created_at) VALUES (?,?,?,?,?)",
+                        (agent_id, name, url, token, _now()))
+        return cur.lastrowid
+
+def list_agent_mcp(agent_id: str) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT id, name, url, token FROM agent_mcp WHERE agent_id=? ORDER BY id", (agent_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+def delete_agent_mcp(mcp_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM agent_mcp WHERE id=?", (mcp_id,))
 
 
 # --- Social Inbox (unified comments/chats) ----------------------------------

@@ -84,6 +84,7 @@ class Orchestrator:
         else:
             self.client_for = client_for
         self.model_for = model_for or (lambda _aid: MODEL)
+        self.mcp_for = (lambda _aid: [])   # set by the app to attach per-agent MCP servers
 
     @property
     def client(self) -> anthropic.AsyncAnthropic:
@@ -141,20 +142,32 @@ class Orchestrator:
         )
 
         _model = self.model_for(agent_id)
-        collected: list[str] = []
-        async with self.client_for(agent_id).messages.stream(
-            model=_model,
-            max_tokens=4000,
-            **thinking_kwargs(_model),
-            system=agent.system,
-            messages=[{"role": "user", "content": prompt}],
-        ) as stream:
-            async for chunk in stream.text_stream:
-                collected.append(chunk)
-                await emit({"type": "agent_output", "agent": agent_id, "chunk": chunk})
-            final_msg = await stream.get_final_message()
+        client = self.client_for(agent_id)
+        mcp = self.mcp_for(agent_id)
+        base = dict(model=_model, max_tokens=4000, system=agent.system,
+                    messages=[{"role": "user", "content": prompt}], **thinking_kwargs(_model))
 
-        result = "".join(collected)
+        async def _stream(use_mcp):
+            buf: list[str] = []
+            if use_mcp:
+                cm = client.beta.messages.stream(**base, mcp_servers=mcp, betas=["mcp-client-2025-04-04"])
+            else:
+                cm = client.messages.stream(**base)
+            async with cm as stream:
+                async for chunk in stream.text_stream:
+                    buf.append(chunk)
+                    await emit({"type": "agent_output", "agent": agent_id, "chunk": chunk})
+                fm = await stream.get_final_message()
+            return "".join(buf), fm
+
+        try:
+            result, final_msg = await _stream(bool(mcp))
+        except Exception as exc:
+            if mcp:   # MCP unsupported/misconfigured → fall back to a normal run
+                await emit({"type": "log", "agent": agent_id, "text": f"(MCP ใช้ไม่ได้ — รันแบบปกติ: {type(exc).__name__})"})
+                result, final_msg = await _stream(False)
+            else:
+                raise
         await _emit_usage(emit, agent_id, final_msg.usage)
         await emit({"type": "agent_status", "agent": agent_id, "status": "done"})
         return result

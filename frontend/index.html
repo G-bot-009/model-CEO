@@ -574,6 +574,23 @@
           <div style="font-size:12px; color:#64748b; margin-bottom:10px">💡 คลิกที่ภาพเพื่อสร้างใหม่ (variation) · ภาพเป็นเวกเตอร์ SVG จากโมเดล (ภาพถ่าย/วิดีโอจริงต้องต่อ API ภายนอก)</div>
           <div id="adImgResult" style="display:flex; flex-wrap:wrap; gap:12px"></div>
         </div>
+        <div class="panel"><h3>🔌 MCP Connectors (เครื่องมือของเอเจนต์นี้)</h3>
+          <p style="color:#94a3b8; font-size:13px; margin:0 0 10px">เชื่อม MCP server ให้เอเจนต์นี้เรียกใช้ได้ตอนทำงาน (เช่น Notion, Canva, ClickUp, Google Drive) — ใช้ผ่าน Claude API จริง</p>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px">
+            <button class="qbtn mcp-preset" data-n="Notion" data-u="https://mcp.notion.com/mcp">📓 Notion</button>
+            <button class="qbtn mcp-preset" data-n="Canva" data-u="https://mcp.canva.com/mcp">🎨 Canva</button>
+            <button class="qbtn mcp-preset" data-n="ClickUp" data-u="https://mcp.clickup.com/mcp">✅ ClickUp</button>
+            <button class="qbtn mcp-preset" data-n="Google Drive" data-u="https://mcp.googleapis.com/drive">📁 Google Drive</button>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">
+            <input id="adMcpName" class="numfld" style="width:120px; margin:0; padding:7px 9px" placeholder="ชื่อ เช่น Notion">
+            <input id="adMcpUrl" class="numfld" style="flex:1; min-width:200px; margin:0; padding:7px 9px" placeholder="MCP server URL">
+            <input id="adMcpTok" class="numfld" style="width:160px; margin:0; padding:7px 9px" placeholder="token / secret_ref">
+            <button class="qbtn" id="adMcpAdd" style="font-weight:700">➕ เพิ่ม</button>
+          </div>
+          <div id="adMcpList" style="display:flex; flex-direction:column; gap:8px; margin-top:10px"></div>
+          <div style="font-size:11px; color:#64748b; margin-top:8px">* URL/token ขอจากหน้า MCP ของผู้ให้บริการ (ตรวจ URL ให้ตรงเจ้านั้น) · ถ้า API ไม่รองรับ MCP ระบบจะรันแบบปกติให้อัตโนมัติ</div>
+        </div>
         <div class="panel"><h3>ผลงานล่าสุด</h3><div id="adWorks"></div></div>
       </section>
 
@@ -2219,6 +2236,39 @@ async function loadAgentDetail(){
       <div style="font-size:12px;color:#cbd5e1;white-space:pre-wrap">${(w.result||"").slice(0,400)}</div>
       <div style="font-size:11px;color:#64748b">${w.created_at}</div></div>`).join("")
     : '<div style="color:#64748b">ยังไม่มีผลงาน — ลองสั่งงานเอเจนต์นี้ดู</div>';
+  loadAgentMcp();
+}
+
+/* ---------- per-agent MCP connectors ---------- */
+async function loadAgentMcp(){
+  if (!adAgentId) return;
+  let rows = [];
+  try { const j = await (await fetch(`/api/agent/${adAgentId}/mcp`)).json(); rows = j.mcp || []; } catch(e){ return; }
+  const list = $("adMcpList");
+  list.innerHTML = rows.length ? rows.map(m =>
+    `<div class="wf-row" style="justify-content:space-between;align-items:center;gap:10px">
+      <div style="min-width:0">
+        <div style="font-weight:700;color:#fff">🔌 ${m.name}</div>
+        <div style="font-size:12px;color:#94a3b8;word-break:break-all">${m.url}</div>
+        <div style="font-size:11px;color:#64748b">${m.has_token ? "🔑 token: "+m.token : "ไม่มี token (เซิร์ฟเวอร์สาธารณะ)"}</div>
+      </div>
+      <button class="qbtn mcp-del" data-id="${m.id}" style="color:#f87171">🗑️ ลบ</button>
+    </div>`).join("")
+    : '<div style="color:#64748b">ยังไม่มี MCP — เลือกปุ่มด้านบนหรือกรอกเองแล้วกด เพิ่ม</div>';
+  list.querySelectorAll(".mcp-del").forEach(b => b.onclick = async () => {
+    await postJSON("/api/agent/mcp/delete", { id: Number(b.dataset.id) });
+    loadAgentMcp();
+  });
+}
+async function addAgentMcp(){
+  const name = $("adMcpName").value.trim(), url = $("adMcpUrl").value.trim(), token = $("adMcpTok").value.trim();
+  if (!name || !url){ toastNote("กรอกชื่อและ MCP server URL ก่อน", "#f59e0b"); return; }
+  try {
+    await postJSON("/api/agent/mcp", { agent_id: adAgentId, name, url, token });
+    $("adMcpName").value = ""; $("adMcpUrl").value = ""; $("adMcpTok").value = "";
+    toastNote("✅ เพิ่ม MCP ให้เอเจนต์แล้ว", "#22c55e");
+    loadAgentMcp();
+  } catch(e){ toastNote("เพิ่ม MCP ไม่สำเร็จ", "#f59e0b"); }
 }
 
 /* ---------- Jarvis mode (personal assistant + voice) ---------- */
@@ -3157,6 +3207,10 @@ document.querySelectorAll(".ad-f").forEach(b => b.addEventListener("click", () =
 $("agentBack").addEventListener("click", () => showView("dashboard"));
 $("adImgGen").addEventListener("click", () => genImage());
 $("adImgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") genImage(); });
+$("adMcpAdd").addEventListener("click", addAgentMcp);
+document.querySelectorAll(".mcp-preset").forEach(b => b.addEventListener("click", () => {
+  $("adMcpName").value = b.dataset.n; $("adMcpUrl").value = b.dataset.u; $("adMcpTok").focus();
+}));
 $("jarvisSend").addEventListener("click", () => jarvisSend());
 $("jarvisGoal").addEventListener("keydown", e => { if (e.key === "Enter") jarvisSend(); });
 $("jarvisRoutine").addEventListener("click", () => { jarvisRaw=""; $("jarvisOut").innerHTML="⏳ Jarvis กำลังรันรูทีนเช้า…"; ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({action:"jarvis_routine"})); });
