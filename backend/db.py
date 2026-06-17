@@ -119,6 +119,10 @@ def init() -> None:
                 color TEXT, tags TEXT, system TEXT, created_at TEXT NOT NULL,
                 category TEXT, skills TEXT
             );
+            CREATE TABLE IF NOT EXISTS social_oauth (
+                platform TEXT PRIMARY KEY, client_id TEXT, client_secret TEXT,
+                access_token TEXT, refresh_token TEXT, extra TEXT, updated_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -472,6 +476,35 @@ def get_connector(name: str) -> Optional[dict]:
     with _conn() as c:
         r = c.execute("SELECT status, config FROM connectors WHERE name=?", (name,)).fetchone()
     return dict(r) if r else None
+
+
+# --- Social OAuth (BYO app per platform) ------------------------------------
+def set_social_creds(platform: str, client_id: str, client_secret: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO social_oauth (platform, client_id, client_secret, updated_at) VALUES (?,?,?,?) "
+                  "ON CONFLICT(platform) DO UPDATE SET client_id=excluded.client_id, "
+                  "client_secret=excluded.client_secret, updated_at=excluded.updated_at",
+                  (platform, client_id, client_secret, _now()))
+
+def set_social_token(platform: str, access: str, refresh: str = "", extra: str = "") -> None:
+    with _conn() as c:
+        c.execute("UPDATE social_oauth SET access_token=?, refresh_token=?, extra=?, updated_at=? WHERE platform=?",
+                  (access, refresh, extra, _now(), platform))
+
+def get_social(platform: str) -> Optional[dict]:
+    with _conn() as c:
+        r = c.execute("SELECT platform, client_id, client_secret, access_token, refresh_token, extra "
+                      "FROM social_oauth WHERE platform=?", (platform,)).fetchone()
+    return dict(r) if r else None
+
+def list_social() -> dict:
+    with _conn() as c:
+        rows = c.execute("SELECT platform, access_token FROM social_oauth").fetchall()
+    return {r["platform"]: bool(r["access_token"]) for r in rows}
+
+def delete_social(platform: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM social_oauth WHERE platform=?", (platform,))
 
 
 # --- Custom agents (user-created, add/remove from the dashboard) -------------

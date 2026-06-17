@@ -244,6 +244,18 @@
   body.light .conn-card .cc-ds { color:var(--muted); }
   body.light .conn-cta { background:var(--ink); }            /* day mode: green accent */
   body.light .conn-cta.off { background:transparent; border:1px solid var(--bd); color:var(--ink2); }
+  /* social connect grid */
+  .soc-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:620px; }
+  .soc-card { background:#10182b; border:1px solid #1e293b; border-radius:16px; padding:18px 12px; text-align:center; cursor:pointer; transition:transform .12s, border-color .12s; }
+  .soc-card:hover { transform:translateY(-2px); border-color:#7c5cff; }
+  .soc-card .soc-ic { font-size:30px; line-height:1; }
+  .soc-card .soc-nm { font-weight:800; margin-top:8px; color:#fff; }
+  .soc-card .soc-st { font-size:12px; color:#a78bfa; margin-top:3px; font-weight:700; }
+  .soc-card.on { border-color:#22c55e; }
+  .soc-card.on .soc-st { color:#22c55e; }
+  body.light .soc-card { background:#fff; border-color:var(--bd); }
+  body.light .soc-card .soc-nm { color:var(--ink); }
+  body.light .soc-card .soc-st { color:#7c5cff; }
 
   /* image studio cards */
   .img-card { width:230px; cursor:pointer; border:1px solid #1e293b; border-radius:12px; overflow:hidden; background:#0b1220; }
@@ -393,6 +405,7 @@
       <div class="menu-item" data-view="agents"><span class="ico">🧑‍💼</span><span class="label">Agents</span></div>
       <div class="menu-item" data-view="tasks"><span class="ico">📋</span><span class="label">Tasks</span></div>
       <div class="menu-item" data-view="connectors"><span class="ico">🔌</span><span class="label">Connectors</span></div>
+      <div class="menu-item" data-view="social"><span class="ico">🌐</span><span class="label">Social</span></div>
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
@@ -713,6 +726,17 @@
           </select></h3>
           <div id="adm_bykey" style="display:flex; flex-direction:column; gap:10px"></div>
         </div>
+      </section>
+
+      <!-- SOCIAL CONNECT -->
+      <section class="view" id="view-social">
+        <h2 style="margin:0 0 4px">เชื่อมโซเชียล</h2>
+        <p style="color:#94a3b8; font-size:13px; margin:0 0 6px; max-width:640px">
+          เชื่อมครั้งเดียว — AI โพสต์/อ่าน-ตอบคอมเมนต์/แชตให้ทั้งหมด · เลือกแพลตฟอร์มที่อยากเชื่อม จะกี่อันก็ได้</p>
+        <p style="color:#64748b; font-size:12px; margin:0 0 16px; max-width:640px">
+          ใช้ <b>OAuth จริง (BYO app)</b> — สร้าง OAuth App ในพอร์ทัลของแต่ละแพลตฟอร์มเอง วาง Client ID/Secret แล้วกดยินยอม
+          (บางแพลตฟอร์มต้องผ่านรีวิวก่อนโพสต์จริงได้)</p>
+        <div class="soc-grid" id="socialGrid"></div>
       </section>
 
       <!-- n8n AUTOMATIONS -->
@@ -2078,10 +2102,11 @@ function send(text) {
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", automation:"Automation", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
+  if (v === "social") loadSocial();
   if (v === "automation") loadAutomation();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
@@ -2442,6 +2467,53 @@ async function enableInbound(){
   if (r && r.path){ showInbound(r.path); $("inboundUrl").select?.();
     toastNote("เปิด Inbound webhook แล้ว — คัดลอก URL ไปวางที่ปลายทางได้เลย", "#22c55e"); }
 }
+
+/* ---------- Social Connect (real OAuth, BYO app) ---------- */
+const SOC_ICON = { instagram:"📷", facebook:"📘", tiktok:"🎵", youtube:"▶️", x:"𝕏", linkedin:"💼", threads:"🧵", pinterest:"📌", google:"🔵" };
+async function loadSocial(){
+  let d; try { d = await (await fetch("/api/social")).json(); } catch(e){ return; }
+  $("socialGrid").innerHTML = (d.platforms || []).map(p => `
+    <div class="soc-card ${p.connected ? 'on' : ''}" data-soc="${p.id}">
+      <div class="soc-ic">${SOC_ICON[p.id] || "🌐"}</div>
+      <div class="soc-nm">${p.label}</div>
+      <div class="soc-st">${p.connected ? '✓ เชื่อมแล้ว' : 'แตะเชื่อม'}</div>
+    </div>`).join("");
+  $("socialGrid").querySelectorAll("[data-soc]").forEach(el =>
+    el.onclick = () => openSocialConnect(el.dataset.soc, el.classList.contains("on")));
+}
+function openSocialConnect(platform, connected){
+  if (connected){
+    if (confirm("ตัดการเชื่อม " + platform + "?")) postJSON("/api/social/disconnect", { platform }).then(loadSocial);
+    return;
+  }
+  const redirect = location.origin + "/oauth/" + platform + "/callback";
+  $("genTitle").textContent = "เชื่อม " + platform;
+  $("genBody").innerHTML = `
+    <div class="conn-howto"><div class="conn-howto-h">ตั้งค่า OAuth (ทำครั้งเดียว)</div>
+      <ol class="conn-steps">
+        <li>สร้าง OAuth App ในพอร์ทัลนักพัฒนาของ <b>${escapeHtml(platform)}</b></li>
+        <li>ตั้ง <b>Redirect URI</b> ให้ตรงนี้ (คัดลอกไปวาง):<br><code style="word-break:break-all">${redirect}</code></li>
+        <li>คัดลอก Client ID + Client Secret มาวางด้านล่าง แล้วกดเชื่อม</li>
+      </ol></div>
+    <label>Client ID</label><input id="soc_id" placeholder="client id">
+    <label>Client Secret</label><input id="soc_sec" placeholder="client secret">
+    <p class="conn-note">บางแพลตฟอร์ม (Meta, TikTok, YouTube) ต้องผ่านรีวิวก่อนสิทธิ์โพสต์จะใช้ได้จริง — การเชื่อม/อ่านทำได้ก่อน</p>
+    <button class="save" id="soc_save">บันทึก แล้วเชื่อม (เปิด OAuth)</button>`;
+  $("soc_save").addEventListener("click", async () => {
+    const r = await postJSON("/api/social/creds", { platform, client_id: $("soc_id").value.trim(), client_secret: $("soc_sec").value.trim() });
+    if (r.error){ toastNote(r.error, "#ef4444"); return; }
+    closeModal("genModal");
+    window.open("/oauth/" + platform + "/start", "_blank", "width=560,height=720");
+    toastNote("เปิดหน้า OAuth — ยินยอมเสร็จระบบจะเชื่อมให้อัตโนมัติ", "#7c5cff");
+  });
+  openModal("genModal");
+}
+window.addEventListener("message", (e) => {
+  if (e.data === "social-connected"){
+    toastNote("เชื่อมโซเชียลสำเร็จ ✅", "#22c55e");
+    if (document.getElementById("view-social").classList.contains("active")) loadSocial();
+  }
+});
 
 /* ---------- Automation settings ---------- */
 const RADIOS = {

@@ -22,7 +22,7 @@ from typing import Optional
 import anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from . import db
 from . import skills
@@ -195,6 +195,121 @@ async def inbound_enable() -> dict:
         tok = secrets.token_urlsafe(12)
         db.set_settings({"inbound_token": tok})
     return {"ok": True, "path": f"/api/inbound/{tok}"}
+
+
+# --- Social OAuth (BYO app per platform) ------------------------------------
+# Each platform: provider auth/token URLs + scope. The user registers their own
+# OAuth app (client_id/secret) and sets the redirect URI we show them.
+SOCIAL = {
+    "instagram": {"label": "Instagram", "auth": "https://www.facebook.com/v19.0/dialog/oauth", "token": "https://graph.facebook.com/v19.0/oauth/access_token", "scope": "instagram_basic,instagram_content_publish,pages_show_list"},
+    "facebook":  {"label": "Facebook", "auth": "https://www.facebook.com/v19.0/dialog/oauth", "token": "https://graph.facebook.com/v19.0/oauth/access_token", "scope": "public_profile,pages_show_list,pages_manage_posts"},
+    "tiktok":    {"label": "TikTok", "auth": "https://www.tiktok.com/v2/auth/authorize/", "token": "https://open.tiktokapis.com/v2/oauth/token/", "scope": "user.info.basic,video.publish", "client_param": "client_key"},
+    "youtube":   {"label": "YouTube", "auth": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token", "scope": "https://www.googleapis.com/auth/youtube.upload", "extra": {"access_type": "offline", "prompt": "consent"}},
+    "x":         {"label": "X", "auth": "https://twitter.com/i/oauth2/authorize", "token": "https://api.twitter.com/2/oauth2/token", "scope": "tweet.read tweet.write users.read offline.access", "pkce": True, "basic": True},
+    "linkedin":  {"label": "LinkedIn", "auth": "https://www.linkedin.com/oauth/v2/authorization", "token": "https://www.linkedin.com/oauth/v2/accessToken", "scope": "openid profile w_member_social"},
+    "threads":   {"label": "Threads", "auth": "https://threads.net/oauth/authorize", "token": "https://graph.threads.net/oauth/access_token", "scope": "threads_basic,threads_content_publish"},
+    "pinterest": {"label": "Pinterest", "auth": "https://www.pinterest.com/oauth/", "token": "https://api.pinterest.com/v5/oauth/token", "scope": "pins:write,boards:read", "basic": True},
+    "google":    {"label": "Google", "auth": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token", "scope": "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets", "extra": {"access_type": "offline", "prompt": "consent"}},
+}
+_oauth_state: dict = {}   # state -> (platform, code_verifier)
+
+
+def _redirect_uri(request: Request, platform: str) -> str:
+    return str(request.base_url).rstrip("/") + f"/oauth/{platform}/callback"
+
+
+@app.get("/api/social")
+async def social_list(request: Request) -> dict:
+    connected = db.list_social()
+    return {
+        "platforms": [{"id": k, "label": v["label"], "connected": connected.get(k, False)} for k, v in SOCIAL.items()],
+        "redirect_note": str(request.base_url).rstrip("/") + "/oauth/<platform>/callback",
+    }
+
+
+@app.post("/api/social/creds")
+async def social_creds(p: dict) -> dict:
+    plat = p.get("platform")
+    if plat not in SOCIAL:
+        return {"error": "unknown platform"}
+    db.set_social_creds(plat, (p.get("client_id") or "").strip(), (p.get("client_secret") or "").strip())
+    return {"ok": True, "redirect_uri": _redirect_uri_str(plat)}
+
+
+def _redirect_uri_str(plat: str) -> str:
+    return f"/oauth/{plat}/callback"
+
+
+@app.post("/api/social/disconnect")
+async def social_disconnect(p: dict) -> dict:
+    db.delete_social(p.get("platform", ""))
+    return {"ok": True}
+
+
+@app.get("/oauth/{platform}/start")
+async def oauth_start(platform: str, request: Request):
+    import base64 as _b64, hashlib as _hl
+    from urllib.parse import urlencode
+    cfg = SOCIAL.get(platform)
+    creds = db.get_social(platform)
+    if not cfg or not creds or not creds.get("client_id"):
+        return HTMLResponse("<h3>ยังไม่ได้ใส่ client_id/secret ของแพลตฟอร์มนี้ — ปิดหน้าต่างแล้วกรอกก่อน</h3>", status_code=400)
+    state = secrets.token_urlsafe(16)
+    params = {
+        "response_type": "code",
+        cfg.get("client_param", "client_id"): creds["client_id"],
+        "redirect_uri": _redirect_uri(request, platform),
+        "scope": cfg["scope"],
+        "state": state,
+    }
+    verifier = ""
+    if cfg.get("pkce"):
+        verifier = secrets.token_urlsafe(64)
+        challenge = _b64.urlsafe_b64encode(_hl.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        params["code_challenge"] = challenge
+        params["code_challenge_method"] = "S256"
+    params.update(cfg.get("extra", {}))
+    _oauth_state[state] = (platform, verifier)
+    return RedirectResponse(cfg["auth"] + "?" + urlencode(params))
+
+
+@app.get("/oauth/{platform}/callback")
+async def oauth_callback(platform: str, request: Request, code: str = "", state: str = ""):
+    import httpx
+    cfg = SOCIAL.get(platform)
+    creds = db.get_social(platform)
+    saved = _oauth_state.pop(state, None)
+    if not cfg or not creds or not code or not saved or saved[0] != platform:
+        return HTMLResponse("<h3>เชื่อมไม่สำเร็จ (state/โค้ดไม่ถูกต้อง) — ปิดหน้าต่างแล้วลองใหม่</h3>", status_code=400)
+    body = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": _redirect_uri(request, platform),
+        cfg.get("client_param", "client_id"): creds["client_id"],
+        "client_secret": creds["client_secret"],
+    }
+    if saved[1]:
+        body["code_verifier"] = saved[1]
+    headers = {"Accept": "application/json"}
+    auth = (creds["client_id"], creds["client_secret"]) if cfg.get("basic") else None
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(cfg["token"], data=body, headers=headers, auth=auth)
+        try:
+            tok = r.json()
+        except Exception:
+            tok = {}
+        access = tok.get("access_token", "")
+        if not access:
+            return HTMLResponse(f"<h3>แลก token ไม่สำเร็จ</h3><pre>{r.status_code}: {r.text[:400]}</pre>", status_code=400)
+        db.set_social_token(platform, access, tok.get("refresh_token", ""), json.dumps(tok)[:2000])
+        db.add_decision("social", f"connected {platform}")
+    except Exception as exc:
+        return HTMLResponse(f"<h3>เชื่อมไม่สำเร็จ</h3><pre>{type(exc).__name__}: {exc}</pre>", status_code=400)
+    return HTMLResponse("<!doctype html><meta charset='utf-8'>"
+                        "<body style='font-family:Inter,sans-serif;text-align:center;padding:48px'>"
+                        f"<h2>เชื่อม {cfg['label']} สำเร็จ ✅</h2><p>ปิดหน้าต่างนี้ได้เลย</p>"
+                        "<script>try{window.opener&&window.opener.postMessage('social-connected','*')}catch(e){};setTimeout(()=>window.close(),900)</script></body>")
 
 
 @app.post("/api/inbound/{token}")
