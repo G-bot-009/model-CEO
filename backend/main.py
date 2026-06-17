@@ -39,8 +39,42 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(title="Multi-Agent Agentic OS")
 
-_client = anthropic.AsyncAnthropic()
-_orchestrator = Orchestrator(_client)
+_client = anthropic.AsyncAnthropic()          # env default — never lost ("API ห้ามหาย")
+_client_cache: dict[str, anthropic.AsyncAnthropic] = {}
+
+
+def _build_client(base_url: str, secret: str) -> anthropic.AsyncAnthropic:
+    """Cache/build an Anthropic client for a stored key (Anthropic key or
+    Anthropic-compatible base URL). Falls back to the env default."""
+    base, secret = (base_url or "").strip(), (secret or "").strip()
+    ck = f"{base}\n{secret}"
+    c = _client_cache.get(ck)
+    if c is None:
+        if base:
+            c = anthropic.AsyncAnthropic(api_key=secret or "local", base_url=base)
+        elif secret:
+            c = anthropic.AsyncAnthropic(api_key=secret)
+        else:
+            c = _client
+        _client_cache[ck] = c
+    return c
+
+
+def client_for_agent(agent_id: str, default: anthropic.AsyncAnthropic | None = None) -> anthropic.AsyncAnthropic:
+    """Resolve the client an agent should use: its assigned key, else ``default``/env."""
+    default = default or _client
+    try:
+        kid = db.agent_key_id(agent_id)
+        if kid:
+            row = db.get_api_key(kid)
+            if row:
+                return _build_client(row.get("base_url"), row.get("secret"))
+    except Exception:
+        pass
+    return default
+
+
+_orchestrator = Orchestrator(lambda aid: client_for_agent(aid))
 
 # Pricing / limits for the token-usage panel. claude-opus-4-8: $5 / $25 per 1M.
 PRICING = {
@@ -179,6 +213,18 @@ async def usage(period: str = "today", start: str | None = None, end: str | None
     except (TypeError, ValueError):
         budget = 0.0
     spent_all = _spend_usd(allt["input"], allt["output"])
+    # per-key breakdown for the selected range
+    labels = {k["id"]: k["label"] for k in db.list_api_keys()}
+    by_key = []
+    for row in db.usage_by_key(s, e):
+        kid = row["key_id"]
+        by_key.append({
+            "key_id": kid,
+            "label": labels.get(kid, "ค่าเริ่มต้น / ENV") if kid else "ค่าเริ่มต้น / ENV",
+            "input": row["input"], "output": row["output"],
+            "usd": round(_spend_usd(row["input"], row["output"]), 4),
+        })
+    by_key.sort(key=lambda x: -(x["input"] + x["output"]))
     return {
         "type": "usage",
         "today": {"per_agent": rng["per_agent"], "input": rng["input"], "output": rng["output"]},
@@ -190,6 +236,7 @@ async def usage(period: str = "today", start: str | None = None, end: str | None
         "alltime_usd": round(spent_all, 4),
         "budget_usd": budget,
         "remaining_usd": round(budget - spent_all, 4) if budget else None,
+        "by_key": by_key,
     }
 
 
@@ -302,7 +349,7 @@ async def generate_image(p: dict) -> dict:
         f"<foreignObject>.\n\nSubject: {prompt}"
     )
     try:
-        resp = await _client.messages.create(
+        resp = await client_for_agent(agent).messages.create(
             model=get_model(),
             max_tokens=8000,
             **thinking_kwargs(),
@@ -361,6 +408,50 @@ async def cache_info() -> dict:
 async def cache_clear() -> dict:
     db.cache_clear()
     return {"ok": True, "count": 0}
+
+
+# --- API keys (Admin Usage: multi-key + per-agent assignment) ---------------
+@app.get("/api/keys")
+async def api_keys() -> dict:
+    """Stored keys (masked), plus the agent→key assignment map. Secrets are
+    never returned to the client."""
+    return {"keys": db.list_api_keys(), "map": db.agent_key_map()}
+
+
+@app.post("/api/keys")
+async def add_api_key(p: dict) -> dict:
+    label = (p.get("label") or "").strip()
+    provider = (p.get("provider") or "anthropic").strip()
+    base_url = (p.get("base_url") or "").strip()
+    secret = (p.get("secret") or p.get("api_key") or "").strip()
+    if not label:
+        label = (provider or "key") + (" · " + base_url if base_url else "")
+    if not secret and not base_url:
+        return {"error": "ต้องใส่ API key หรือ Base URL อย่างน้อยหนึ่งอย่าง"}
+    kid = db.add_api_key(label, provider, base_url, secret)
+    db.add_decision("apikey", f"added {label}")
+    return {"ok": True, "id": kid, "keys": db.list_api_keys()}
+
+
+@app.post("/api/keys/delete")
+async def del_api_key(p: dict) -> dict:
+    kid = p.get("id")
+    if not kid:
+        return {"error": "id required"}
+    db.delete_api_key(int(kid))
+    db.add_decision("apikey", f"deleted #{kid}")
+    return {"ok": True, "keys": db.list_api_keys(), "map": db.agent_key_map()}
+
+
+@app.post("/api/keys/assign")
+async def assign_api_key(p: dict) -> dict:
+    """Pair an agent with a key (key_id=null → back to default/env)."""
+    agent_id = (p.get("agent_id") or "").strip()
+    if agent_id not in all_agents():
+        return {"error": "unknown agent"}
+    kid = p.get("key_id")
+    db.set_agent_key(agent_id, int(kid) if kid else None)
+    return {"ok": True, "map": db.agent_key_map()}
 
 
 class Recorder:
@@ -447,7 +538,10 @@ async def ws(websocket: WebSocket) -> None:
     # Continue the most recent session (requirement: pick up where we left off).
     current = db.get_or_create_current()
     current_id = current["id"]
-    orch = _orchestrator   # may be swapped to a BYOK client for this connection
+    # Per-connection client resolution: an agent's assigned key (persistent,
+    # set in Admin Usage) wins; otherwise this connection's BYOK/default client.
+    conn = {"default": _client}
+    orch = Orchestrator(lambda aid: client_for_agent(aid, default=conn["default"]))
 
     async def send_session_state(session: dict) -> None:
         await send({"type": "sessions", "sessions": db.list_sessions()})
@@ -486,15 +580,15 @@ async def ws(websocket: WebSocket) -> None:
                 base_url = (msg.get("base_url") or "").strip()
                 model = (msg.get("model") or "").strip()
                 if base_url:
-                    orch = Orchestrator(anthropic.AsyncAnthropic(api_key=key or "local", base_url=base_url))
+                    conn["default"] = _build_client(base_url, key or "local")
                     if model:
                         set_model(model)
                     await send({"type": "byok", "ok": True, "provider": "local (" + base_url + ")"})
                 elif not key:
-                    orch = _orchestrator
+                    conn["default"] = _client
                     await send({"type": "byok", "ok": True, "provider": "default"})
                 elif provider == "anthropic":
-                    orch = Orchestrator(anthropic.AsyncAnthropic(api_key=key))
+                    conn["default"] = _build_client("", key)
                     if model:
                         set_model(model)
                     await send({"type": "byok", "ok": True, "provider": provider})
@@ -556,7 +650,7 @@ async def ws(websocket: WebSocket) -> None:
                     db.save_message(current_id, "jarvis", "assistant", cached)
                     continue
                 try:
-                    out = await run_jarvis(send, jgoal, orch.client, current_id)
+                    out = await run_jarvis(send, jgoal, orch.client_for("jarvis"), current_id)
                     if out:
                         db.cache_set(ckey, "jarvis", jgoal, out)
                 except Exception as exc:

@@ -74,8 +74,19 @@ async def _emit_usage(emit: Emit, agent: str, usage) -> None:
 
 
 class Orchestrator:
-    def __init__(self, client: anthropic.AsyncAnthropic):
-        self.client = client
+    def __init__(self, client_for):
+        """``client_for`` maps an agent id -> AsyncAnthropic client, so different
+        agents can run on different API keys in parallel. For backward
+        compatibility, a bare AsyncAnthropic may be passed (all agents use it)."""
+        if isinstance(client_for, anthropic.AsyncAnthropic):
+            self.client_for = lambda _aid, _c=client_for: _c
+        else:
+            self.client_for = client_for
+
+    @property
+    def client(self) -> anthropic.AsyncAnthropic:
+        """The CEO's client (used for ad-hoc calls)."""
+        return self.client_for("ceo")
 
     # -- Step 1: planning ----------------------------------------------------
     async def plan(self, goal: str, emit: Emit, paused: set | None = None) -> list[dict]:
@@ -100,7 +111,7 @@ class Orchestrator:
             f'where "agent" is one of: {valid}.'
         )
 
-        resp = await self.client.messages.create(
+        resp = await self.client_for("ceo").messages.create(
             model=MODEL,
             max_tokens=2000,
             **thinking_kwargs(),
@@ -126,7 +137,7 @@ class Orchestrator:
         )
 
         collected: list[str] = []
-        async with self.client.messages.stream(
+        async with self.client_for(agent_id).messages.stream(
             model=MODEL,
             max_tokens=4000,
             **thinking_kwargs(),
@@ -164,7 +175,7 @@ class Orchestrator:
         )
 
         collected: list[str] = []
-        async with self.client.messages.stream(
+        async with self.client_for("ceo").messages.stream(
             model=MODEL,
             max_tokens=4000,
             **thinking_kwargs(),

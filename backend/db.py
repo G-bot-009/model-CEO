@@ -119,6 +119,14 @@ def init() -> None:
                 color TEXT, tags TEXT, system TEXT, created_at TEXT NOT NULL,
                 category TEXT, skills TEXT
             );
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS agent_api_map (
+                agent_id TEXT PRIMARY KEY, key_id INTEGER NOT NULL
+            );
             """
         )
         # migrate older DBs that predate the skills columns
@@ -127,6 +135,10 @@ def init() -> None:
             c.execute("ALTER TABLE custom_agents ADD COLUMN category TEXT")
         if "skills" not in cols:
             c.execute("ALTER TABLE custom_agents ADD COLUMN skills TEXT")
+        # per-key token attribution
+        ucols = {r[1] for r in c.execute("PRAGMA table_info(token_usage)").fetchall()}
+        if "key_id" not in ucols:
+            c.execute("ALTER TABLE token_usage ADD COLUMN key_id INTEGER")
 
 
 def _now() -> str:
@@ -218,10 +230,12 @@ def save_status(agent_name: str, status: str) -> None:
 # --- Token usage ------------------------------------------------------------
 def save_token_usage(session_id: int, agent_name: str, input_tokens: int, output_tokens: int) -> None:
     with _conn() as c:
+        row = c.execute("SELECT key_id FROM agent_api_map WHERE agent_id=?", (agent_name,)).fetchone()
+        key_id = row["key_id"] if row else None
         c.execute(
             "INSERT INTO token_usage (session_id, agent_name, input_tokens, "
-            "output_tokens, timestamp) VALUES (?, ?, ?, ?, ?)",
-            (session_id, agent_name, int(input_tokens or 0), int(output_tokens or 0), _now()),
+            "output_tokens, timestamp, key_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, agent_name, int(input_tokens or 0), int(output_tokens or 0), _now(), key_id),
         )
 
 
@@ -292,6 +306,81 @@ def usage_totals(where: str = "", params: tuple = ()) -> dict:
     with _conn() as c:
         r = c.execute(sql, params).fetchone()
     return {"input": r["i"] or 0, "output": r["o"] or 0}
+
+
+def usage_by_key(start_day: str, end_day: str) -> list[dict]:
+    """Token totals grouped by API key for an inclusive date range.
+
+    key_id is None for usage on the default/env key (or a per-connection BYOK key)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT key_id, SUM(input_tokens) AS i, SUM(output_tokens) AS o "
+            "FROM token_usage WHERE substr(timestamp,1,10) BETWEEN ? AND ? GROUP BY key_id",
+            (start_day, end_day),
+        ).fetchall()
+    return [{"key_id": r["key_id"], "input": r["i"] or 0, "output": r["o"] or 0} for r in rows]
+
+
+# --- API keys (multi-key, per-agent assignment) -----------------------------
+def add_api_key(label: str, provider: str, base_url: str, secret: str) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO api_keys (label, provider, base_url, secret, created_at) VALUES (?,?,?,?,?)",
+            (label, provider, base_url, secret, _now()),
+        )
+        return cur.lastrowid
+
+
+def list_api_keys() -> list[dict]:
+    """Keys with the secret MASKED (never expose the full key to the client)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, label, provider, base_url, secret FROM api_keys ORDER BY id"
+        ).fetchall()
+    out = []
+    for r in rows:
+        s = r["secret"] or ""
+        masked = (s[:7] + "…" + s[-4:]) if len(s) > 12 else ("•" * len(s) if s else "")
+        out.append({"id": r["id"], "label": r["label"], "provider": r["provider"],
+                    "base_url": r["base_url"] or "", "masked": masked, "has_secret": bool(s)})
+    return out
+
+
+def get_api_key(key_id: int) -> Optional[dict]:
+    """Full row INCLUDING the secret — server-side use only (building a client)."""
+    with _conn() as c:
+        r = c.execute("SELECT id, label, provider, base_url, secret FROM api_keys WHERE id=?", (key_id,)).fetchone()
+    return dict(r) if r else None
+
+
+def delete_api_key(key_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM api_keys WHERE id=?", (key_id,))
+        c.execute("DELETE FROM agent_api_map WHERE key_id=?", (key_id,))
+
+
+def set_agent_key(agent_id: str, key_id: Optional[int]) -> None:
+    with _conn() as c:
+        if key_id:
+            c.execute(
+                "INSERT INTO agent_api_map (agent_id, key_id) VALUES (?,?) "
+                "ON CONFLICT(agent_id) DO UPDATE SET key_id=excluded.key_id",
+                (agent_id, key_id),
+            )
+        else:
+            c.execute("DELETE FROM agent_api_map WHERE agent_id=?", (agent_id,))
+
+
+def agent_key_map() -> dict:
+    with _conn() as c:
+        rows = c.execute("SELECT agent_id, key_id FROM agent_api_map").fetchall()
+    return {r["agent_id"]: r["key_id"] for r in rows}
+
+
+def agent_key_id(agent_id: str) -> Optional[int]:
+    with _conn() as c:
+        r = c.execute("SELECT key_id FROM agent_api_map WHERE agent_id=?", (agent_id,)).fetchone()
+    return r["key_id"] if r else None
 
 
 # --- SOP library ------------------------------------------------------------

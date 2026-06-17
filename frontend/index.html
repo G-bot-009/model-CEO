@@ -274,6 +274,7 @@
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
+      <div class="menu-item" data-view="admin"><span class="ico">🔑</span><span class="label">Admin Usage</span></div>
       <div class="menu-item" data-view="settings"><span class="ico">⚙️</span><span class="label">Settings</span></div>
     </nav>
     <div class="side-title">ทีมเอเจนต์</div>
@@ -551,6 +552,36 @@
         <div class="card" style="padding:16px; margin-top:14px">
           <div style="color:#cbd5e1; font-size:13px; margin-bottom:10px;">การใช้งานรายวัน (7 วัน)</div>
           <div class="bars" id="tk_bars"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN USAGE (API keys + per-agent assignment + per-key spend) -->
+      <section class="view" id="view-admin">
+        <h2 style="color:#fff; margin:0 0 6px">Admin Usage — API & การจับคู่เอเจนต์</h2>
+        <p style="color:#94a3b8; font-size:13px; margin:0 0 16px; max-width:760px">
+          เพิ่ม API key ได้หลายตัว แล้วเลือกว่าเอเจนต์ไหนใช้ key ไหน — เอเจนต์ที่ใช้คนละ key จะทำงาน
+          <b style="color:#cbd5e1">พร้อมกันได้</b> และ <b style="color:#cbd5e1">แยกนับ token แยกบิล</b> ตาม key
+          คีย์ถูกเก็บในเครื่อง (ไฟล์ <code>agents.db</code> ที่ไม่ขึ้น git) และไม่ถูกส่งกลับไปแสดงแบบเต็ม
+        </p>
+
+        <div class="panel"><h3>🔑 API Keys <span style="flex:1"></span>
+          <button class="qbtn" id="adm_addkey" style="font-weight:700">➕ เพิ่ม API key</button></h3>
+          <div id="adm_keys" style="display:flex; flex-direction:column; gap:8px"></div>
+        </div>
+
+        <div class="panel"><h3>🔗 จับคู่เอเจนต์ ↔ API key</h3>
+          <div id="adm_assign" style="display:flex; flex-direction:column; gap:8px"></div>
+        </div>
+
+        <div class="panel"><h3>📊 การใช้ token แยกตาม key
+          <span style="flex:1"></span>
+          <select id="adm_period" class="numfld" style="width:auto; margin:0; padding:6px 10px">
+            <option value="today">วันนี้</option>
+            <option value="yesterday">เมื่อวาน</option>
+            <option value="7d">7 วัน</option>
+            <option value="30d" selected>1 เดือน</option>
+          </select></h3>
+          <div id="adm_bykey" style="display:flex; flex-direction:column; gap:10px"></div>
         </div>
       </section>
 
@@ -1388,6 +1419,72 @@ function renderTokenPage(d) {
   if (d.remaining_usd === null || d.remaining_usd === undefined) { rem.textContent = "—"; rem.style.color = "#94a3b8"; }
   else { rem.textContent = "$" + d.remaining_usd.toFixed(2); rem.style.color = d.remaining_usd <= 0 ? "#fca5a5" : "#4ade80"; }
 }
+/* ---------- Admin Usage: API keys + per-agent assignment + per-key spend ---------- */
+let ADM = { keys: [], map: {} };
+async function loadAdmin() {
+  try { ADM = await (await fetch("/api/keys")).json(); } catch(e){ ADM = { keys:[], map:{} }; }
+  renderAdminKeys(); renderAdminAssign(); loadAdminUsage();
+}
+function renderAdminKeys() {
+  const wrap = $("adm_keys"), ks = ADM.keys || [];
+  wrap.innerHTML = ks.length ? ks.map(k => `
+    <div style="display:flex; align-items:center; gap:10px; background:#0f1b33; border:1px solid #1e293b; border-radius:10px; padding:10px 12px">
+      <span style="font-size:18px">🔑</span>
+      <div style="flex:1; min-width:0">
+        <div style="color:#fff; font-weight:700">${escapeHtml(k.label)}</div>
+        <div style="font-size:11px; color:#64748b">${escapeHtml(k.provider||"")}${k.base_url?(" · "+escapeHtml(k.base_url)):""}${k.masked?(" · "+escapeHtml(k.masked)):""}</div>
+      </div>
+      <button class="qbtn" data-delkey="${k.id}" title="ลบ key นี้">🗑️</button>
+    </div>`).join("") : `<div style="color:#64748b">ยังไม่มี API key — กด ➕ เพิ่ม</div>`;
+  wrap.querySelectorAll("[data-delkey]").forEach(b => b.addEventListener("click", () => delAdminKey(+b.dataset.delkey)));
+}
+function renderAdminAssign() {
+  const wrap = $("adm_assign"), ids = Object.keys(AGENTS);
+  const opts = (sel) => `<option value="">ค่าเริ่มต้น / ENV</option>` +
+    (ADM.keys||[]).map(k => `<option value="${k.id}" ${sel==k.id?"selected":""}>${escapeHtml(k.label)}</option>`).join("");
+  wrap.innerHTML = ids.map(id => `
+    <div style="display:flex; align-items:center; gap:10px">
+      <span style="font-size:18px">${meta(id).emoji}</span>
+      <span style="flex:1; color:#cbd5e1">${meta(id).name}</span>
+      <select class="numfld" data-assign="${id}" style="width:auto; margin:0; padding:7px 10px; min-width:210px">${opts(ADM.map[id]||"")}</select>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-assign]").forEach(sel => sel.addEventListener("change", async () => {
+    await postJSON("/api/keys/assign", { agent_id: sel.dataset.assign, key_id: sel.value ? +sel.value : null });
+    try { ADM.map = (await (await fetch("/api/keys")).json()).map || {}; } catch(e){}
+    toastNote("อัปเดตการจับคู่แล้ว", "#22c55e"); loadAdminUsage();
+  }));
+}
+async function loadAdminUsage() {
+  let d; try { d = await (await fetch("/api/usage?period=" + $("adm_period").value)).json(); } catch(e){ return; }
+  pricing = d.pricing || pricing;
+  const rows = d.by_key || [];
+  const max = Math.max(1, ...rows.map(r => (r.input||0)+(r.output||0)));
+  $("adm_bykey").innerHTML = rows.length ? rows.map(r => {
+    const tot = (r.input||0)+(r.output||0), pct = tot/max*100;
+    return `<div>
+      <div style="display:flex; justify-content:space-between; font-size:13px; color:#cbd5e1">
+        <span>🔑 ${escapeHtml(r.label)}</span><span>${fmt(tot)} tokens · $${(r.usd||0).toFixed(3)}</span></div>
+      <div class="meter" style="margin-top:4px"><div style="width:${pct}%; background:#7c5cff"></div></div></div>`;
+  }).join("") : `<div style="color:#64748b">ยังไม่มีการใช้งานในช่วงนี้</div>`;
+}
+function openAddKey() {
+  openGen("➕ เพิ่ม API key", [
+    {key:"label", label:"ชื่อเรียก (ของคุณ)", type:"input", placeholder:"เช่น Key หลัก, Key สำรอง"},
+    {key:"provider", label:"Provider", type:"input", placeholder:"anthropic / local / openrouter ..."},
+    {key:"base_url", label:"Base URL (โลคัล/custom — Anthropic-compatible; ว่างได้ถ้าใช้ Anthropic)", type:"input", placeholder:"http://localhost:4000"},
+    {key:"secret", label:"API key (sk-ant-... ; โลคัลปล่อยว่างได้)", type:"input", placeholder:"วางคีย์ที่นี่"},
+  ], async (v) => {
+    const r = await postJSON("/api/keys", v);
+    if (r.error) { toastNote(r.error, "#ef4444"); return; }
+    closeModal("genModal"); toastNote("เพิ่ม API key แล้ว 🔑", "#22c55e"); loadAdmin();
+  });
+}
+async function delAdminKey(id) {
+  if (!confirm("ลบ API key นี้? เอเจนต์ที่จับคู่ไว้จะกลับไปใช้ค่าเริ่มต้น")) return;
+  const r = await postJSON("/api/keys/delete", { id });
+  if (r.error) { toastNote(r.error, "#ef4444"); return; }
+  toastNote("ลบ key แล้ว", "#a855f7"); loadAdmin();
+}
 function setUsage(p) {
   usage = p.today && p.today.per_agent ? p.today : { per_agent:{}, input:0, output:0 };
   if (!usage.per_agent) usage.per_agent = {};
@@ -1643,12 +1740,13 @@ function send(text) {
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", automation:"Automation", history:"History", tokens:"Token Usage", admin:"Admin Usage", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
   if (v === "automation") loadAutomation();
   if (v === "tokens") loadTokensRange();
+  if (v === "admin") loadAdmin();
   if (v === "settings") initSettingsForm();
 }
 
@@ -1902,6 +2000,10 @@ $("tk_savebudget").addEventListener("click", async () => {
   toastNote("บันทึกงบประมาณแล้ว", "#22c55e"); loadTokensRange();
 });
 
+/* admin usage: keys + assignment */
+$("adm_addkey").addEventListener("click", openAddKey);
+$("adm_period").addEventListener("change", loadAdminUsage);
+
 /* console add buttons */
 $("addSop").addEventListener("click", () => openGen("เพิ่ม SOP",
   [{key:"title",label:"ชื่อคู่มือ",type:"input",placeholder:"เช่น วิธีตอบลูกค้า"},{key:"body",label:"เนื้อหา",type:"textarea"}],
@@ -1918,12 +2020,7 @@ function byokNote(){ const p=$("byokProvider").value;
     ? "💻 รันโมเดลในเครื่องฟรี! ลง <b>Ollama</b> + <b>LiteLLM proxy</b> (Anthropic-compatible) → ใส่ Base URL (เช่น http://localhost:4000) + ชื่อโมเดล (เช่น llama3.1) · ไม่เสียค่า token เลย"
     : "ℹ️ provider นี้ใช้ผ่านโหมด Local/Base URL (ต้องมี proxy ที่พูดภาษา Anthropic) — ใส่ Base URL ด้านล่าง"; }
 $("byokProvider").addEventListener("change", byokNote); byokNote();
-$("byok").addEventListener("click", () => {
-  const m = JSON.parse(localStorage.getItem("byok")||"{}");
-  $("byokProvider").value = m.provider || "anthropic"; $("byokModel").value = m.model || "";
-  $("byokBase").value = m.base_url || "";
-  $("byokKey").value = localStorage.getItem("byok_key") || ""; byokNote(); openModal("byokModal");
-});
+$("byok").addEventListener("click", () => showView("admin"));
 $("byokSave").addEventListener("click", () => {
   const provider=$("byokProvider").value, key=$("byokKey").value.trim(), model=$("byokModel").value.trim(), base_url=$("byokBase").value.trim();
   localStorage.setItem("byok", JSON.stringify({provider, model, base_url}));
