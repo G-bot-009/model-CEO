@@ -383,29 +383,91 @@ async def api_connector(p: dict) -> dict:
 
 
 async def _send_to_connector(name: str, cfg_raw: str, text: str) -> dict:
-    """Real outbound for webhook-based connectors (no OAuth needed)."""
+    """Real outbound for connectors that work with a pasted credential (no OAuth)."""
+    import base64
+    import hashlib
+    import hmac
+    import time
+    import asyncio
     import httpx
-    data = None
+
     try:
         data = json.loads(cfg_raw)
     except Exception:
         data = None
+    if not isinstance(data, dict):
+        data = {}
     cfg = (cfg_raw or "").strip()
-    async with httpx.AsyncClient(timeout=15) as client:
+
+    async with httpx.AsyncClient(timeout=20) as client:
         if name == "Slack":
             r = await client.post(cfg, json={"text": text})
         elif name == "Discord":
             r = await client.post(cfg, json={"content": text})
         elif name == "Telegram":
-            d = data or {}
-            tok, chat = d.get("bot_token", ""), d.get("chat_id", "")
+            tok, chat = data.get("bot_token", ""), data.get("chat_id", "")
             if not tok or not chat:
-                return {"error": "ต้องมี Bot Token และ Chat ID — เชื่อมใหม่อีกครั้ง"}
+                return {"error": "ต้องมี Bot Token และ Chat ID — เชื่อมใหม่"}
             r = await client.post(f"https://api.telegram.org/bot{tok}/sendMessage", json={"chat_id": chat, "text": text})
         elif name == "Webhook → Make/Zapier":
             r = await client.post(cfg, json={"title": "ToonOffice", "text": text, "caption": text, "imageUrl": "", "mediaUrl": ""})
+        elif name == "LINE OA":
+            tok = data.get("access_token") or cfg
+            r = await client.post("https://api.line.me/v2/bot/message/broadcast",
+                                  headers={"Authorization": f"Bearer {tok}"},
+                                  json={"messages": [{"type": "text", "text": text}]})
+        elif name == "Notion":
+            tok, parent = data.get("token", ""), (data.get("parent", "") or "").replace("-", "")
+            if not tok or not parent:
+                return {"error": "ต้องมี Integration token และ Parent Page ID"}
+            r = await client.post("https://api.notion.com/v1/pages",
+                                  headers={"Authorization": f"Bearer {tok}", "Notion-Version": "2022-06-28"},
+                                  json={"parent": {"type": "page_id", "page_id": parent},
+                                        "properties": {"title": {"title": [{"text": {"content": text[:200]}}]}}})
+        elif name == "WordPress":
+            url = (data.get("url", "") or "").rstrip("/")
+            r = await client.post(f"{url}/wp-json/wp/v2/posts",
+                                  auth=(data.get("user", ""), data.get("pass", "")),
+                                  json={"title": "ToonOffice test", "content": text, "status": "draft"})
+        elif name == "GitHub":
+            tok, repo = data.get("token", ""), data.get("repo", "")
+            if not tok or "/" not in repo:
+                return {"error": "ต้องมี token และ repo แบบ owner/name"}
+            path = f"toonoffice/test-{int(time.time())}.md"
+            r = await client.put(f"https://api.github.com/repos/{repo}/contents/{path}",
+                                 headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json"},
+                                 json={"message": "ToonOffice test", "content": base64.b64encode(text.encode()).decode()})
+        elif name == "Email":
+            import smtplib
+            from email.message import EmailMessage
+            def _smtp():
+                msg = EmailMessage()
+                msg["From"] = data.get("user", ""); msg["To"] = data.get("to", "")
+                msg["Subject"] = "ToonOffice test"; msg.set_content(text)
+                with smtplib.SMTP(data.get("host", ""), int(data.get("port") or 587), timeout=20) as s:
+                    s.starttls(); s.login(data.get("user", ""), data.get("pass", "")); s.send_message(msg)
+            await asyncio.to_thread(_smtp)
+            return {"ok": True, "msg": "ส่งอีเมลแล้ว"}
+        elif name == "Binance Futures":
+            key, sec = data.get("api_key", ""), data.get("api_secret", "")
+            q = f"recvWindow=5000&timestamp={int(time.time()*1000)}"
+            sig = hmac.new(sec.encode(), q.encode(), hashlib.sha256).hexdigest()
+            r = await client.get(f"https://api.binance.com/api/v3/account?{q}&signature={sig}",
+                                 headers={"X-MBX-APIKEY": key})
+            if r.status_code < 400:
+                return {"ok": True, "msg": "อ่านบัญชี Binance ได้ ✅"}
+        elif name == "Bybit":
+            key, sec = data.get("api_key", ""), data.get("api_secret", "")
+            ts, recv, qs = str(int(time.time()*1000)), "5000", "accountType=UNIFIED"
+            sign = hmac.new(sec.encode(), (ts + key + recv + qs).encode(), hashlib.sha256).hexdigest()
+            r = await client.get(f"https://api.bybit.com/v5/account/wallet-balance?{qs}",
+                                 headers={"X-BAPI-API-KEY": key, "X-BAPI-TIMESTAMP": ts,
+                                          "X-BAPI-RECV-WINDOW": recv, "X-BAPI-SIGN": sign})
+            if r.status_code < 400 and (r.json().get("retCode") == 0):
+                return {"ok": True, "msg": "อ่านวอลเล็ต Bybit ได้ ✅"}
+            return {"error": f"Bybit: {r.text[:180]}"}
         else:
-            return {"error": f"{name} ยังไม่รองรับการส่งจริงในตอนนี้ (เก็บคีย์ไว้แล้ว — ส่วนใหญ่ต้องใช้ OAuth)"}
+            return {"error": f"{name} ต้องใช้ OAuth/ตัวกลาง — ยังเชื่อมจริงไม่ได้ด้วยการวางคีย์ (เก็บไว้แล้ว)"}
         if r.status_code >= 400:
             return {"error": f"{name} ตอบกลับ {r.status_code}: {r.text[:180]}"}
     return {"ok": True}

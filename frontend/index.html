@@ -2258,32 +2258,67 @@ const CONN_GUIDE = {
     fields: [{key:"bot_token", label:"Bot Token", placeholder:"123456:ABC-..."},
              {key:"chat_id", label:"Chat ID", placeholder:"-1001234567890"}] },
   "LINE OA": { doc: "https://developers.line.biz/console/", docLabel: "เปิด LINE Developers Console",
-    video: "https://www.youtube.com/results?search_query=LINE+Messaging+API+webhook+setup", videoLabel: "ดูวิดีโอสอน",
-    desc: "เชื่อม LINE Official Account → บรอดแคสต์จากทีม AI, เปิดแชตบอตตอบกลับลูกค้าอัตโนมัติ และเห็นทุกแชตใน Social Inbox",
-    steps: ["สร้าง (หรือเปิด) Provider → สร้าง channel แบบ “Messaging API” สำหรับ Official Account ของคุณ",
-            "แท็บ “Basic settings”: คัดลอก Channel ID (10 หลัก) และ Channel secret — แค่นี้พอ (ระบบจัดการ access token ให้อัตโนมัติ; จะวาง Channel access token แบบ long-lived ในช่องแรกแทนก็ได้)",
-            "วางทั้งสองค่าด้านล่าง แล้วกด Connect — ระบบจะตั้ง webhook ให้อัตโนมัติ (ไม่ต้องคัดลอก URL)",
-            "สำคัญ — ก่อนบอทจะตอบได้: เปิด LINE Official Account Manager (manager.line.biz) → Settings → Response settings แล้วเปิด “Webhook” เป็น ON และปิด “ข้อความตอบกลับอัตโนมัติ” ของ LINE เอง (ไม่งั้น LINE จะตอบสำเร็จรูปแทน AI ของคุณ)",
-            "เสร็จ — ทุกข้อความลูกค้าจะเข้ามาที่ Social Inbox (เมนู Social) เป็นแชต LINE ตอบได้ในที่เดียว"],
-    fields: [{key:"channel_id", label:"Channel ID (หรือ Channel access token)", placeholder:"Channel ID 10 หลัก จาก Basic settings"},
-             {key:"channel_secret", label:"Channel secret", placeholder:"จาก Basic settings ใต้ Channel ID"}] },
-  "Notion": { field: "Internal Integration Token", placeholder: "secret_...", doc: "https://www.notion.so/my-integrations", docLabel: "เปิดหน้า Notion Integrations",
-    desc: "อ่าน/เขียนฐานข้อมูลและหน้า Notion", steps: ["สร้าง Integration ใหม่ → คัดลอก Internal Integration Token", "แชร์เพจ/ฐานข้อมูลให้ integration นั้น", "วาง token ด้านล่าง"] },
-  "Meta Ads": { field: "Access token", doc: "https://developers.facebook.com/tools/explorer/", docLabel: "เปิด Meta Graph API Explorer", desc: "ดู/จัดการแคมเปญโฆษณา Meta" },
-  "Google Ads": { field: "Developer token / OAuth", doc: "https://ads.google.com/aw/apicenter", docLabel: "เปิด Google Ads API Center", desc: "ดู/จัดการแคมเปญ Google Ads" },
-  "Email": { field: "SMTP / App password", doc: "https://support.google.com/mail/answer/185833", docLabel: "วิธีสร้าง App Password (Gmail)", desc: "ส่งอีเมลผ่านบัญชีของคุณ (แนะนำใช้ App Password)" },
-  "WordPress": { field: "Application Password", doc: "https://wordpress.org/documentation/article/application-passwords/", docLabel: "วิธีสร้าง Application Password", desc: "โพสต์บทความขึ้นเว็บ WordPress" },
-  "Facebook & Instagram": { field: "Access token", doc: "https://developers.facebook.com/", docLabel: "เปิด Meta for Developers", desc: "โพสต์/จัดการเพจ FB และ IG" },
-  "Shopify": { field: "Admin API access token", doc: "https://admin.shopify.com/", docLabel: "เปิด Shopify Admin", desc: "จัดการสินค้า/ออเดอร์ร้าน Shopify" },
-  "Google Drive": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียนไฟล์ใน Google Drive" },
-  "Google Sheets": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียน Google Sheets" },
-  "YouTube": { field: "OAuth credential / API key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อัปโหลด/จัดการวิดีโอ YouTube" },
-  "TikTok": { field: "Access token", doc: "https://developers.tiktok.com/", docLabel: "เปิด TikTok for Developers", desc: "โพสต์/ดึงข้อมูล TikTok" },
-  "X (Twitter)": { field: "Bearer / API key", doc: "https://developer.x.com/en/portal/dashboard", docLabel: "เปิด X Developer Portal", desc: "โพสต์/อ่านบน X (Twitter)" },
-  "GitHub": { field: "Personal access token", placeholder: "ghp_...", doc: "https://github.com/settings/tokens", docLabel: "สร้าง GitHub Token", desc: "จัดการ repo / commit / PR" },
-  "Binance Futures": { field: "API key + Secret", doc: "https://www.binance.com/en/my/settings/api-management", docLabel: "เปิด Binance API Management", desc: "ดูพอร์ต/ส่งคำสั่ง (ทำตามความเสี่ยงของคุณเอง)" },
-  "Bybit": { field: "API key + Secret", doc: "https://www.bybit.com/app/user/api-management", docLabel: "เปิด Bybit API Management", desc: "ดูพอร์ต/ส่งคำสั่ง (ทำตามความเสี่ยงของคุณเอง)" },
-  "MetaTrader 5 (Forex)": { field: "Webhook / Bridge URL", doc: "https://www.metatrader5.com/", docLabel: "เปิดเว็บ MetaTrader 5", desc: "เชื่อมสัญญาณเข้า MT5 ผ่าน bridge/webhook" },
+    desc: "บรอดแคสต์ข้อความถึงผู้ติดตามทุกคนของ LINE OA (ส่งจริงด้วย Channel access token)",
+    steps: ["สร้าง channel แบบ “Messaging API” ใน LINE Developers สำหรับ Official Account ของคุณ",
+            "แท็บ “Messaging API”: กดออก “Channel access token (long-lived)” แล้วคัดลอก",
+            "วาง token ด้านล่าง — กด “ส่งทดสอบ” จะบรอดแคสต์ถึงผู้ติดตามจริง"],
+    fields: [{key:"access_token", label:"Channel access token (long-lived)", placeholder:"วาง access token"}] },
+  "Notion": { doc: "https://www.notion.so/my-integrations", docLabel: "เปิดหน้า Notion Integrations",
+    desc: "สร้างหน้าใหม่ใน Notion ของคุณจริง (ใส่ Integration token + Page ID ปลายทาง)",
+    steps: ["สร้าง Integration → คัดลอก Internal Integration Token (secret_...)",
+            "เปิดเพจปลายทางใน Notion → … → Connections → เพิ่ม integration ของคุณ",
+            "คัดลอก Page ID จาก URL ของเพจ (ส่วน 32 ตัวอักษรท้าย) แล้ววางทั้งสองค่าด้านล่าง"],
+    fields: [{key:"token", label:"Internal Integration Token", placeholder:"secret_..."},
+             {key:"parent", label:"Parent Page ID", placeholder:"32 ตัวอักษรจาก URL ของเพจ"}] },
+  "Meta Ads": { field: "Access token", doc: "https://developers.facebook.com/tools/explorer/", docLabel: "เปิด Meta Graph API Explorer", desc: "ดู/จัดการแคมเปญโฆษณา Meta (ต้องใช้ OAuth — เก็บ token ไว้ก่อน)" },
+  "Google Ads": { field: "Developer token / OAuth", doc: "https://ads.google.com/aw/apicenter", docLabel: "เปิด Google Ads API Center", desc: "ดู/จัดการแคมเปญ Google Ads (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
+  "Email": { doc: "https://support.google.com/mail/answer/185833", docLabel: "วิธีสร้าง App Password (Gmail)",
+    desc: "ส่งอีเมลจริงผ่าน SMTP ของคุณ (Gmail แนะนำ App Password)",
+    steps: ["Gmail: เปิด 2-Step Verification แล้วสร้าง App Password",
+            "ใช้ host: smtp.gmail.com, port: 587 (อีเมลอื่นดู SMTP ของผู้ให้บริการ)",
+            "กรอกค่าด้านล่าง — กด “ส่งทดสอบ” จะส่งอีเมลจริงไปยังผู้รับ"],
+    fields: [{key:"host", label:"SMTP host", placeholder:"smtp.gmail.com"},
+             {key:"port", label:"Port", placeholder:"587"},
+             {key:"user", label:"อีเมล/ผู้ใช้ (ผู้ส่ง)", placeholder:"you@gmail.com"},
+             {key:"pass", label:"รหัสผ่าน / App Password", placeholder:"App Password 16 หลัก"},
+             {key:"to", label:"ส่งถึง (ผู้รับ)", placeholder:"to@example.com"}] },
+  "WordPress": { doc: "https://wordpress.org/documentation/article/application-passwords/", docLabel: "วิธีสร้าง Application Password",
+    desc: "เขียนบทความขึ้นเว็บ WordPress ของคุณจริง (สร้างเป็นฉบับร่าง)",
+    steps: ["WP Admin → Users → Profile → Application Passwords → สร้างใหม่ คัดลอกรหัส",
+            "กรอก URL เว็บ + ชื่อผู้ใช้ + Application Password ด้านล่าง",
+            "กด “ส่งทดสอบ” จะสร้างโพสต์ฉบับร่างจริงบนเว็บ"],
+    fields: [{key:"url", label:"URL เว็บไซต์", placeholder:"https://yoursite.com"},
+             {key:"user", label:"ชื่อผู้ใช้ WordPress", placeholder:"admin"},
+             {key:"pass", label:"Application Password", placeholder:"xxxx xxxx xxxx xxxx"}] },
+  "Facebook & Instagram": { field: "Access token", doc: "https://developers.facebook.com/", docLabel: "เปิด Meta for Developers", desc: "โพสต์/จัดการเพจ FB และ IG (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
+  "Shopify": { field: "Admin API access token", doc: "https://admin.shopify.com/", docLabel: "เปิด Shopify Admin", desc: "จัดการสินค้า/บทความร้าน Shopify (ต้องตั้ง Custom App — เก็บไว้ก่อน)" },
+  "Google Drive": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียนไฟล์ใน Google Drive (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
+  "Google Sheets": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียน Google Sheets (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
+  "YouTube": { field: "OAuth credential / API key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อัปโหลด/จัดการวิดีโอ YouTube (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
+  "TikTok": { field: "Access token", doc: "https://developers.tiktok.com/", docLabel: "เปิด TikTok for Developers", desc: "โพสต์/ดึงข้อมูล TikTok (ต้องใช้ OAuth + รีวิว — เก็บไว้ก่อน)" },
+  "X (Twitter)": { field: "Bearer / API key", doc: "https://developer.x.com/en/portal/dashboard", docLabel: "เปิด X Developer Portal", desc: "โพสต์/อ่านบน X (โพสต์ต้องใช้ OAuth user — เก็บไว้ก่อน)" },
+  "GitHub": { doc: "https://github.com/settings/tokens", docLabel: "สร้าง GitHub Token",
+    desc: "คอมมิตไฟล์ขึ้น repo ของคุณจริง (โน้ต/โค้ด/เอกสาร)",
+    steps: ["สร้าง Personal access token (ghp_...) ที่มีสิทธิ์ repo (Contents: write)",
+            "ใส่ token + ชื่อ repo แบบ owner/name ด้านล่าง",
+            "กด “ส่งทดสอบ” จะคอมมิตไฟล์ทดสอบเข้า repo จริง"],
+    fields: [{key:"token", label:"Personal access token", placeholder:"ghp_..."},
+             {key:"repo", label:"Repo (owner/name)", placeholder:"yourname/your-repo"}] },
+  "Binance Futures": { doc: "https://www.binance.com/en/my/settings/api-management", docLabel: "เปิด Binance API Management",
+    desc: "อ่านยอดบัญชี/พอร์ตของคุณจริง (แนะนำคีย์แบบอ่านอย่างเดียว Enable Reading)",
+    steps: ["สร้าง API key (เปิดสิทธิ์ Reading; ไม่ต้องเปิด trading ถ้าแค่ดูพอร์ต)",
+            "ใส่ API key + Secret ด้านล่าง",
+            "กด “ทดสอบการเชื่อม” จะลองอ่านบัญชีจริง"],
+    fields: [{key:"api_key", label:"API key", placeholder:"วาง API key"},
+             {key:"api_secret", label:"API secret", placeholder:"วาง Secret"}] },
+  "Bybit": { doc: "https://www.bybit.com/app/user/api-management", docLabel: "เปิด Bybit API Management",
+    desc: "อ่านยอดวอลเล็ต/พอร์ต Bybit ของคุณจริง (แนะนำคีย์อ่านอย่างเดียว)",
+    steps: ["สร้าง API key (สิทธิ์ Read-Only ก็พอสำหรับดูพอร์ต)",
+            "ใส่ API key + Secret ด้านล่าง",
+            "กด “ทดสอบการเชื่อม” จะลองอ่านวอลเล็ตจริง"],
+    fields: [{key:"api_key", label:"API key", placeholder:"วาง API key"},
+             {key:"api_secret", label:"API secret", placeholder:"วาง Secret"}] },
+  "MetaTrader 5 (Forex)": { field: "Webhook / Bridge URL", doc: "https://www.metatrader5.com/", docLabel: "เปิดเว็บ MetaTrader 5", desc: "เชื่อมสัญญาณเข้า MT5 ผ่าน bridge/webhook (ต้องใช้ตัวกลาง เช่น MetaApi — เก็บไว้ก่อน)" },
   "Shopee Affiliate": { field: "App ID / Secret", doc: "https://open.shopee.com/", docLabel: "เปิด Shopee Open Platform", desc: "ดึงลิงก์/รายงานพันธมิตร Shopee" },
 };
 function openConnect(name, after){
@@ -2354,7 +2389,7 @@ async function loadConnectors(){
         <div class="cc-bd"><div class="cc-ti">${escapeHtml(n)}${isOn ? '<span class="cc-on">· เชื่อมแล้ว</span>' : ''}</div>
           <div class="cc-ds">${escapeHtml(g.desc || 'เชื่อมบัญชีของคุณเพื่อให้ทีม AI ใช้งาน')}</div></div>
         <div style="display:flex; gap:8px; flex:0 0 auto; align-items:center">
-          ${canSend ? `<button class="conn-cta" data-test="${escapeHtml(n)}">ส่งทดสอบ</button>` : ''}
+          ${canSend ? `<button class="conn-cta" data-test="${escapeHtml(n)}">${CONN_TESTLABEL[n] || 'ส่งทดสอบ'}</button>` : ''}
           <button class="conn-cta ${isOn ? 'off' : ''}" data-c="${escapeHtml(n)}" data-on="${isOn ? 1 : 0}">${isOn ? 'Disconnect' : 'Connect'}</button>
         </div>
       </div>`;
@@ -2381,8 +2416,11 @@ async function loadConnectors(){
     if (inb && inb.enabled) showInbound(inb.path);
   } catch(e){}
 }
-/* connectors ที่ "ส่งจริง" ได้แล้ว (webhook ตรง ไม่ต้อง OAuth) */
-const CONN_SENDABLE = new Set(["Slack", "Discord", "Telegram", "Webhook → Make/Zapier"]);
+/* connectors ที่ "ส่งจริง" ได้แล้ว ด้วยการวางคีย์/โทเค็น (ไม่ต้อง OAuth) */
+const CONN_SENDABLE = new Set(["Slack", "Discord", "Telegram", "Webhook → Make/Zapier",
+  "LINE OA", "Notion", "WordPress", "GitHub", "Email", "Binance Futures", "Bybit"]);
+const CONN_TESTLABEL = { "Notion":"ส่งทดสอบ", "WordPress":"ส่งทดสอบ", "GitHub":"ส่งทดสอบ",
+  "Binance Futures":"ทดสอบการเชื่อม", "Bybit":"ทดสอบการเชื่อม" };
 async function disconnectConnector(name){
   await postJSON("/api/connector", { name, status: "disconnected", config: "" });
   toastNote(name + " ตัดการเชื่อมแล้ว", "#a855f7"); loadConnectors();
@@ -2391,7 +2429,7 @@ async function sendTest(name){
   toastNote("กำลังส่งทดสอบไป " + name + "…", "#7c5cff");
   let r; try { r = await postJSON("/api/connector/send", { name, text: "🔔 ทดสอบจาก ToonOffice — เชื่อมต่อสำเร็จ!" }); }
   catch(e){ r = { error: "ส่งไม่สำเร็จ" }; }
-  if (r && r.ok) toastNote(name + ": ส่งสำเร็จ ✅ ไปเช็กที่แชนเนล/แชตได้เลย", "#22c55e");
+  if (r && r.ok) toastNote(name + ": " + (r.msg || "ส่งสำเร็จ ✅ ไปเช็กปลายทางได้เลย"), "#22c55e");
   else toastNote(name + ": " + (r && r.error || "ส่งไม่สำเร็จ"), "#ef4444");
 }
 function showInbound(path){
