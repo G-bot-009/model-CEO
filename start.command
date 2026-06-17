@@ -105,10 +105,10 @@ for _ in $(seq 1 80); do
 done
 
 if [ "$UP" = "1" ]; then
-  echo "✅ พร้อมแล้ว — กำลังเปิดเบราว์เซอร์..."
-  open "$URL"
+  echo "✅ พร้อมแล้ว — กำลังเปิดหน้าเข้าสู่ระบบ..."
+  open "$URL/login"
   echo ""
-  echo "   เปิดใช้งานได้ที่ $URL"
+  echo "   เข้าสู่ระบบที่ $URL/login  (user: admin · pass: admin)"
   echo "   (ปิดโปรแกรม: ปิดหน้าต่างนี้ หรือกด Control + C — อย่าเพิ่งปิดถ้ายังใช้งานอยู่)"
   echo ""
   wait "$SERVER_PID"   # คาหน้าต่างไว้ให้เซิร์ฟเวอร์ทำงานต่อ

@@ -79,12 +79,25 @@
         </p>
       </div>
 
-      <!-- 8) SERVICE PILLS -->
+      <!-- 8) LOGIN FORM -->
       <div class="drop-in" style="animation-delay:0.2s">
-        <h2 class="text-2xl font-medium tracking-tight mb-2">What sort of service?</h2>
-        <p class="opacity-85 text-[#738273] mb-8">Select all that apply</p>
-        <div id="pills" class="flex flex-wrap gap-3"></div>
-        <div id="banner" class="mt-7"></div>
+        <h2 class="text-2xl font-medium tracking-tight mb-2">Sign in to continue</h2>
+        <p class="opacity-85 text-[#738273] mb-7">เข้าสู่ระบบเพื่อใช้งาน Office</p>
+        <form id="loginForm" class="max-w-md">
+          <label class="block text-sm font-medium text-[#1C2E1E] mb-1">Username</label>
+          <input id="lg_user" autocomplete="username" placeholder="admin"
+            class="w-full px-4 py-3 rounded-xl bg-white border border-[#E2E6E1] text-[#1C2E1E] mb-4 outline-none focus:border-[#1C2E1E] transition-colors" />
+          <label class="block text-sm font-medium text-[#1C2E1E] mb-1">Password</label>
+          <input id="lg_pass" type="password" autocomplete="current-password" placeholder="••••••"
+            class="w-full px-4 py-3 rounded-xl bg-white border border-[#E2E6E1] text-[#1C2E1E] mb-5 outline-none focus:border-[#1C2E1E] transition-colors" />
+          <button type="submit"
+            class="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#1C2E1E] text-white font-medium shadow-md shadow-emerald-950/5 hover:opacity-90 transition-opacity">
+            Sign in
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="w-4 h-4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+          <p id="lg_err" class="text-sm text-red-600 mt-3" style="display:none"></p>
+          <p class="text-xs text-[#738273] mt-4">ค่าเริ่มต้น — user: <b>admin</b> · pass: <b>admin</b></p>
+        </form>
       </div>
 
     </main>
@@ -155,47 +168,24 @@
     }
   });
 
-  /* ---- interactive multi-select service pills ---- */
-  const OPTIONS = ["Brand", "Digital", "Campaign", "Other"];
-  const selected = new Set();
-  const pillsEl = document.getElementById("pills");
-  const bannerEl = document.getElementById("banner");
-  const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 pill-check"><path d="M20 6 9 17l-5-5"/></svg>`;
-
-  function renderPills(){
-    pillsEl.innerHTML = "";
-    OPTIONS.forEach(opt => {
-      const on = selected.has(opt);
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "inline-flex items-center gap-2 px-5 py-3 rounded-full text-base font-medium transition-all duration-200 " +
-        (on ? "bg-[#1C2E1E] text-white shadow-md shadow-emerald-950/5 transform"
-            : "bg-white text-[#1C2E1E] border border-[#F1F3F1] hover:bg-[#F1F3F1]/55");
-      b.innerHTML = (on ? CHECK : "") + `<span>${opt}</span>`;
-      b.addEventListener("click", () => { on ? selected.delete(opt) : selected.add(opt); renderPills(); renderBanner(); });
-      pillsEl.appendChild(b);
-      const chk = b.querySelector(".pill-check");
-      if (chk){ chk.style.transform = "scale(0)"; requestAnimationFrame(() => { chk.style.transition = "transform .25s cubic-bezier(.34,1.56,.64,1)"; chk.style.transform = "scale(1)"; }); }
-    });
-  }
-  function renderBanner(){
-    if (selected.size === 0){
-      bannerEl.innerHTML = `<p style="opacity:.5" class="italic text-xs text-[#1C2E1E]">Please click to select services above.</p>`;
-      return;
-    }
-    const list = OPTIONS.filter(o => selected.has(o)).join(", ");
-    bannerEl.innerHTML = `
-      <div class="bg-[#FAFBF9] border border-[#F1F3F1] rounded-2xl px-5 py-4 flex items-center justify-between gap-4 banner-in">
-        <span class="text-[#1C2E1E] text-sm md:text-base">Ready to inquire about: <b>${list}</b></span>
-        <a href="/" class="inline-flex items-center gap-1 text-[#4D6D47] uppercase text-xs font-semibold hover:opacity-70 transition-opacity">Let's Go
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="w-4 h-4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </a>
-      </div>`;
-    const el = bannerEl.querySelector(".banner-in");
-    el.style.opacity = "0"; el.style.maxHeight = "0"; el.style.overflow = "hidden";
-    requestAnimationFrame(() => { el.style.transition = "opacity .35s ease, max-height .35s ease"; el.style.opacity = "1"; el.style.maxHeight = "200px"; });
-  }
-  renderPills(); renderBanner();
+  /* ---- login ---- */
+  const form = document.getElementById("loginForm");
+  const errEl = document.getElementById("lg_err");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errEl.style.display = "none";
+    const username = document.getElementById("lg_user").value.trim();
+    const password = document.getElementById("lg_pass").value;
+    try {
+      const r = await fetch("/api/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+      const d = await r.json();
+      if (r.ok && d.ok) { window.location.href = "/"; }
+      else { errEl.textContent = d.error || "เข้าสู่ระบบไม่สำเร็จ"; errEl.style.display = "block"; }
+    } catch (_) { errEl.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้"; errEl.style.display = "block"; }
+  });
 </script>
 </body>
 </html>

@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import secrets
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -19,8 +21,8 @@ from typing import Optional
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from . import db
 from . import skills
@@ -130,14 +132,48 @@ async def _startup() -> None:
     set_model(db.get_settings().get("model"))  # apply saved model choice
 
 
+LOGIN_USER = os.getenv("LOGIN_USER", "admin")
+LOGIN_PASS = os.getenv("LOGIN_PASS", "admin")
+
+
+def _auth_token() -> str:
+    """Stable per-install token; the login cookie must match it."""
+    s = db.get_settings()
+    tok = s.get("auth_token")
+    if not tok:
+        tok = secrets.token_hex(16)
+        db.set_settings({"auth_token": tok})
+    return tok
+
+
 @app.get("/")
-async def index() -> FileResponse:
+async def index(request: Request):
+    # gate the dashboard behind login (local single-user)
+    if request.cookies.get("mf_auth") != _auth_token():
+        return RedirectResponse("/login")
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.get("/login")
-async def login() -> FileResponse:
+async def login_page() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "login.html")
+
+
+@app.post("/api/login")
+async def api_login(p: dict):
+    if (p.get("username") or "").strip() == LOGIN_USER and (p.get("password") or "") == LOGIN_PASS:
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie("mf_auth", _auth_token(), httponly=True, samesite="lax",
+                        max_age=60 * 60 * 24 * 30, path="/")
+        return resp
+    return JSONResponse({"error": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"}, status_code=401)
+
+
+@app.post("/api/logout")
+async def api_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("mf_auth", path="/")
+    return resp
 
 
 @app.get("/api/agents")

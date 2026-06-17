@@ -300,6 +300,7 @@
       <div id="gearMenu" class="gear-menu" hidden>
         <div class="gear-item" data-view="admin">🔑 Admin Usage</div>
         <div class="gear-item" data-view="settings">⚙️ Settings</div>
+        <div class="gear-item" id="logout">🚪 ออกจากระบบ</div>
       </div>
     </div>
 
@@ -2203,7 +2204,12 @@ async function saveSettings(partial){ try { await postJSON("/api/settings", part
 $("menu").addEventListener("click", e => { const it=e.target.closest(".menu-item"); if(it) showView(it.dataset.view); });
 // gear = dropdown (Admin Usage + Settings)
 $("gear").addEventListener("click", (e) => { e.stopPropagation(); $("gearMenu").hidden = !$("gearMenu").hidden; });
-$("gearMenu").addEventListener("click", (e) => { const it = e.target.closest(".gear-item"); if (it) { showView(it.dataset.view); $("gearMenu").hidden = true; } });
+$("gearMenu").addEventListener("click", async (e) => {
+  const it = e.target.closest(".gear-item"); if (!it) return;
+  $("gearMenu").hidden = true;
+  if (it.id === "logout") { try { await fetch("/api/logout", {method:"POST"}); } catch(_){} window.location.href = "/login"; return; }
+  if (it.dataset.view) showView(it.dataset.view);
+});
 document.addEventListener("click", (e) => { if (!e.target.closest("#gear") && !e.target.closest("#gearMenu")) $("gearMenu").hidden = true; });
 $("agentGuide").addEventListener("click", openAgentGuide);
 $("burger").addEventListener("click", () => $("sidebar").classList.toggle("collapsed"));
