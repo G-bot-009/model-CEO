@@ -21,6 +21,8 @@ class Agent:
     tags: tuple      # short capability chips shown on the role card
     system: str      # system prompt sent to Claude
     color: str = ""  # accent color (set for custom agents; built-ins use the UI map)
+    category: str = ""      # skill category id (custom agents only)
+    skills: tuple = ()      # selected skill ids (custom agents only)
 
 
 _SPECIALIST_FOOTER = """
@@ -35,6 +37,9 @@ IMPORTANT: Always write your response in Thai (ภาษาไทย), clear and
 understand, even if the task or context is in English. Keep proper nouns,
 product names, and code in their original language.
 """
+
+# Public alias so other modules (e.g. the skill composer) can reuse the footer.
+SPECIALIST_FOOTER = _SPECIALIST_FOOTER
 
 
 CEO = Agent(
@@ -252,9 +257,11 @@ def custom_agents() -> dict[str, Agent]:
         return out
     for r in rows:
         tags = tuple(t for t in (r.get("tags") or "").split(",") if t)
+        skills = tuple(s for s in (r.get("skills") or "").split(",") if s)
         out[r["id"]] = Agent(
             id=r["id"], name=r["name"], title=r.get("title") or "", emoji=r.get("emoji") or "🧩",
             tags=tags, system=r.get("system") or "", color=r.get("color") or "#64748b",
+            category=r.get("category") or "", skills=skills,
         )
     return out
 

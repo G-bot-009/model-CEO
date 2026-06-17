@@ -19,7 +19,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from . import db
-from .agents import AGENTS, JARVIS, all_agents, compose_custom_system
+from . import skills
+from .agents import AGENTS, JARVIS, all_agents, compose_custom_system, SPECIALIST_FOOTER as _SPECIALIST_FOOTER
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
 JARVIS_ROUTINE = (
@@ -90,10 +91,18 @@ async def list_agents() -> dict:
                 "tags": list(a.tags),
                 "color": a.color,
                 "custom": a.id.startswith("x_"),
+                "category": a.category,
+                "skills": list(a.skills),
             }
             for a in all_agents().values()
         ]
     }
+
+
+@app.get("/api/skills")
+async def list_skills() -> dict:
+    """Skill catalog (categories + skills) for the agent-creation picker."""
+    return {"categories": skills.catalog()}
 
 
 @app.post("/api/agent/create")
@@ -110,10 +119,21 @@ async def create_agent(p: dict) -> dict:
     role = (p.get("title") or "ผู้ช่วยทั่วไป").strip()
     emoji = (p.get("emoji") or "🧩").strip()[:4]
     color = (p.get("color") or "#64748b").strip()
-    tags = ",".join([t.strip() for t in (p.get("tags") or "").split(",") if t.strip()][:3])
-    db.add_custom_agent(aid, name, role, emoji, color, tags, compose_custom_system(name, role))
-    db.add_decision("agent", f"created {name}")
-    return {"ok": True, "id": aid}
+    category = (p.get("category") or "").strip()
+    chosen = p.get("skills") or []
+    if isinstance(chosen, str):
+        chosen = [s for s in chosen.split(",") if s]
+    chosen = skills.valid_skill_ids(chosen)[:12]   # cap to protect token budget
+    # auto-fill skill chips on the card from the first few chosen skills
+    if chosen:
+        chip_titles = [skills.skill_meta(c)["title"] for c in chosen[:3]]
+        tags = ",".join(chip_titles)
+    else:
+        tags = ",".join([t.strip() for t in (p.get("tags") or "").split(",") if t.strip()][:3])
+    system = skills.compose_system(name, role, _SPECIALIST_FOOTER, chosen)
+    db.add_custom_agent(aid, name, role, emoji, color, tags, system, category, ",".join(chosen))
+    db.add_decision("agent", f"created {name} ({len(chosen)} skills)")
+    return {"ok": True, "id": aid, "skills": len(chosen)}
 
 
 @app.post("/api/agent/delete")

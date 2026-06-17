@@ -116,10 +116,17 @@ def init() -> None:
             );
             CREATE TABLE IF NOT EXISTS custom_agents (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, title TEXT, emoji TEXT,
-                color TEXT, tags TEXT, system TEXT, created_at TEXT NOT NULL
+                color TEXT, tags TEXT, system TEXT, created_at TEXT NOT NULL,
+                category TEXT, skills TEXT
             );
             """
         )
+        # migrate older DBs that predate the skills columns
+        cols = {r[1] for r in c.execute("PRAGMA table_info(custom_agents)").fetchall()}
+        if "category" not in cols:
+            c.execute("ALTER TABLE custom_agents ADD COLUMN category TEXT")
+        if "skills" not in cols:
+            c.execute("ALTER TABLE custom_agents ADD COLUMN skills TEXT")
 
 
 def _now() -> str:
@@ -330,18 +337,21 @@ def list_connectors() -> dict:
 
 
 # --- Custom agents (user-created, add/remove from the dashboard) -------------
-def add_custom_agent(aid: str, name: str, title: str, emoji: str, color: str, tags: str, system: str) -> None:
+def add_custom_agent(aid: str, name: str, title: str, emoji: str, color: str, tags: str,
+                     system: str, category: str = "", skills: str = "") -> None:
     with _conn() as c:
-        c.execute("INSERT INTO custom_agents (id, name, title, emoji, color, tags, system, created_at) "
-                  "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+        c.execute("INSERT INTO custom_agents (id, name, title, emoji, color, tags, system, category, skills, created_at) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                   "name=excluded.name, title=excluded.title, emoji=excluded.emoji, "
-                  "color=excluded.color, tags=excluded.tags, system=excluded.system",
-                  (aid, name, title, emoji, color, tags, system, _now()))
+                  "color=excluded.color, tags=excluded.tags, system=excluded.system, "
+                  "category=excluded.category, skills=excluded.skills",
+                  (aid, name, title, emoji, color, tags, system, category, skills, _now()))
 
 def list_custom_agents() -> list[dict]:
     with _conn() as c:
         return [dict(r) for r in c.execute(
-            "SELECT id, name, title, emoji, color, tags, system FROM custom_agents ORDER BY created_at").fetchall()]
+            "SELECT id, name, title, emoji, color, tags, system, category, skills "
+            "FROM custom_agents ORDER BY created_at").fetchall()]
 
 def delete_custom_agent(aid: str) -> None:
     with _conn() as c:

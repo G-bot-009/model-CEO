@@ -1154,21 +1154,64 @@ async function loadAgents() {
 }
 
 /* ---------- add / remove agent ---------- */
-function openAddAgent(){
-  openGen("➕ เพิ่มเอเจนต์ใหม่", [
-    {key:"name",  label:"ชื่อเอเจนต์",         type:"input", placeholder:"เช่น Lawyer, Accountant"},
-    {key:"title", label:"บทบาท (ทำอะไร)",      type:"input", placeholder:"เช่น ดูแลสัญญาและกฎหมาย"},
-    {key:"emoji", label:"อิโมจิ",              type:"input", placeholder:"🧩"},
-    {key:"tags",  label:"ป้ายทักษะ (คั่นด้วย ,)", type:"input", placeholder:"สัญญา, กฎหมาย, ตรวจเอกสาร"},
-    {key:"color", label:"สีประจำตัว (hex)",     type:"input", placeholder:"#64748b"},
-  ], async (v) => {
-    if (!v.name) { toastNote("กรุณาใส่ชื่อเอเจนต์", "#ef4444"); return; }
-    const r = await postJSON("/api/agent/create", v);
+let SKILLCAT = null;
+async function loadSkillCatalog(){
+  if (SKILLCAT) return SKILLCAT;
+  try { SKILLCAT = (await (await fetch("/api/skills")).json()).categories || []; }
+  catch(e){ SKILLCAT = []; }
+  return SKILLCAT;
+}
+async function openAddAgent(){
+  const cats = await loadSkillCatalog();
+  $("genTitle").textContent = "➕ เพิ่มเอเจนต์ใหม่";
+  const catOpts = cats.map(c => `<option value="${c.id}">${c.emoji} ${c.name} (${c.skills.length})</option>`).join("");
+  const body = $("genBody");
+  body.innerHTML = `
+    <label>ชื่อเอเจนต์</label><input id="na_name" placeholder="เช่น Lawyer, Accountant">
+    <label>บทบาท (ทำอะไร)</label><input id="na_title" placeholder="เช่น ดูแลสัญญาและกฎหมาย">
+    <div style="display:flex;gap:10px">
+      <div style="flex:1"><label>อิโมจิ</label><input id="na_emoji" placeholder="🧩"></div>
+      <div style="width:110px"><label>สี</label><input id="na_color" type="color" value="#7c5cff" style="height:44px;padding:4px"></div>
+    </div>
+    <label>หัวข้อสกิล (เลือกหมวด)</label>
+    <select id="na_cat">${catOpts || '<option value="">— ไม่มีสกิล —</option>'}</select>
+    <label>เลือกสกิลให้เอเจนต์ <span id="na_count" style="color:#7c5cff;font-weight:800">(0)</span></label>
+    <input id="na_search" placeholder="🔎 ค้นหาสกิลในหมวดนี้...">
+    <div id="na_skills" style="max-height:260px;overflow:auto;border:1px solid #d6cdbb;border-radius:12px;padding:6px;margin:6px 0 14px;background:#fff"></div>
+    <button class="save" id="na_save">บันทึกเอเจนต์</button>`;
+  const sel = new Set();
+  function renderSkills(){
+    const cat = cats.find(c => c.id === $("na_cat").value);
+    const q = ($("na_search").value || "").toLowerCase();
+    const list = (cat ? cat.skills : []).filter(s =>
+      !q || s.name.toLowerCase().includes(q) || (s.desc || "").toLowerCase().includes(q));
+    $("na_skills").innerHTML = list.map(s => `
+      <label style="display:flex;gap:8px;align-items:flex-start;padding:7px 6px;border-radius:8px;cursor:pointer;color:#1f2937">
+        <input type="checkbox" data-sk="${s.id}" ${sel.has(s.id) ? "checked" : ""} style="width:auto;margin:3px 0 0">
+        <span><b>${s.name}</b><br><span style="font-size:11px;color:#6b7280">${(s.desc || "").slice(0,120)}</span></span>
+      </label>`).join("") || `<div style="color:#9ca3af;padding:10px">ไม่พบสกิล</div>`;
+    $("na_skills").querySelectorAll("[data-sk]").forEach(cb => cb.addEventListener("change", e => {
+      if (e.target.checked) sel.add(e.target.dataset.sk); else sel.delete(e.target.dataset.sk);
+      $("na_count").textContent = `(${sel.size})`;
+    }));
+  }
+  $("na_cat").addEventListener("change", renderSkills);
+  $("na_search").addEventListener("input", renderSkills);
+  renderSkills();
+  $("na_save").addEventListener("click", async () => {
+    const name = ($("na_name").value || "").trim();
+    if (!name) { toastNote("กรุณาใส่ชื่อเอเจนต์", "#ef4444"); return; }
+    const r = await postJSON("/api/agent/create", {
+      name, title: ($("na_title").value || "").trim(),
+      emoji: ($("na_emoji").value || "").trim(), color: $("na_color").value,
+      category: $("na_cat").value, skills: Array.from(sel),
+    });
     if (r.error) { toastNote(r.error, "#ef4444"); return; }
     closeModal("genModal");
-    toastNote("เพิ่มเอเจนต์ " + v.name + " แล้ว 🎉", "#22c55e");
-    setTimeout(() => location.reload(), 600);
+    toastNote(`เพิ่มเอเจนต์ ${name} (${r.skills} สกิล) แล้ว 🎉`, "#22c55e");
+    setTimeout(() => location.reload(), 700);
   });
+  openModal("genModal");
 }
 async function deleteAgent(id, name){
   if (!confirm("ลบเอเจนต์ \"" + name + "\" ออกถาวร?")) return;
