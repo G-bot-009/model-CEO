@@ -585,6 +585,14 @@
           <select id="sessionSelect" class="card" style="padding:8px 12px; background:#10182b; color:#e2e8f0;"></select>
           <button class="qbtn" id="newSession">+ เซสชันใหม่</button>
         </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px">
+          <span style="color:#94a3b8; font-size:13px">กรองตามวันที่:</span>
+          <input type="date" id="hist_from" class="numfld" style="width:auto; margin:0; padding:7px 10px">
+          <span style="color:#64748b">→</span>
+          <input type="date" id="hist_to" class="numfld" style="width:auto; margin:0; padding:7px 10px">
+          <button class="qbtn" id="hist_apply">✅ ยืนยัน</button>
+          <button class="qbtn" id="hist_all">ทั้งหมด</button>
+        </div>
         <div class="panel"><h3>เซสชันทั้งหมด (เปิดดู / ลบได้)</h3>
           <div id="sessionList" style="display:flex; flex-direction:column; gap:8px"></div>
         </div>
@@ -659,7 +667,7 @@
           <input type="date" id="tk_from" class="numfld" style="width:auto; margin:0; padding:7px 10px" title="ตั้งแต่วันที่">
           <span style="color:#64748b">→</span>
           <input type="date" id="tk_to" class="numfld" style="width:auto; margin:0; padding:7px 10px" title="ถึงวันที่">
-          <button class="qbtn" id="tk_apply">📅 ดูช่วงนี้</button>
+          <button class="qbtn" id="tk_apply">✅ ยืนยัน</button>
           <span style="flex:1"></span>
           <span id="tk_rangelabel" style="color:#94a3b8; font-size:13px">วันนี้</span>
         </div>
@@ -1854,7 +1862,9 @@ function renderHistory(messages, tasks) {
 }
 
 /* ---------- sessions ---------- */
+function todayStr(){ const d=new Date(), p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
 let SESSIONS = [];
+let histFilter = null;   // {from, to} or null = all
 function populateSessions(sessions) {
   SESSIONS = sessions || [];
   const sel = $("sessionSelect"); sel.innerHTML = "";
@@ -1864,7 +1874,9 @@ function populateSessions(sessions) {
   });
   const list = $("sessionList");
   if (list) {
-    list.innerHTML = sessions.length ? sessions.map(s => {
+    let shown = sessions;
+    if (histFilter) shown = sessions.filter(s => { const d=(s.created_at||"").slice(0,10); return d >= histFilter.from && d <= histFilter.to; });
+    list.innerHTML = shown.length ? shown.map(s => {
       const active = s.id === currentSessionId;
       return `<div style="display:flex; align-items:center; gap:10px; background:#0f1b33; border:1px solid ${active?'#2563eb':'#1e293b'}; border-radius:10px; padding:10px 12px">
         <div style="flex:1; min-width:0; cursor:pointer" data-open="${s.id}">
@@ -1873,7 +1885,7 @@ function populateSessions(sessions) {
         </div>
         <button class="qbtn" data-del-sess="${s.id}" title="ลบเซสชันนี้">🗑️ ลบ</button>
       </div>`;
-    }).join("") : `<div style="color:#64748b">ยังไม่มีเซสชัน</div>`;
+    }).join("") : `<div style="color:#64748b">${histFilter ? 'ไม่มีเซสชันในช่วงวันที่นี้' : 'ยังไม่มีเซสชัน'}</div>`;
     list.querySelectorAll("[data-open]").forEach(el => el.addEventListener("click", () => {
       const id = +el.dataset.open;
       if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"load_session", id}));
@@ -2649,6 +2661,19 @@ $("adm_period").addEventListener("change", loadAdminUsage);
 $("lbClose").addEventListener("click", () => $("imgLightbox").hidden = true);
 $("imgLightbox").addEventListener("click", (e) => { if (e.target.id === "imgLightbox") $("imgLightbox").hidden = true; });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("imgLightbox").hidden = true; });
+
+/* default the custom date pickers to today + history date filter */
+(function initDates(){
+  const t = todayStr();
+  ["tk_from","tk_to","hist_from","hist_to"].forEach(id => { const el = $(id); if (el && !el.value) el.value = t; });
+})();
+$("hist_apply").addEventListener("click", () => {
+  const f = $("hist_from").value, to = $("hist_to").value;
+  if (!f || !to) { toastNote("เลือกวันเริ่มและวันสิ้นสุดก่อน", "#ef4444"); return; }
+  histFilter = (f <= to) ? { from:f, to } : { from:to, to:f };
+  populateSessions(SESSIONS);
+});
+$("hist_all").addEventListener("click", () => { histFilter = null; populateSessions(SESSIONS); });
 
 /* n8n automations: search suggestions + dropdown + how-to diagram */
 $("n8n_search").addEventListener("input", n8nSuggest);
