@@ -258,6 +258,42 @@ def usage_series(days: int = 7) -> list[dict]:
     return series
 
 
+def usage_between(start_day: str, end_day: str) -> dict:
+    """Per-agent totals + daily series for the inclusive date range [start_day, end_day]
+    (both 'YYYY-MM-DD')."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT agent_name, SUM(input_tokens) AS input_tokens, "
+            "SUM(output_tokens) AS output_tokens FROM token_usage "
+            "WHERE substr(timestamp,1,10) BETWEEN ? AND ? GROUP BY agent_name",
+            (start_day, end_day),
+        ).fetchall()
+        drows = c.execute(
+            "SELECT substr(timestamp,1,10) AS day, SUM(input_tokens) AS input_tokens, "
+            "SUM(output_tokens) AS output_tokens FROM token_usage "
+            "WHERE substr(timestamp,1,10) BETWEEN ? AND ? GROUP BY day ORDER BY day",
+            (start_day, end_day),
+        ).fetchall()
+    per_agent = {r["agent_name"]: {"input": r["input_tokens"], "output": r["output_tokens"]} for r in rows}
+    series = [{"day": r["day"], "input": r["input_tokens"], "output": r["output_tokens"]} for r in drows]
+    return {
+        "per_agent": per_agent,
+        "input": sum(v["input"] for v in per_agent.values()),
+        "output": sum(v["output"] for v in per_agent.values()),
+        "series": series,
+    }
+
+
+def usage_totals(where: str = "", params: tuple = ()) -> dict:
+    """All-time totals, or scoped by an optional WHERE fragment."""
+    sql = "SELECT SUM(input_tokens) AS i, SUM(output_tokens) AS o FROM token_usage"
+    if where:
+        sql += " WHERE " + where
+    with _conn() as c:
+        r = c.execute(sql, params).fetchone()
+    return {"input": r["i"] or 0, "output": r["o"] or 0}
+
+
 # --- SOP library ------------------------------------------------------------
 def add_sop(title: str, body: str) -> int:
     with _conn() as c:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import date, timedelta
 from pathlib import Path
 
 import anthropic
@@ -58,6 +59,25 @@ def usage_payload() -> dict:
         "series": db.usage_series(7),
         "pricing": PRICING,
     }
+
+
+def _spend_usd(inp: int, out: int) -> float:
+    return inp / 1e6 * PRICING["input_per_mtok_usd"] + out / 1e6 * PRICING["output_per_mtok_usd"]
+
+
+def _resolve_range(period: str, start, end):
+    """Return (start_day, end_day, label, period) for a named period or a custom from/to."""
+    today = date.today()
+    if start and end:
+        return start, end, f"{start} → {end}", "custom"
+    if period == "yesterday":
+        d = (today - timedelta(days=1)).isoformat()
+        return d, d, "เมื่อวาน", period
+    if period == "7d":
+        return (today - timedelta(days=6)).isoformat(), today.isoformat(), "7 วันล่าสุด", period
+    if period in ("30d", "month", "1month"):
+        return (today - timedelta(days=29)).isoformat(), today.isoformat(), "1 เดือน (30 วัน)", "30d"
+    return today.isoformat(), today.isoformat(), "วันนี้", "today"
 
 
 def _cache_on() -> bool:
@@ -147,8 +167,30 @@ async def delete_agent(p: dict) -> dict:
 
 
 @app.get("/api/usage")
-async def usage() -> dict:
-    return usage_payload()
+async def usage(period: str = "today", start: str | None = None, end: str | None = None) -> dict:
+    s, e, label, period = _resolve_range(period, start, end)
+    rng = db.usage_between(s, e)
+    today = date.today()
+    month = db.usage_totals("substr(timestamp,1,7)=?", (today.isoformat()[:7],))
+    allt = db.usage_totals()
+    budget = 0.0
+    try:
+        budget = float(db.get_settings().get("token_budget_usd") or 0)
+    except (TypeError, ValueError):
+        budget = 0.0
+    spent_all = _spend_usd(allt["input"], allt["output"])
+    return {
+        "type": "usage",
+        "today": {"per_agent": rng["per_agent"], "input": rng["input"], "output": rng["output"]},
+        "series": rng["series"],
+        "pricing": PRICING,
+        "range": {"period": period, "start": s, "end": e, "label": label},
+        "spend_usd": round(_spend_usd(rng["input"], rng["output"]), 4),
+        "month_usd": round(_spend_usd(month["input"], month["output"]), 4),
+        "alltime_usd": round(spent_all, 4),
+        "budget_usd": budget,
+        "remaining_usd": round(budget - spent_all, 4) if budget else None,
+    }
 
 
 @app.get("/api/console")
