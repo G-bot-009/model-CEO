@@ -203,6 +203,16 @@
   .modal .save { width:100%; background:linear-gradient(90deg,#7c5cff,#9b6bff); color:#fff; font-weight:800; border:none; padding:12px; border-radius:12px; cursor:pointer; }
   .modal .note { background:#f3eede; border-radius:12px; padding:12px; font-size:13px; color:#4b5563; }
   .modal .steps { font-size:13px; color:#4b5563; line-height:1.8; }
+  /* rich connector "how to connect" modal */
+  .modal .conn-desc { font-size:13px; color:#4b5563; line-height:1.65; margin:0 0 14px; }
+  .modal .conn-howto { background:#F4F1E8; border:1px solid #ECE6D6; border-radius:14px; padding:14px 16px; margin-bottom:16px; }
+  .modal .conn-howto-h { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#9a8f73; font-weight:800; margin-bottom:10px; }
+  .modal .conn-steps { margin:0; padding-left:20px; color:#3b4252; font-size:13px; line-height:1.7; }
+  .modal .conn-steps li { margin:6px 0; }
+  .modal .conn-doc { display:inline-flex; align-items:center; gap:6px; margin-top:12px; background:#E8A33D; color:#3a2a06;
+                     font-weight:800; padding:11px 16px; border-radius:12px; text-decoration:none; }
+  .modal .conn-doc:hover { filter:brightness(1.04); }
+  .modal .conn-note { font-size:12px; color:#6b7280; line-height:1.6; margin:-2px 0 14px; }
 
   /* automation / connectors controls */
   .numfld { width:100%; margin-top:6px; padding:10px 12px; border-radius:10px; background:#0b1220; border:1px solid #27355a; color:#e2e8f0; }
@@ -2193,10 +2203,67 @@ async function loadConsole(){
     : '<div style="color:#64748b">ไม่มีประวัติ</div>';
 }
 window.decide = async (id, action) => { await postJSON("/api/approval", {id, action}); loadConsole(); };
+/* per-connector: คำอธิบาย + ขั้นตอน (ไทย) + ลิงก์ไปขอคีย์/Webhook จากต้นทาง */
+const CONN_GUIDE = {
+  "Webhook → Make/Zapier": {
+    field: "Webhook URL", placeholder: "https://hook.eu2.make.com/...  หรือ  https://hooks.zapier.com/...",
+    doc: "https://help.make.com/webhooks", docLabel: "เปิดหน้า Make.com Webhooks",
+    desc: "สะพานเชื่อมอัตโนมัติขั้นสูง: ส่งคอนเทนต์ที่ทำเสร็จเข้า Make.com หรือ Zapier เพื่อกระจายต่อไป X, Shopee และแอปอื่นอีกนับพัน (ถ้าจะโพสต์ Instagram, Facebook, TikTok, YouTube ไม่ต้องใช้อันนี้ — ใช้ Social Connect ในเมนู Social แทน)",
+    steps: [
+      "จะโพสต์ IG / FB / TikTok / YouTube? ข้ามตัวนี้ได้ — ใช้ Social Connect ในเมนู Social แทน ตัวนี้ไว้ทำออโตเมชันขั้นสูงนอกเหนือแพลตฟอร์มเหล่านั้น",
+      "ใน Make.com (แผนฟรีก็พอ): สร้าง New Scenario → เพิ่มโมดูล “Webhooks → Custom webhook” → Add → คัดลอก URL ที่ระบบสร้างให้",
+      "เพิ่มโมดูลที่สอง = ปลายทางที่จะส่งไป เช่น X “Create a Post”, Google/Notion หรือแอปอื่นๆ (ล็อกอินบัญชีของคุณเองที่นั่น)",
+      "ในโมดูลนั้น แมปช่องข้อความเข้ากับ “text” ของ webhook และช่องรูป/สื่อเข้ากับ “imageUrl” แล้วเปิดสวิตช์ Scenario เป็น ON",
+      "วาง Webhook URL ด้านล่าง — เมื่อกด “ส่ง” ที่ผลงานชิ้นใด Make จะส่งต่อให้ทันที (เราส่ง JSON: title, text, caption, imageUrl, mediaUrl)"
+    ]
+  },
+  "Slack": { field: "Incoming Webhook URL", placeholder: "https://hooks.slack.com/services/...", doc: "https://api.slack.com/messaging/webhooks", docLabel: "เปิดหน้า Slack Webhooks",
+    desc: "ส่งข้อความ/แจ้งเตือนเข้าแชนเนล Slack ของคุณ", steps: ["สร้าง Slack App → เปิด Incoming Webhooks → Add New Webhook to Workspace", "เลือกแชนเนลปลายทาง แล้วคัดลอก Webhook URL", "วาง URL ด้านล่าง"] },
+  "Discord": { field: "Webhook URL", placeholder: "https://discord.com/api/webhooks/...", doc: "https://support.discord.com/hc/en-us/articles/228383668", docLabel: "วิธีสร้าง Discord Webhook",
+    desc: "ส่งข้อความเข้าห้อง Discord", steps: ["ในเซิร์ฟเวอร์ → Server Settings → Integrations → Webhooks → New Webhook", "เลือกห้อง แล้วกด Copy Webhook URL", "วาง URL ด้านล่าง"] },
+  "Telegram": { field: "Bot Token", placeholder: "123456:ABC-DEF...", doc: "https://core.telegram.org/bots/features#botfather", docLabel: "เปิด @BotFather (วิธีสร้างบอท)",
+    desc: "ส่งข้อความผ่านบอท Telegram ของคุณ", steps: ["ทักหา @BotFather ใน Telegram → /newbot → ตั้งชื่อบอท", "คัดลอก Bot Token ที่ได้", "วาง Token ด้านล่าง"] },
+  "LINE OA": { field: "Channel access token", placeholder: "วาง access token", doc: "https://developers.line.biz/console/", docLabel: "เปิด LINE Developers Console",
+    desc: "ส่งข้อความผ่าน LINE Official Account", steps: ["สร้าง Messaging API channel ใน LINE Developers", "ออก Channel access token (long-lived)", "วาง token ด้านล่าง"] },
+  "Notion": { field: "Internal Integration Token", placeholder: "secret_...", doc: "https://www.notion.so/my-integrations", docLabel: "เปิดหน้า Notion Integrations",
+    desc: "อ่าน/เขียนฐานข้อมูลและหน้า Notion", steps: ["สร้าง Integration ใหม่ → คัดลอก Internal Integration Token", "แชร์เพจ/ฐานข้อมูลให้ integration นั้น", "วาง token ด้านล่าง"] },
+  "Meta Ads": { field: "Access token", doc: "https://developers.facebook.com/tools/explorer/", docLabel: "เปิด Meta Graph API Explorer", desc: "ดู/จัดการแคมเปญโฆษณา Meta" },
+  "Google Ads": { field: "Developer token / OAuth", doc: "https://ads.google.com/aw/apicenter", docLabel: "เปิด Google Ads API Center", desc: "ดู/จัดการแคมเปญ Google Ads" },
+  "Email": { field: "SMTP / App password", doc: "https://support.google.com/mail/answer/185833", docLabel: "วิธีสร้าง App Password (Gmail)", desc: "ส่งอีเมลผ่านบัญชีของคุณ (แนะนำใช้ App Password)" },
+  "WordPress": { field: "Application Password", doc: "https://wordpress.org/documentation/article/application-passwords/", docLabel: "วิธีสร้าง Application Password", desc: "โพสต์บทความขึ้นเว็บ WordPress" },
+  "Facebook & Instagram": { field: "Access token", doc: "https://developers.facebook.com/", docLabel: "เปิด Meta for Developers", desc: "โพสต์/จัดการเพจ FB และ IG" },
+  "Shopify": { field: "Admin API access token", doc: "https://admin.shopify.com/", docLabel: "เปิด Shopify Admin", desc: "จัดการสินค้า/ออเดอร์ร้าน Shopify" },
+  "Google Drive": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียนไฟล์ใน Google Drive" },
+  "Google Sheets": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียน Google Sheets" },
+  "YouTube": { field: "OAuth credential / API key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อัปโหลด/จัดการวิดีโอ YouTube" },
+  "TikTok": { field: "Access token", doc: "https://developers.tiktok.com/", docLabel: "เปิด TikTok for Developers", desc: "โพสต์/ดึงข้อมูล TikTok" },
+  "X (Twitter)": { field: "Bearer / API key", doc: "https://developer.x.com/en/portal/dashboard", docLabel: "เปิด X Developer Portal", desc: "โพสต์/อ่านบน X (Twitter)" },
+  "GitHub": { field: "Personal access token", placeholder: "ghp_...", doc: "https://github.com/settings/tokens", docLabel: "สร้าง GitHub Token", desc: "จัดการ repo / commit / PR" },
+  "Binance Futures": { field: "API key + Secret", doc: "https://www.binance.com/en/my/settings/api-management", docLabel: "เปิด Binance API Management", desc: "ดูพอร์ต/ส่งคำสั่ง (ทำตามความเสี่ยงของคุณเอง)" },
+  "Bybit": { field: "API key + Secret", doc: "https://www.bybit.com/app/user/api-management", docLabel: "เปิด Bybit API Management", desc: "ดูพอร์ต/ส่งคำสั่ง (ทำตามความเสี่ยงของคุณเอง)" },
+  "MetaTrader 5 (Forex)": { field: "Webhook / Bridge URL", doc: "https://www.metatrader5.com/", docLabel: "เปิดเว็บ MetaTrader 5", desc: "เชื่อมสัญญาณเข้า MT5 ผ่าน bridge/webhook" },
+  "Shopee Affiliate": { field: "App ID / Secret", doc: "https://open.shopee.com/", docLabel: "เปิด Shopee Open Platform", desc: "ดึงลิงก์/รายงานพันธมิตร Shopee" },
+};
 function openConnect(name, after){
-  openGen("เชื่อม " + name, [{key:"config", label:"API token / Webhook URL", type:"input", placeholder:"วางคีย์ / URL ที่นี่"}],
-    async (v) => { await postJSON("/api/connector", {name, status:"connected", config:v.config}); closeModal("genModal");
-      toastNote(name + " เชื่อมแล้ว — เก็บคีย์ไว้แล้ว (การยิงจริงจะเปิดเมื่อพร้อม)", "#22c55e"); (after||loadConsole)(); });
+  const g = CONN_GUIDE[name] || {};
+  $("genTitle").textContent = "เชื่อม " + name;
+  const steps = (g.steps && g.steps.length) ? `<ol class="conn-steps">${g.steps.map(s => `<li>${s}</li>`).join("")}</ol>` : "";
+  const doc = g.doc ? `<a class="conn-doc" href="${g.doc}" target="_blank" rel="noopener">${escapeHtml(g.docLabel || "เปิดหน้าขอคีย์ / เว็บผู้ให้บริการ")} ↗</a>` : "";
+  $("genBody").innerHTML = `
+    ${g.desc ? `<p class="conn-desc">${escapeHtml(g.desc)}</p>` : ""}
+    ${(steps || doc) ? `<div class="conn-howto"><div class="conn-howto-h">วิธีขอคีย์ / เชื่อม</div>${steps}${doc}</div>` : ""}
+    <label>${escapeHtml(g.field || "API token / Webhook URL")}</label>
+    <input id="conn_val" placeholder="${escapeHtml(g.placeholder || "วางคีย์ / URL ที่นี่")}">
+    <p class="conn-note">นี่คือ<b>บัญชีของคุณเอง</b> — เอเจนต์จะทำงานก็ต่อเมื่อคุณสั่งเท่านั้น ToonOffice แค่รันคำสั่งที่คุณกด ไม่มีอะไรเกิดขึ้นเอง</p>
+    <button class="save" id="conn_save">บันทึก / เชื่อม</button>`;
+  $("conn_save").addEventListener("click", async () => {
+    const config = ($("conn_val").value || "").trim();
+    await postJSON("/api/connector", { name, status: "connected", config });
+    closeModal("genModal");
+    toastNote(name + " เชื่อมแล้ว — เก็บคีย์ไว้แล้ว (การยิงจริงจะเปิดเมื่อพร้อม)", "#22c55e");
+    (after || loadConsole)();
+  });
+  openModal("genModal");
 }
 
 /* ---------- Connectors grid (22) ---------- */
