@@ -111,6 +111,9 @@ def init() -> None:
                 agent_name TEXT NOT NULL, prompt TEXT NOT NULL, size TEXT NOT NULL,
                 svg TEXT NOT NULL, created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS response_cache (
+                hash TEXT PRIMARY KEY, agent TEXT, prompt TEXT, answer TEXT, created_at TEXT NOT NULL
+            );
             """
         )
 
@@ -320,6 +323,27 @@ def set_connector(name: str, status: str, config: str = "") -> None:
 def list_connectors() -> dict:
     with _conn() as c:
         return {r["name"]: r["status"] for r in c.execute("SELECT name, status FROM connectors").fetchall()}
+
+
+# --- Response cache (repeated question = 0 tokens) --------------------------
+def cache_get(h: str):
+    with _conn() as c:
+        row = c.execute("SELECT answer FROM response_cache WHERE hash=?", (h,)).fetchone()
+    return row["answer"] if row else None
+
+def cache_set(h: str, agent: str, prompt: str, answer: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO response_cache (hash, agent, prompt, answer, created_at) VALUES (?,?,?,?,?) "
+                  "ON CONFLICT(hash) DO UPDATE SET answer=excluded.answer, created_at=excluded.created_at",
+                  (h, agent, prompt[:500], answer, _now()))
+
+def cache_clear() -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM response_cache")
+
+def cache_count() -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) n FROM response_cache").fetchone()["n"]
 
 
 # --- Settings (key/value, e.g. automation + posting prefs) ------------------

@@ -9,6 +9,7 @@ Requires:  ANTHROPIC_API_KEY in the environment (or a .env file).
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -56,6 +57,13 @@ def usage_payload() -> dict:
         "series": db.usage_series(7),
         "pricing": PRICING,
     }
+
+
+def _cache_on() -> bool:
+    return db.get_settings().get("cache_enabled", "true") != "false"
+
+def _cache_key(agent: str, prompt: str) -> str:
+    return hashlib.sha256(f"{get_model()}|{agent}|{prompt}".encode("utf-8")).hexdigest()
 
 
 @app.on_event("startup")
@@ -248,6 +256,17 @@ async def post_settings(p: dict) -> dict:
     return {"ok": True, "settings": db.get_settings()}
 
 
+@app.get("/api/cache")
+async def cache_info() -> dict:
+    return {"count": db.cache_count(), "enabled": _cache_on()}
+
+
+@app.post("/api/cache/clear")
+async def cache_clear() -> dict:
+    db.cache_clear()
+    return {"ok": True, "count": 0}
+
+
 class Recorder:
     """Wraps the WebSocket ``emit`` and persists each event to SQLite.
 
@@ -319,6 +338,7 @@ async def run_jarvis(send, goal: str, client, session_id: int) -> None:
     db.save_token_usage(session_id, "jarvis", getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0)
     db.add_decision("jarvis", goal[:80])
     await send({"type": "jarvis_done"})
+    return text
 
 
 @app.websocket("/ws")
@@ -362,19 +382,29 @@ async def ws(websocket: WebSocket) -> None:
                     await send_session_state({"id": sid, "name": name})
                 continue
 
-            # BYOK: use the user's own API key for this connection (Anthropic only for now).
+            # BYOK: use the user's own API key, or point at a local/custom
+            # Anthropic-compatible endpoint (e.g. Ollama via a LiteLLM proxy = $0).
             if action == "set_key":
                 key = (msg.get("api_key") or "").strip()
                 provider = msg.get("provider", "anthropic")
-                if not key:
+                base_url = (msg.get("base_url") or "").strip()
+                model = (msg.get("model") or "").strip()
+                if base_url:
+                    orch = Orchestrator(anthropic.AsyncAnthropic(api_key=key or "local", base_url=base_url))
+                    if model:
+                        set_model(model)
+                    await send({"type": "byok", "ok": True, "provider": "local (" + base_url + ")"})
+                elif not key:
                     orch = _orchestrator
                     await send({"type": "byok", "ok": True, "provider": "default"})
                 elif provider == "anthropic":
                     orch = Orchestrator(anthropic.AsyncAnthropic(api_key=key))
+                    if model:
+                        set_model(model)
                     await send({"type": "byok", "ok": True, "provider": provider})
                 else:
                     await send({"type": "byok", "ok": False,
-                                "message": "ตอนนี้รองรับเฉพาะ Anthropic (Claude) — provider อื่นกำลังจะเพิ่ม"})
+                                "message": "provider นี้ต้องใช้โหมด Local/Base URL (Anthropic-compatible) — ใส่ Base URL"})
                 continue
 
             # Direct task to a single agent (skip CEO planning/delegation).
@@ -390,11 +420,23 @@ async def ws(websocket: WebSocket) -> None:
                     await send({"type": "done"})
                     continue
                 db.save_message(current_id, "user", "user", f"[{agent}] {task}")
+                await send({"type": "plan", "subtasks": [{"agent": agent, "task": task}]})
+                tkey = _cache_key(agent, task)
+                tcached = db.cache_get(tkey) if _cache_on() else None
+                if tcached:
+                    await send({"type": "agent_status", "agent": agent, "status": "working"})
+                    await send({"type": "agent_output", "agent": agent, "chunk": "💾 (จากแคช · 0 token)\n\n" + tcached})
+                    await send({"type": "agent_status", "agent": agent, "status": "done"})
+                    db.save_message(current_id, agent, "assistant", tcached)
+                    tid = db.create_task(current_id, agent, task); db.update_task(tid, status="done", result=tcached)
+                    await send({"type": "done"})
+                    continue
                 rec = Recorder(send, current_id, task)
                 rec._task_ids[agent] = db.create_task(current_id, agent, task)
                 try:
-                    await send({"type": "plan", "subtasks": [{"agent": agent, "task": task}]})
-                    await orch.run_specialist(agent, task, task, rec)
+                    result = await orch.run_specialist(agent, task, task, rec)
+                    if result:
+                        db.cache_set(tkey, agent, task, result)
                     db.add_decision("agent_task", f"{agent}: {task[:80]}")
                 except Exception as exc:
                     await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
@@ -409,8 +451,18 @@ async def ws(websocket: WebSocket) -> None:
                     await send({"type": "jarvis_done"})
                     continue
                 db.save_message(current_id, "user", "user", "[jarvis] " + jgoal[:200])
+                ckey = _cache_key("jarvis", jgoal)
+                cached = db.cache_get(ckey) if _cache_on() else None
+                if cached:
+                    await send({"type": "jarvis_status", "status": "working"})
+                    await send({"type": "jarvis_output", "chunk": "💾 (จากแคช · 0 token)\n\n" + cached})
+                    await send({"type": "jarvis_done"})
+                    db.save_message(current_id, "jarvis", "assistant", cached)
+                    continue
                 try:
-                    await run_jarvis(send, jgoal, orch.client, current_id)
+                    out = await run_jarvis(send, jgoal, orch.client, current_id)
+                    if out:
+                        db.cache_set(ckey, "jarvis", jgoal, out)
                 except Exception as exc:
                     await send({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
                     await send({"type": "jarvis_done"})

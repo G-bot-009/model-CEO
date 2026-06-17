@@ -543,6 +543,12 @@
           <div style="font-size:12px;color:#64748b;margin-top:8px">เลือก Haiku 4.5 เพื่อประหยัด token มากที่สุดสำหรับงานทั่วไป (มีผลกับทุกเอเจนต์ + Jarvis + สร้างภาพ)</div>
         </div>
 
+        <div class="panel"><h3>แคชคำตอบ (ประหยัด token) <span style="flex:1"></span><span id="cacheCount" style="font-size:11px;color:#64748b"></span></h3>
+          <label style="display:flex; align-items:center; gap:8px; color:#cbd5e1; font-size:13px">
+            <input type="checkbox" id="cacheEnabled"> เปิดแคช — คำถามซ้ำ (โมเดลเดิม) ตอบจากแคชทันที ไม่เสีย token</label>
+          <button class="qbtn" id="cacheClear" style="margin-top:12px">🗑️ ล้างแคชทั้งหมด</button>
+        </div>
+
         <div class="card" style="padding:16px; color:#cbd5e1; max-width:520px; line-height:1.7">
           <p><b style="color:#fff">โมเดล:</b> claude-opus-4-8 (adaptive thinking)</p>
           <p><b style="color:#fff">ราคา:</b> input $<span id="set_in">5</span> / output $<span id="set_out">25</span> ต่อ 1M tokens</p>
@@ -584,14 +590,17 @@
       <label>PROVIDER</label>
       <select id="byokProvider">
         <option value="anthropic">Anthropic (Claude) — ใช้ได้จริงตอนนี้</option>
+        <option value="local">Local / Custom (Base URL) — โมเดลในเครื่อง $0</option>
         <option value="openai">OpenAI</option>
         <option value="gemini">Google Gemini</option>
         <option value="openrouter">OpenRouter</option>
       </select>
       <label>MODEL</label>
-      <input id="byokModel" placeholder="auto — e.g. claude-opus-4-8" />
+      <input id="byokModel" placeholder="auto — e.g. claude-opus-4-8 หรือ llama3.1 (โลคัล)" />
+      <label>BASE URL (สำหรับโมเดลโลคัล/custom — Anthropic-compatible)</label>
+      <input id="byokBase" placeholder="เช่น http://localhost:4000 (LiteLLM proxy → Ollama)" />
       <label>API KEY</label>
-      <input id="byokKey" type="password" placeholder="Paste your API key" />
+      <input id="byokKey" type="password" placeholder="วางคีย์ (โลคัลปล่อยว่างได้)" />
       <div class="note" id="byokNote"></div>
       <button class="save" id="byokSave" style="margin-top:14px">Save & use my key</button>
       <button class="save" id="byokClear" style="margin-top:8px;background:#e5e7eb;color:#374151">ใช้คีย์ของระบบ (ล้างคีย์ของฉัน)</button>
@@ -1302,9 +1311,9 @@ function connect() {
   ws.onopen = () => {
     $("connDot").style.background = "#22c55e";
     // Re-apply a stored BYOK key for this connection.
+    const m = JSON.parse(localStorage.getItem("byok")||"{}");
     const k = localStorage.getItem("byok_key");
-    if (k) { const m = JSON.parse(localStorage.getItem("byok")||"{}");
-      ws.send(JSON.stringify({action:"set_key", provider:m.provider||"anthropic", api_key:k, model:m.model||""})); }
+    if (k || m.base_url) ws.send(JSON.stringify({action:"set_key", provider:m.provider||"anthropic", api_key:k||"", model:m.model||"", base_url:m.base_url||""}));
   };
   ws.onclose = () => { $("connDot").style.background = "#ef4444"; setTimeout(connect, 1500); };
   ws.onmessage = (ev) => handle(JSON.parse(ev.data));
@@ -1525,6 +1534,8 @@ async function initSettingsForm(){
       <input class="numfld" data-aid="${a.id}" value="${(a.name||"").replace(/"/g,'&quot;')}" style="flex:1; margin:0" />
     </div>`).join("");
   $("modelSel").value = s.model || "claude-opus-4-8";
+  $("cacheEnabled").checked = (s.cache_enabled || "true") !== "false";
+  try { const ci = await (await fetch("/api/cache")).json(); $("cacheCount").textContent = (ci.count||0) + " รายการ"; } catch(e){}
 }
 
 /* ---------- modals ---------- */
@@ -1748,17 +1759,21 @@ $("addRoutine").addEventListener("click", () => openGen("เพิ่มงา�
 function byokNote(){ const p=$("byokProvider").value;
   $("byokNote").innerHTML = p==="anthropic"
     ? "วางคีย์ Anthropic (ขึ้นต้น sk-ant-...) แล้วกดบันทึก เอเจนต์จะใช้คีย์ของคุณแทนทันที"
-    : "ℹ️ ตอนนี้ระบบรันด้วย Claude — provider นี้จะถูกบันทึกไว้ แต่ยังต้องเชื่อมเพิ่มเพื่อใช้จริง"; }
+    : p==="local"
+    ? "💻 รันโมเดลในเครื่องฟรี! ลง <b>Ollama</b> + <b>LiteLLM proxy</b> (Anthropic-compatible) → ใส่ Base URL (เช่น http://localhost:4000) + ชื่อโมเดล (เช่น llama3.1) · ไม่เสียค่า token เลย"
+    : "ℹ️ provider นี้ใช้ผ่านโหมด Local/Base URL (ต้องมี proxy ที่พูดภาษา Anthropic) — ใส่ Base URL ด้านล่าง"; }
 $("byokProvider").addEventListener("change", byokNote); byokNote();
 $("byok").addEventListener("click", () => {
   const m = JSON.parse(localStorage.getItem("byok")||"{}");
   $("byokProvider").value = m.provider || "anthropic"; $("byokModel").value = m.model || "";
+  $("byokBase").value = m.base_url || "";
   $("byokKey").value = localStorage.getItem("byok_key") || ""; byokNote(); openModal("byokModal");
 });
 $("byokSave").addEventListener("click", () => {
-  const provider=$("byokProvider").value, key=$("byokKey").value.trim(), model=$("byokModel").value.trim();
-  if (key) { localStorage.setItem("byok", JSON.stringify({provider, model})); localStorage.setItem("byok_key", key); }
-  if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"set_key", provider, api_key:key, model}));
+  const provider=$("byokProvider").value, key=$("byokKey").value.trim(), model=$("byokModel").value.trim(), base_url=$("byokBase").value.trim();
+  localStorage.setItem("byok", JSON.stringify({provider, model, base_url}));
+  if (key) localStorage.setItem("byok_key", key); else localStorage.removeItem("byok_key");
+  if (ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"set_key", provider, api_key:key, model, base_url}));
   closeModal("byokModal");
 });
 $("byokClear").addEventListener("click", () => {
@@ -1815,6 +1830,8 @@ $("jarvisGoal").addEventListener("keydown", e => { if (e.key === "Enter") jarvis
 $("jarvisRoutine").addEventListener("click", () => { jarvisRaw=""; $("jarvisOut").innerHTML="⏳ Jarvis กำลังรันรูทีนเช้า…"; ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({action:"jarvis_routine"})); });
 $("jarvisVoice").addEventListener("click", jarvisToggleVoice);
 $("modelSel").addEventListener("change", e => { saveSettings({ model: e.target.value }); toastNote("เปลี่ยนโมเดลเป็น " + e.target.value, "#22c55e"); });
+$("cacheEnabled").addEventListener("change", e => { saveSettings({ cache_enabled: e.target.checked ? "true" : "false" }); toastNote(e.target.checked ? "เปิดแคชคำตอบ" : "ปิดแคชคำตอบ", "#22c55e"); });
+$("cacheClear").addEventListener("click", async () => { await postJSON("/api/cache/clear", {}); $("cacheCount").textContent = "0 รายการ"; toastNote("ล้างแคชแล้ว", "#22c55e"); });
 $("companyPause").addEventListener("click", () => togglePause("company"));
 $("agentPause").addEventListener("click", () => { if (adAgentId) togglePause(adAgentId); });
 
