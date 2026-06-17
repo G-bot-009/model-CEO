@@ -749,25 +749,82 @@
           <h2 style="margin:0">📥 กล่องโซเชียล</h2>
           <span id="ib_chips" style="display:flex; gap:6px; flex-wrap:wrap"></span>
           <span style="flex:1"></span>
-          <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#94a3b8">
-            <input type="checkbox" id="ib_auto"> ตอบอัตโนมัติ (LINE)</label>
+          <button class="qbtn ib-tab active" data-ibtab="main">📥 กล่อง</button>
+          <button class="qbtn ib-tab" data-ibtab="contacts">👥 ผู้ติดต่อ</button>
+          <button class="qbtn ib-tab" data-ibtab="broadcast">📣 บรอดแคสต์</button>
+          <button class="qbtn ib-tab" data-ibtab="stats">📊 สถิติ</button>
+          <button class="qbtn ib-tab" data-ibtab="auto">⚙️ อัตโนมัติ</button>
           <button class="qbtn" id="ib_refresh">🔄 รีเฟรช</button>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center">
-          <button class="qbtn ib-f active" data-f="all">ทั้งหมด</button>
-          <button class="qbtn ib-f" data-f="comment">คอมเมนต์</button>
-          <button class="qbtn ib-f" data-f="chat">แชต</button>
-          <button class="qbtn ib-f" data-f="pending">รอตอบ</button>
-          <span style="flex:1"></span>
-          <button class="qbtn" id="ib_test">＋ เพิ่มข้อความทดสอบ</button>
+
+        <!-- pane: inbox -->
+        <div id="ib_pane_main">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center">
+            <button class="qbtn ib-f active" data-f="all">ทั้งหมด</button>
+            <button class="qbtn ib-f" data-f="comment">คอมเมนต์</button>
+            <button class="qbtn ib-f" data-f="chat">แชต</button>
+            <button class="qbtn ib-f" data-f="pending">รอตอบ</button>
+            <span style="flex:1"></span>
+            <button class="qbtn" id="ib_test">＋ เพิ่มข้อความทดสอบ</button>
+          </div>
+          <div style="display:grid; grid-template-columns:340px 1fr; gap:14px" id="ib_grid">
+            <div class="card" style="padding:6px; max-height:62vh; overflow:auto"><div id="ib_list"></div></div>
+            <div class="card" style="padding:16px"><div id="ib_detail" style="color:#94a3b8">เลือกข้อความทางซ้ายเพื่อตอบ</div></div>
+          </div>
+          <div class="card" style="padding:12px; margin-top:12px; font-size:12px; color:#64748b; line-height:1.7">
+            เชื่อมข้อความเข้ากล่องนี้: ตั้งให้ LINE / Make / Zapier ส่ง <b>POST</b> มาที่ <code id="ib_url" style="word-break:break-all">—</code>
+            <br>รูปแบบ JSON: <code>{platform, sender, text, kind:"chat"|"comment", thread}</code>
+          </div>
         </div>
-        <div style="display:grid; grid-template-columns:340px 1fr; gap:14px" id="ib_grid">
-          <div class="card" style="padding:6px; max-height:62vh; overflow:auto"><div id="ib_list"></div></div>
-          <div class="card" style="padding:16px"><div id="ib_detail" style="color:#94a3b8">เลือกข้อความทางซ้ายเพื่อตอบ</div></div>
+
+        <!-- pane: contacts -->
+        <div id="ib_pane_contacts" style="display:none">
+          <p style="color:#94a3b8; font-size:13px; margin:0 0 12px">ทุกคนที่ทักมา + AI สรุปว่าต้องการอะไร</p>
+          <div id="ib_contacts_list" style="display:flex; flex-direction:column; gap:10px"></div>
         </div>
-        <div class="card" style="padding:12px; margin-top:12px; font-size:12px; color:#64748b; line-height:1.7">
-          เชื่อมข้อความเข้ากล่องนี้: ตั้งให้ LINE / Make / Zapier ส่ง <b>POST</b> มาที่ <code id="ib_url" style="word-break:break-all">— (เปิด Inbound ในเมนู Connectors ก่อนเพื่อรับ URL)</code>
-          <br>รูปแบบ JSON: <code>{platform, sender, text, kind:"chat"|"comment", thread}</code>
+
+        <!-- pane: broadcast -->
+        <div id="ib_pane_broadcast" style="display:none">
+          <p style="color:#94a3b8; font-size:13px; margin:0 0 12px">ส่งข้อความหาลูกค้าที่เคยทัก (LINE) — เลือกได้ว่าจะให้ AI ปรับข้อความให้แต่ละคน</p>
+          <div class="card" style="padding:16px">
+            <textarea id="bc_text" rows="4" class="numfld" placeholder="เช่น โปรพิเศษเดือนนี้ ลด 20% ทุกแพ็กเกจ ถึงสิ้นเดือน"></textarea>
+            <label style="display:flex; align-items:center; gap:8px; margin:12px 0; color:#cbd5e1; font-size:14px">
+              <input type="checkbox" id="bc_personalize"> ให้ AI ปรับข้อความให้เข้ากับลูกค้าแต่ละคน</label>
+            <button class="send" id="bc_send" style="padding:11px 24px">📣 ส่งบรอดแคสต์</button>
+            <div id="bc_targets" style="font-size:12px; color:#64748b; margin-top:10px"></div>
+          </div>
+        </div>
+
+        <!-- pane: stats -->
+        <div id="ib_pane_stats" style="display:none">
+          <div class="statgrid" id="ib_stats_cards"></div>
+          <div class="card" style="padding:14px; font-size:12px; color:#64748b; line-height:1.7">
+            * ตัวเลขข้างบนมาจากกล่องข้อความจริงของคุณ — ส่วนยอดผู้ติดตาม/ยอดวิว/Engagement ต่อโพสต์ ต้องเชื่อม insights API ของแต่ละแพลตฟอร์ม (OAuth + รีวิว) ถึงจะดึงได้จริง
+          </div>
+        </div>
+
+        <!-- pane: automation -->
+        <div id="ib_pane_auto" style="display:none">
+          <p style="color:#94a3b8; font-size:13px; margin:0 0 12px">ตั้งค่าให้ทีม AI ดูแลโซเชียลให้คุณ</p>
+          <div class="card" style="padding:16px; margin-bottom:12px">
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+              <span><b style="color:#fff">ตอบแชต (DM) อัตโนมัติ</b><br><span style="font-size:12px; color:#94a3b8">LINE — ลูกค้าทักปุ๊บ AI ตอบให้ทันที</span></span>
+              <input type="checkbox" id="au_dm"></label>
+          </div>
+          <div class="card" style="padding:16px; margin-bottom:12px">
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+              <span><b style="color:#fff">ตอบคอมเมนต์อัตโนมัติ</b><br><span style="font-size:12px; color:#94a3b8">IG · Facebook · TikTok — ผ่าน Make/Zapier เข้ามา</span></span>
+              <input type="checkbox" id="au_comment"></label>
+          </div>
+          <div class="card" style="padding:16px; margin-bottom:12px">
+            <div style="font-weight:800; color:#fff; margin-bottom:6px">ข้อความต้อนรับ</div>
+            <input id="au_welcome" class="numfld" placeholder="เช่น สวัสดีค่ะ ยินดีให้บริการ สอบถามได้เลยนะคะ 😊">
+          </div>
+          <div class="card" style="padding:16px">
+            <div style="font-weight:800; color:#fff; margin-bottom:6px">ข้อความตอบด่วน (chip) — บรรทัดละ 1 อัน รูปแบบ <code>ป้าย | ข้อความ</code></div>
+            <textarea id="au_quick" rows="4" class="numfld" placeholder="เวลาส่งของ | ปกติจัดส่ง 2-3 วันทำการค่ะ&#10;โปรโมชั่น | เดือนนี้มีโปรลดพิเศษค่ะ"></textarea>
+          </div>
+          <button class="send" id="au_save" style="margin-top:12px; padding:11px 24px">💾 บันทึกการตั้งค่า</button>
         </div>
       </section>
 
@@ -2563,16 +2620,16 @@ window.addEventListener("message", (e) => {
   }
 });
 
-/* ---------- Social Inbox (unified comments/chats) ---------- */
+/* ---------- Social Inbox (unified comments/chats + tools) ---------- */
 const IB_ICON = { LINE:"💚", facebook:"📘", instagram:"📷", tiktok:"🎵", youtube:"▶️", x:"𝕏", webhook:"🔗" };
-let ibFilter = "all", ibItems = [];
-async function loadInbox(){
-  let d; try { d = await (await fetch("/api/inbox?filter=" + ibFilter)).json(); } catch(e){ return; }
-  ibItems = d.items || [];
-  $("ib_auto").checked = !!d.autoreply;
-  $("ib_url").textContent = d.inbound_path
-    ? location.origin + d.inbound_path.replace("/api/inbound/", "/api/inbox/inbound/")
-    : "— (เปิด Inbound ในเมนู Connectors ก่อนเพื่อรับ URL)";
+let ibFilter = "all", ibItems = [], ibTab = "main", ibQuick = [];
+function ibSwitch(tab){
+  ibTab = tab;
+  document.querySelectorAll(".ib-tab").forEach(b => b.classList.toggle("active", b.dataset.ibtab === tab));
+  ["main","contacts","broadcast","stats","auto"].forEach(t => { const el = $("ib_pane_" + t); if (el) el.style.display = (t === tab) ? "" : "none"; });
+  ({ main:loadInbox, contacts:loadContacts, broadcast:loadBroadcast, stats:loadStats, auto:loadAutomation }[tab] || loadInbox)();
+}
+async function ibChips(){
   try {
     const s = await (await fetch("/api/social")).json();
     const on = (s.platforms || []).filter(p => p.connected);
@@ -2580,6 +2637,20 @@ async function loadInbox(){
       ? on.map(p => `<span class="tag" style="background:#EAF6EE;color:#1C2E1E">${SOC_ICON[p.id] || "🌐"} ${p.label}</span>`).join("")
       : `<span style="font-size:12px;color:#94a3b8">+ LINE เชื่อมที่เมนู Connectors</span>`;
   } catch(e){}
+}
+function parseQuick(s){
+  return (s || "").split("\n").map(l => l.trim()).filter(Boolean).map(l => {
+    const i = l.indexOf("|"); return i < 0 ? { label:l, text:l } : { label:l.slice(0,i).trim(), text:l.slice(i+1).trim() };
+  });
+}
+async function loadInbox(){
+  ibChips();
+  let d; try { d = await (await fetch("/api/inbox?filter=" + ibFilter)).json(); } catch(e){ return; }
+  ibItems = d.items || [];
+  $("ib_url").textContent = d.inbound_path
+    ? location.origin + d.inbound_path.replace("/api/inbound/", "/api/inbox/inbound/")
+    : "— (เปิด Inbound ในเมนู Connectors ก่อนเพื่อรับ URL)";
+  try { const s = await (await fetch("/api/settings")).json(); ibQuick = parseQuick(s.quick_replies); } catch(e){}
   $("ib_list").innerHTML = ibItems.length ? ibItems.map(m => `
     <div class="ib-row" data-id="${m.id}" style="padding:10px; border-radius:10px; cursor:pointer">
       <div style="display:flex; justify-content:space-between; font-size:12px">
@@ -2592,17 +2663,20 @@ async function loadInbox(){
 }
 function openInboxItem(id){
   const m = ibItems.find(x => x.id === id); if (!m) return;
+  const chips = ibQuick.map((q, i) => `<button class="qbtn ib-qr" data-qi="${i}">${escapeHtml(q.label)}</button>`).join("");
   $("ib_detail").innerHTML = `
     <div style="font-weight:800; font-size:16px">${IB_ICON[m.platform] || "🌐"} ${escapeHtml(m.sender || "")}
       <span class="tag">${escapeHtml(m.platform || "")}</span></div>
     <div style="margin:10px 0; padding:12px; border-radius:10px; background:var(--surf2,#0b1220); white-space:pre-wrap">${escapeHtml(m.text || "")}</div>
     ${m.reply ? `<div style="margin:6px 0 10px; padding:10px; border-radius:10px; background:#EAF6EE; color:#1C2E1E"><b>ตอบแล้ว:</b> ${escapeHtml(m.reply)}</div>` : ""}
-    <textarea id="ib_reply" rows="3" class="numfld" placeholder="พิมพ์คำตอบ..."></textarea>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px">${chips}</div>
+    <textarea id="ib_reply" rows="3" class="numfld" placeholder="พิมพ์คำตอบ หรือกด 'ให้ AI ร่างคำตอบ'..."></textarea>
     <div style="display:flex; gap:8px; margin-top:8px">
       <button class="send" id="ib_send" style="padding:10px 20px">ส่งตอบ 🚀</button>
-      <button class="qbtn" id="ib_ai">🤖 ให้ AI ร่างให้</button>
+      <button class="qbtn" id="ib_ai">🤖 ให้ AI ร่างคำตอบ</button>
     </div>
-    <p style="font-size:11px; color:#64748b; margin-top:8px">* ตอบ LINE จะส่งถึงลูกค้าจริง (ถ้าเชื่อม LINE OA แล้ว) · แพลตฟอร์มอื่นจะบันทึกคำตอบไว้</p>`;
+    <p style="font-size:11px; color:#64748b; margin-top:8px">คุณตรวจ/แก้ก่อนส่งได้เสมอ · ตอบ LINE ส่งถึงลูกค้าจริง · แพลตฟอร์มอื่นบันทึกไว้</p>`;
+  $("ib_detail").querySelectorAll(".ib-qr").forEach(b => b.onclick = () => { $("ib_reply").value = ibQuick[+b.dataset.qi].text; });
   $("ib_send").onclick = async () => {
     const t = $("ib_reply").value.trim(); if (!t) return;
     const r = await postJSON("/api/inbox/reply", { id, text: t });
@@ -2610,19 +2684,77 @@ function openInboxItem(id){
     toastNote(r.sent ? "ส่งถึงลูกค้าแล้ว ✅" : "บันทึกคำตอบแล้ว", "#22c55e"); loadInbox();
   };
   $("ib_ai").onclick = async () => {
-    $("ib_ai").textContent = "⏳ กำลังร่าง...";
-    const r = await postJSON("/api/inbox/draft", { id });
-    $("ib_ai").textContent = "🤖 ให้ AI ร่างให้";
+    $("ib_ai").textContent = "⏳ กำลังร่าง..."; const r = await postJSON("/api/inbox/draft", { id });
+    $("ib_ai").textContent = "🤖 ให้ AI ร่างคำตอบ";
     if (r.text) $("ib_reply").value = r.text; else toastNote("ร่างไม่สำเร็จ", "#f59e0b");
   };
 }
-$("ib_refresh").addEventListener("click", loadInbox);
+async function loadContacts(){
+  ibChips(); let d; try { d = await (await fetch("/api/inbox/contacts")).json(); } catch(e){ return; }
+  const cs = d.contacts || [];
+  $("ib_contacts_list").innerHTML = cs.length ? cs.map((c, i) => `
+    <div class="card" style="padding:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <span style="font-size:20px">${IB_ICON[c.platform] || "🌐"}</span>
+        <div style="flex:1"><b style="color:var(--ink,#fff)">${escapeHtml(c.sender)}</b>
+          <span style="color:#94a3b8; font-size:12px"> · ${c.count} ข้อความ</span>
+          <div style="font-size:13px; color:#94a3b8">${escapeHtml((c.last_text||"").slice(0,90))}</div></div>
+        <button class="qbtn ib-sum" data-s="${escapeHtml(c.sender)}" data-p="${escapeHtml(c.platform)}">🤖 AI สรุป</button>
+      </div>
+      <div class="ib-sumout" style="display:none; margin-top:10px; padding:10px; border-radius:10px; background:#EFEAFB; color:#4c1d95; font-size:13px"></div>
+    </div>`).join("") : `<div style="color:#64748b">ยังไม่มีผู้ติดต่อ</div>`;
+  $("ib_contacts_list").querySelectorAll(".ib-sum").forEach(b => b.onclick = async () => {
+    const box = b.closest(".card").querySelector(".ib-sumout");
+    box.style.display = "block"; box.textContent = "กำลังสรุป...";
+    const r = await postJSON("/api/inbox/contact/summary", { sender: b.dataset.s, platform: b.dataset.p });
+    box.innerHTML = "<b>AI สรุป:</b> " + escapeHtml(r.summary || "—");
+  });
+}
+async function loadBroadcast(){
+  ibChips(); let d; try { d = await (await fetch("/api/inbox/contacts")).json(); } catch(e){ d = {contacts:[]}; }
+  const line = (d.contacts || []).filter(c => c.platform === "LINE");
+  $("bc_targets").textContent = `ส่งได้ ${line.length} คน (เฉพาะ LINE ที่ทักภายใน 24 ชม.) — แพลตฟอร์มอื่นต้องผ่านรีวิว/Make`;
+}
+async function loadStats(){
+  let d; try { d = await (await fetch("/api/inbox/stats")).json(); } catch(e){ return; }
+  $("ib_stats_cards").innerHTML = `
+    <div class="statcard"><div class="lab">ข้อความทั้งหมด</div><div class="val">${fmt(d.total)}</div></div>
+    <div class="statcard"><div class="lab">แชต 30 วัน</div><div class="val">${fmt(d.chats_30)}</div></div>
+    <div class="statcard"><div class="lab">คอมเมนต์ 30 วัน</div><div class="val">${fmt(d.comments_30)}</div></div>
+    <div class="statcard"><div class="lab">รอตอบ</div><div class="val">${fmt(d.pending)}</div></div>
+    <div class="statcard"><div class="lab">ตอบแล้ว</div><div class="val">${fmt(d.replied)}</div></div>`;
+}
+async function loadAutomation(){
+  let s = {}; try { s = await (await fetch("/api/settings")).json(); } catch(e){}
+  $("au_dm").checked = s.inbox_autoreply === "true";
+  $("au_comment").checked = s.auto_comment === "true";
+  $("au_welcome").value = s.welcome_msg || "";
+  $("au_quick").value = s.quick_replies || "เวลาส่งของ | ปกติจัดส่ง 2-3 วันทำการค่ะ มีเลขพัสดุให้ตรวจสอบนะคะ\nโปรโมชั่น | เดือนนี้มีโปรลดพิเศษค่ะ สนใจแพ็กเกจไหนแจ้งได้เลยนะคะ";
+}
+$("ib_refresh").addEventListener("click", () => ibSwitch(ibTab));
 $("ib_test").addEventListener("click", async () => { await postJSON("/api/inbox/test", {}); loadInbox(); });
-$("ib_auto").addEventListener("change", () => saveSettings({ inbox_autoreply: $("ib_auto").checked ? "true" : "false" }));
+document.querySelectorAll(".ib-tab").forEach(b => b.addEventListener("click", () => ibSwitch(b.dataset.ibtab)));
 document.querySelectorAll(".ib-f").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".ib-f").forEach(x => x.classList.remove("active"));
   b.classList.add("active"); ibFilter = b.dataset.f; loadInbox();
 }));
+$("bc_send").addEventListener("click", async () => {
+  const text = $("bc_text").value.trim(); if (!text){ toastNote("พิมพ์ข้อความก่อน", "#ef4444"); return; }
+  $("bc_send").disabled = true; $("bc_send").textContent = "⏳ กำลังส่ง...";
+  const r = await postJSON("/api/inbox/broadcast", { text, personalize: $("bc_personalize").checked });
+  $("bc_send").disabled = false; $("bc_send").textContent = "📣 ส่งบรอดแคสต์";
+  if (r.error) toastNote(r.error, "#ef4444");
+  else toastNote(`ส่งสำเร็จ ${r.sent}/${r.targets} คน ✅`, "#22c55e");
+});
+$("au_save").addEventListener("click", async () => {
+  await saveSettings({
+    inbox_autoreply: $("au_dm").checked ? "true" : "false",
+    auto_comment: $("au_comment").checked ? "true" : "false",
+    welcome_msg: $("au_welcome").value.trim(),
+    quick_replies: $("au_quick").value,
+  });
+  toastNote("บันทึกการตั้งค่าอัตโนมัติแล้ว ✅", "#22c55e");
+});
 
 /* ---------- Automation settings ---------- */
 const RADIOS = {

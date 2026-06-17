@@ -373,6 +373,87 @@ async def inbox_test() -> dict:
     return {"ok": True}
 
 
+async def _ai_summary(texts: str) -> str:
+    try:
+        resp = await _client.messages.create(
+            model=get_model(), max_tokens=200, **thinking_kwargs(),
+            system="สรุปสั้นๆ ว่าลูกค้าคนนี้ต้องการ/สนใจอะไร เป็นภาษาไทย 1 ประโยค",
+            messages=[{"role": "user", "content": texts[:2000]}])
+        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+    except Exception:
+        return ""
+
+
+@app.get("/api/inbox/contacts")
+async def inbox_contacts() -> dict:
+    rows = db.list_inbox("all", 2000)
+    groups: dict = {}
+    for m in rows:
+        k = (m["platform"], m["sender"])
+        g = groups.setdefault(k, {"platform": m["platform"], "sender": m["sender"], "thread": m.get("thread", ""),
+                                  "count": 0, "last_text": m["text"], "last_at": m["created_at"]})
+        g["count"] += 1
+    return {"contacts": sorted(groups.values(), key=lambda x: x["last_at"], reverse=True)}
+
+
+@app.post("/api/inbox/contact/summary")
+async def inbox_contact_summary(p: dict) -> dict:
+    sender, platform = p.get("sender", ""), p.get("platform", "")
+    rows = [m for m in db.list_inbox("all", 2000) if m["sender"] == sender and m["platform"] == platform]
+    texts = "\n".join(m["text"] for m in rows)
+    return {"summary": await _ai_summary(texts) if texts else ""}
+
+
+@app.get("/api/inbox/stats")
+async def inbox_stats() -> dict:
+    from datetime import timedelta as _td
+    rows = db.list_inbox("all", 5000)
+    cutoff = (date.today() - _td(days=30)).isoformat()
+    last30 = [m for m in rows if (m["created_at"] or "")[:10] >= cutoff]
+    def count(items, **kw):
+        return sum(1 for m in items if all(m.get(k) == v for k, v in kw.items()))
+    return {
+        "platforms": db.list_social(),
+        "total": len(rows),
+        "chats_30": count(last30, kind="chat"),
+        "comments_30": count(last30, kind="comment"),
+        "pending": count(rows, status="pending"),
+        "replied": count(rows, status="replied"),
+    }
+
+
+@app.post("/api/inbox/broadcast")
+async def inbox_broadcast(p: dict) -> dict:
+    text = (p.get("text") or "").strip()
+    if not text:
+        return {"error": "พิมพ์ข้อความก่อน"}
+    personalize = bool(p.get("personalize"))
+    ids = p.get("ids") or []
+    rows = db.list_inbox("all", 2000)
+    # unique LINE threads (the only platform we can push to directly)
+    targets, seen = [], set()
+    for m in rows:
+        if ids and m["id"] not in ids:
+            continue
+        if m["platform"] == "LINE" and m.get("thread") and m["thread"] not in seen:
+            seen.add(m["thread"]); targets.append(m)
+    sent = 0
+    for m in targets:
+        msg = text
+        if personalize:
+            try:
+                resp = await _client.messages.create(
+                    model=get_model(), max_tokens=300, **thinking_kwargs(),
+                    system="ปรับข้อความบรอดแคสต์ให้เหมือนส่งหาลูกค้าคนนี้โดยตรง คงความหมาย/ราคา/ลิงก์เดิมทุกอย่าง ภาษาไทย",
+                    messages=[{"role": "user", "content": f"ลูกค้า: {m['sender']} (เคยถาม: {m['text'][:120]})\nข้อความ: {text}"}])
+                msg = next((b.text for b in resp.content if b.type == "text"), text).strip() or text
+            except Exception:
+                msg = text
+        if await _line_push(m["thread"], msg):
+            sent += 1
+    return {"ok": True, "sent": sent, "targets": len(targets)}
+
+
 @app.post("/api/inbox/draft")
 async def inbox_draft(p: dict) -> dict:
     item = db.get_inbox(int(p.get("id") or 0))
