@@ -1356,17 +1356,28 @@ function showInfo(title, html){
   openModal("genModal");
 }
 function openAgentGuide(){
-  showInfo("📖 วิธีสร้างเอเจนต์ทีละขั้นตอน", `
-    <ol style="margin:0; padding-left:20px; line-height:1.9; color:#374151; font-size:14px">
-      <li>กดปุ่ม <b>➕ เพิ่มเอเจนต์</b></li>
-      <li><b>ตั้งชื่อเอเจนต์</b> — เช่น Lawyer, Accountant, Closer</li>
-      <li><b>ใส่บทบาท</b> — เอเจนต์นี้ทำอะไร (เช่น "ดูแลสัญญาและกฎหมาย")</li>
-      <li><b>เลือกอิโมจิ</b> จากชุดที่ให้ — คลิกได้เลย</li>
-      <li><b>เลือกสีประจำตัว</b> จาก 10 สี — ใช้แยกตัวละครในออฟฟิศ 3D</li>
-      <li><b>เลือกหัวข้อสกิล</b> (หมวด) แล้ว <b>เลือก 1 สกิล</b> ที่ต้องการ — 1 สกิลต่อ 1 เอเจนต์ เพื่อให้ผลแม่นยำที่สุด</li>
-      <li>กด <b>บันทึกเอเจนต์</b> — เสร็จแล้ว! เอเจนต์จะขึ้นในทีม, CEO มอบงานให้ได้, และโผล่ในออฟฟิศ 3D</li>
-    </ol>
-    <div style="margin-top:12px; font-size:12px; color:#6b7280">💡 ลบเอเจนต์ที่สร้างเองได้ที่ปุ่ม 🗑️ บนการ์ด (ทีมหลัก 9 ตัวลบไม่ได้)</div>`);
+  const steps = [
+    ["กดปุ่ม ➕ เพิ่มเอเจนต์", "เริ่มสร้างเอเจนต์ตัวใหม่"],
+    ["ตั้งชื่อเอเจนต์", "เช่น Lawyer, Accountant, Closer"],
+    ["ใส่บทบาท", "เอเจนต์นี้ทำอะไร เช่น “ดูแลสัญญาและกฎหมาย”"],
+    ["เลือกอิโมจิ", "คลิกเลือกจากชุดที่ให้มาได้เลย"],
+    ["เลือกสีประจำตัว", "เลือกจาก 10 สี — ใช้แยกตัวละครในออฟฟิศ 3D"],
+    ["เลือกหัวข้อสกิล แล้วเลือก 1 สกิล", "1 สกิลต่อ 1 เอเจนต์ เพื่อให้ผลแม่นยำที่สุด"],
+    ["กดบันทึกเอเจนต์", "เสร็จ! เอเจนต์ขึ้นในทีม · CEO มอบงานให้ได้ · โผล่ในออฟฟิศ 3D"],
+  ];
+  const rows = steps.map(([t, d], i) => `
+    <div style="display:flex; gap:13px; align-items:flex-start; padding:11px 0; ${i ? 'border-top:1px solid #ece6d8;' : ''}">
+      <div style="flex:none; width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#7c5cff,#9b6bff); color:#fff; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:14px">${i+1}</div>
+      <div style="flex:1; min-width:0">
+        <div style="font-weight:800; color:#1f2937; font-size:15px; line-height:1.35">${t}</div>
+        <div style="color:#6b7280; font-size:13px; margin-top:2px; line-height:1.5">${d}</div>
+      </div>
+    </div>`).join("");
+  showInfo("📖 วิธีสร้างเอเจนต์", `
+    <div style="margin:2px 0 4px">${rows}</div>
+    <div style="margin-top:12px; background:#f3eede; border-radius:10px; padding:11px 13px; font-size:13px; color:#4b5563; line-height:1.6">
+      💡 ลบเอเจนต์ที่สร้างเองได้ที่ปุ่ม 🗑️ บนการ์ด — ทีมหลัก 9 ตัวล็อกไว้ ลบไม่ได้
+    </div>`);
 }
 
 /* ---------- status / animation ---------- */
