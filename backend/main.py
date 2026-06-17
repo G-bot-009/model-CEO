@@ -79,7 +79,18 @@ def client_for_agent(agent_id: str, default: Optional[anthropic.AsyncAnthropic] 
     return default
 
 
-_orchestrator = Orchestrator(lambda aid: client_for_agent(aid))
+def model_for_agent(agent_id: str) -> str:
+    """Per-agent model override (set on the agent card); else the global model."""
+    try:
+        m = db.get_settings().get(f"agent_model_{agent_id}")
+        if m:
+            return m
+    except Exception:
+        pass
+    return get_model()
+
+
+_orchestrator = Orchestrator(lambda aid: client_for_agent(aid), model_for_agent)
 
 # Pricing / limits for the token-usage panel. claude-opus-4-8: $5 / $25 per 1M.
 PRICING = {
@@ -697,11 +708,14 @@ async def inbound_receive(token: str, request: Request) -> dict:
 @app.get("/api/agents")
 async def list_agents() -> dict:
     s = db.get_settings()  # user-defined name overrides (agent_name_<id>)
+    kmap = db.agent_key_map()
     return {
         "agents": [
             {
                 "id": a.id,
                 "name": s.get(f"agent_name_{a.id}") or a.name,
+                "key_id": kmap.get(a.id),
+                "model": s.get(f"agent_model_{a.id}") or "",
                 "title": a.title,
                 "emoji": a.emoji,
                 "tags": list(a.tags),
@@ -1020,10 +1034,11 @@ async def generate_image(p: dict) -> dict:
         f"<foreignObject>.\n\nSubject: {prompt}"
     )
     try:
+        _m = model_for_agent(agent)
         resp = await client_for_agent(agent).messages.create(
-            model=get_model(),
+            model=_m,
             max_tokens=8000,
-            **thinking_kwargs(),
+            **thinking_kwargs(_m),
             system=_ag[agent].system,
             messages=[{"role": "user", "content": instr}],
         )
@@ -1131,6 +1146,16 @@ async def del_api_key(p: dict) -> dict:
     return {"ok": True, "keys": db.list_api_keys(), "map": db.agent_key_map()}
 
 
+@app.post("/api/agent/model")
+async def assign_agent_model(p: dict) -> dict:
+    """Per-agent model override ('' = use global)."""
+    agent_id = (p.get("agent_id") or "").strip()
+    if agent_id not in all_agents():
+        return {"error": "unknown agent"}
+    db.set_settings({f"agent_model_{agent_id}": (p.get("model") or "").strip()})
+    return {"ok": True}
+
+
 @app.post("/api/keys/assign")
 async def assign_api_key(p: dict) -> dict:
     """Pair an agent with a key (key_id=null → back to default/env)."""
@@ -1195,11 +1220,12 @@ class Recorder:
 async def run_jarvis(send, goal: str, client, session_id: int) -> None:
     """Stream a Jarvis (personal-assistant persona) response."""
     await send({"type": "jarvis_status", "status": "working"})
+    _m = model_for_agent("jarvis")
     collected: list[str] = []
     async with client.messages.stream(
-        model=get_model(),
+        model=_m,
         max_tokens=8000,
-        **thinking_kwargs(),
+        **thinking_kwargs(_m),
         system=JARVIS.system,
         messages=[{"role": "user", "content": goal}],
     ) as stream:
@@ -1229,7 +1255,7 @@ async def ws(websocket: WebSocket) -> None:
     # Per-connection client resolution: an agent's assigned key (persistent,
     # set in Admin Usage) wins; otherwise this connection's BYOK/default client.
     conn = {"default": _client}
-    orch = Orchestrator(lambda aid: client_for_agent(aid, default=conn["default"]))
+    orch = Orchestrator(lambda aid: client_for_agent(aid, default=conn["default"]), model_for_agent)
 
     async def send_session_state(session: dict) -> None:
         await send({"type": "sessions", "sessions": db.list_sessions()})

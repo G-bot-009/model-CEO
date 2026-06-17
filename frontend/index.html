@@ -1482,8 +1482,13 @@ const Office3D = (function () {
 window.playGesture = (id, key) => Office3D.playGesture(id, key);
 
 /* ---------- load agents + build office ---------- */
+const AG_MODELS = [["", "โมเดล: ค่าเริ่มต้น"], ["claude-opus-4-8", "Opus 4.8 (ฉลาดสุด)"], ["claude-sonnet-4-6", "Sonnet 4.6 (สมดุล)"], ["claude-haiku-4-5", "Haiku 4.5 (เร็ว/ถูก)"]];
 async function loadAgents() {
   const data = await (await fetch("/api/agents")).json();
+  let KEYS = []; try { KEYS = (await (await fetch("/api/keys")).json()).keys || []; } catch(e){}
+  const provOpts = (sel) => `<option value="">Provider: ค่าเริ่มต้น (ENV)</option>` +
+    KEYS.map(k => `<option value="${k.id}" ${sel==k.id?"selected":""}>${escapeHtml(k.label || k.provider || ("key#"+k.id))}</option>`).join("");
+  const modelOpts = (sel) => AG_MODELS.map(([v, l]) => `<option value="${v}" ${sel===v?"selected":""}>${l}</option>`).join("");
   const list = $("agentList"), cards = $("agentCards");
   data.agents.forEach(a => {
     AGENTS[a.id] = a;
@@ -1508,7 +1513,11 @@ async function loadAgents() {
       </div>
       <div style="font-size:13px;color:#94a3b8;margin:8px 0 12px">${a.desc || a.title}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+      <div class="ag-cfg" style="display:flex;gap:6px;margin-top:10px">
+        <select class="numfld ag-prov" style="margin:0;padding:6px 8px;font-size:12px;flex:1;min-width:0">${provOpts(a.key_id)}</select>
+        <select class="numfld ag-model" style="margin:0;padding:6px 8px;font-size:12px;flex:1;min-width:0">${modelOpts(a.model||"")}</select>
+      </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
         <span style="flex:1;font-size:12px;color:${color(a.id)};font-weight:700">✍️ คลิกเพื่อสั่งงาน</span>
         <button class="qbtn" data-pause="${a.id}">⏸️ พัก</button>
         ${a.custom ? `<button class="qbtn" data-del="${a.id}" title="ลบเอเจนต์นี้">🗑️</button>` : ""}
@@ -1517,6 +1526,16 @@ async function loadAgents() {
     card.querySelector("[data-pause]").addEventListener("click", (e) => { e.stopPropagation(); togglePause(a.id); });
     const delBtn = card.querySelector("[data-del]");
     if (delBtn) delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteAgent(a.id, a.name); });
+    // per-agent provider (key) + model selectors — don't trigger the card command
+    const cfg = card.querySelector(".ag-cfg");
+    cfg.addEventListener("click", (e) => e.stopPropagation());
+    const prov = cfg.querySelector(".ag-prov"), mdl = cfg.querySelector(".ag-model");
+    prov.addEventListener("change", async (e) => { e.stopPropagation();
+      await postJSON("/api/keys/assign", { agent_id: a.id, key_id: prov.value ? +prov.value : null });
+      toastNote(`${a.name}: ตั้ง Provider แล้ว`, "#22c55e"); });
+    mdl.addEventListener("change", async (e) => { e.stopPropagation();
+      await postJSON("/api/agent/model", { agent_id: a.id, model: mdl.value });
+      toastNote(`${a.name}: ตั้งโมเดลแล้ว`, "#22c55e"); });
     cards.appendChild(card);
   });
   Office3D.init(data.agents);

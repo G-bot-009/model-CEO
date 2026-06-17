@@ -32,9 +32,10 @@ def set_model(m: str) -> None:
     if m:
         MODEL = m
 
-def thinking_kwargs() -> dict:
+def thinking_kwargs(model: str | None = None) -> dict:
     """Adaptive thinking on Opus/Sonnet/Fable; omit on Haiku (not supported)."""
-    return {} if MODEL.startswith("claude-haiku") else {"thinking": {"type": "adaptive"}}
+    m = model or MODEL
+    return {} if m.startswith("claude-haiku") else {"thinking": {"type": "adaptive"}}
 
 # Emit signature: emit(event_dict) -> awaitable
 Emit = Callable[[dict], Awaitable[None]]
@@ -74,14 +75,15 @@ async def _emit_usage(emit: Emit, agent: str, usage) -> None:
 
 
 class Orchestrator:
-    def __init__(self, client_for):
-        """``client_for`` maps an agent id -> AsyncAnthropic client, so different
-        agents can run on different API keys in parallel. For backward
-        compatibility, a bare AsyncAnthropic may be passed (all agents use it)."""
+    def __init__(self, client_for, model_for=None):
+        """``client_for`` maps an agent id -> AsyncAnthropic client; ``model_for``
+        maps an agent id -> model id (per-agent model). A bare AsyncAnthropic may
+        be passed for client_for (all agents use it)."""
         if isinstance(client_for, anthropic.AsyncAnthropic):
             self.client_for = lambda _aid, _c=client_for: _c
         else:
             self.client_for = client_for
+        self.model_for = model_for or (lambda _aid: MODEL)
 
     @property
     def client(self) -> anthropic.AsyncAnthropic:
@@ -112,10 +114,11 @@ class Orchestrator:
             'IMPORTANT: เขียนข้อความใน "task" เป็นภาษาไทยที่กระชับ เข้าใจง่าย (ชื่อเฉพาะ/โค้ดคงภาษาเดิมได้).'
         )
 
+        _model = self.model_for("ceo")
         resp = await self.client_for("ceo").messages.create(
-            model=MODEL,
+            model=_model,
             max_tokens=2000,
-            **thinking_kwargs(),
+            **thinking_kwargs(_model),
             system=ceo.system,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -137,11 +140,12 @@ class Orchestrator:
             f"Your assigned sub-task:\n{task}"
         )
 
+        _model = self.model_for(agent_id)
         collected: list[str] = []
         async with self.client_for(agent_id).messages.stream(
-            model=MODEL,
+            model=_model,
             max_tokens=4000,
-            **thinking_kwargs(),
+            **thinking_kwargs(_model),
             system=agent.system,
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
@@ -175,11 +179,12 @@ class Orchestrator:
             "recommended next steps."
         )
 
+        _model = self.model_for("ceo")
         collected: list[str] = []
         async with self.client_for("ceo").messages.stream(
-            model=MODEL,
+            model=_model,
             max_tokens=4000,
-            **thinking_kwargs(),
+            **thinking_kwargs(_model),
             system=ceo.system,
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
