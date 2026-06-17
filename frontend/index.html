@@ -224,6 +224,22 @@
   .conn-chip { display:flex; align-items:center; gap:8px; padding:10px 14px; border:1px solid #27355a; border-radius:12px; cursor:pointer; color:#cbd5e1; font-weight:700; font-size:13px; }
   .conn-chip:hover { background:#1b2742; }
   .conn-chip.on { border-color:#22c55e; color:#fff; background:#0f2a18; }
+  /* connector cards (grouped, like the reference) */
+  .conn-cat { font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:#64748b; font-weight:800; margin:20px 4px 8px; }
+  .conn-card { display:flex; align-items:center; gap:16px; background:#10182b; border:1px solid #1e293b; border-radius:16px; padding:15px 18px; margin-bottom:12px; }
+  .conn-card .cc-ic { width:50px; height:50px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px; flex:0 0 auto; }
+  .conn-card .cc-bd { flex:1; min-width:0; }
+  .conn-card .cc-ti { font-weight:800; font-size:17px; color:#fff; margin-bottom:3px; }
+  .conn-card .cc-ti .cc-on { color:#22c55e; font-size:13px; margin-left:6px; }
+  .conn-card .cc-ds { font-size:13px; color:#94a3b8; line-height:1.6; }
+  .conn-cta { flex:0 0 auto; background:#7c5cff; color:#fff; font-weight:800; border:none; border-radius:14px; padding:13px 26px; cursor:pointer; font-size:15px; }
+  .conn-cta:hover { filter:brightness(1.06); }
+  .conn-cta.off { background:transparent; border:1px solid #334155; color:#cbd5e1; }
+  .conn-url { width:100%; margin-top:10px; padding:11px 13px; border-radius:10px; border:1px dashed #c9c0a8; background:#fff; color:#1f2937; font-size:13px; font-family:ui-monospace,monospace; }
+  body.light .conn-card { background:#fff; border-color:var(--bd); }
+  body.light .conn-card .cc-ti { color:var(--ink); }
+  body.light .conn-card .cc-ds { color:var(--muted); }
+  body.light .conn-cta.off { border:1px solid var(--bd); color:var(--ink2); }
 
   /* image studio cards */
   .img-card { width:230px; cursor:pointer; border:1px solid #1e293b; border-radius:12px; overflow:hidden; background:#0b1220; }
@@ -560,9 +576,9 @@
 
       <!-- CONNECTORS -->
       <section class="view" id="view-connectors">
-        <h2 style="color:#fff; margin:0 0 14px">Connectors · <span id="connCount">0/22</span></h2>
-        <div class="panel"><div id="connGrid" style="display:flex; flex-wrap:wrap; gap:10px"></div></div>
-        <div style="color:#64748b; font-size:13px">คลิกที่แต่ละตัวเพื่อใส่คีย์/โทเค็น — ระบบเก็บไว้ให้ (การยิงจริงเปิดเมื่อพร้อม)</div>
+        <h2 style="margin:0 0 4px">เชื่อมต่อกับทั้งโลก · <span id="connCount">0/22</span></h2>
+        <p style="color:#94a3b8; font-size:13px; margin:0 0 16px">คลิก Connect แล้วทำตามขั้นตอน (มีลิงก์ไปขอคีย์จากต้นทางให้) — ระบบเก็บคีย์ไว้ในเครื่อง เอเจนต์ทำงานเมื่อคุณสั่งเท่านั้น</p>
+        <div id="connGrid"></div>
       </section>
 
       <!-- AUTOMATION -->
@@ -2275,14 +2291,74 @@ const CONN_ICON = {"Webhook → Make/Zapier":"🔗","Slack":"💬","Discord":"�
   "Notion":"📓","WordPress":"📝","Facebook & Instagram":"📷","Shopify":"🛍️","Google Drive":"📁","Google Sheets":"📗",
   "YouTube":"▶️","TikTok":"🎵","Shopee Affiliate":"🛒","X (Twitter)":"𝕏","GitHub":"🐙"};
 
+/* grouped layout + brand colour for the connector cards */
+const CONN_CAT = [
+  ["Automation", ["Webhook → Make/Zapier"]],
+  ["Messaging", ["Slack","Discord","Telegram","LINE OA"]],
+  ["Trading", ["Binance Futures","Bybit","MetaTrader 5 (Forex)"]],
+  ["Ads", ["Meta Ads","Google Ads"]],
+  ["Email", ["Email"]],
+  ["Storage / Content", ["Notion","WordPress","Shopify","Google Drive","Google Sheets","GitHub"]],
+  ["Social / Publish", ["Facebook & Instagram","YouTube","TikTok","X (Twitter)","Shopee Affiliate"]],
+];
+const CONN_COLOR = {"Webhook → Make/Zapier":"#7c5cff","Slack":"#611f69","Discord":"#5865F2","Telegram":"#2AABEE",
+  "LINE OA":"#06C755","Binance Futures":"#F0B90B","Bybit":"#F7A600","MetaTrader 5 (Forex)":"#7c5cff","Meta Ads":"#1877F2",
+  "Google Ads":"#4285F4","Email":"#7c5cff","Notion":"#191919","WordPress":"#21759B","Facebook & Instagram":"#E4405F",
+  "Shopify":"#95BF47","Google Drive":"#1FA463","Google Sheets":"#0F9D58","YouTube":"#FF0000","TikTok":"#111",
+  "Shopee Affiliate":"#EE4D2D","X (Twitter)":"#111","GitHub":"#24292e"};
+
 async function loadConnectors(){
   let d; try { d = await (await fetch("/api/console")).json(); } catch(e){ return; }
   const conn = d.connectors || {};
   const on = CONNECTORS.filter(n => conn[n] === "connected").length;
   $("connCount").textContent = `${on}/${CONNECTORS.length}`;
-  $("connGrid").innerHTML = CONNECTORS.map(n =>
-    `<div class="conn-chip ${conn[n]==='connected'?'on':''}" data-c="${n}">${CONN_ICON[n]||"•"} ${n} ${conn[n]==='connected'?'✓':''}</div>`).join("");
-  $("connGrid").querySelectorAll("[data-c]").forEach(el => el.onclick = () => openConnect(el.dataset.c, loadConnectors));
+  let html = "";
+  CONN_CAT.forEach(([cat, names]) => {
+    html += `<div class="conn-cat">${cat}</div>`;
+    names.forEach(n => {
+      const isOn = conn[n] === "connected";
+      const g = CONN_GUIDE[n] || {};
+      html += `<div class="conn-card">
+        <div class="cc-ic" style="background:${CONN_COLOR[n] || '#7c5cff'}">${CONN_ICON[n] || '•'}</div>
+        <div class="cc-bd"><div class="cc-ti">${escapeHtml(n)}${isOn ? '<span class="cc-on">· เชื่อมแล้ว</span>' : ''}</div>
+          <div class="cc-ds">${escapeHtml(g.desc || 'เชื่อมบัญชีของคุณเพื่อให้ทีม AI ใช้งาน')}</div></div>
+        <button class="conn-cta ${isOn ? 'off' : ''}" data-c="${escapeHtml(n)}" data-on="${isOn ? 1 : 0}">${isOn ? 'Disconnect' : 'Connect'}</button>
+      </div>`;
+    });
+  });
+  html += `<div class="conn-cat">Inbound · สั่งทีมจากภายนอก</div>
+    <div class="conn-card">
+      <div class="cc-ic" style="background:#1C2E1E">📥</div>
+      <div class="cc-bd"><div class="cc-ti">Inbound webhook</div>
+        <div class="cc-ds">วาง URL นี้ใน <b>TradingView alert</b>, Zapier, n8n หรือบริการใดก็ได้ — ทุกครั้งที่ถูกเรียก ระบบจะรับข้อความเข้ามาบันทึกให้ทีม AI และขึ้นในฟีด/ประวัติ (+ Telegram ถ้าเชื่อมไว้)</div>
+        <input id="inboundUrl" class="conn-url" readonly style="display:none">
+      </div>
+      <button class="conn-cta" id="inboundBtn">Enable</button>
+    </div>`;
+  $("connGrid").innerHTML = html;
+  $("connGrid").querySelectorAll("[data-c]").forEach(b => b.onclick = () => {
+    if (b.dataset.on === "1") disconnectConnector(b.dataset.c);
+    else openConnect(b.dataset.c, loadConnectors);
+  });
+  $("inboundBtn").onclick = enableInbound;
+  try {
+    const inb = await (await fetch("/api/inbound")).json();
+    if (inb && inb.enabled) showInbound(inb.path);
+  } catch(e){}
+}
+async function disconnectConnector(name){
+  await postJSON("/api/connector", { name, status: "disconnected", config: "" });
+  toastNote(name + " ตัดการเชื่อมแล้ว", "#a855f7"); loadConnectors();
+}
+function showInbound(path){
+  const f = $("inboundUrl"); if (!f) return;
+  f.value = location.origin + path; f.style.display = "block";
+  $("inboundBtn").textContent = "เปิดใช้แล้ว ✓"; $("inboundBtn").classList.add("off");
+}
+async function enableInbound(){
+  const r = await postJSON("/api/inbound/enable", {});
+  if (r && r.path){ showInbound(r.path); $("inboundUrl").select?.();
+    toastNote("เปิด Inbound webhook แล้ว — คัดลอก URL ไปวางที่ปลายทางได้เลย", "#22c55e"); }
 }
 
 /* ---------- Automation settings ---------- */

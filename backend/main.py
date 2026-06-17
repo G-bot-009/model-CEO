@@ -176,6 +176,47 @@ async def api_logout():
     return resp
 
 
+# --- Inbound webhook: external services (TradingView/Zapier/n8n) trigger the team ---
+def _inbound_path() -> Optional[str]:
+    tok = db.get_settings().get("inbound_token")
+    return f"/api/inbound/{tok}" if tok else None
+
+
+@app.get("/api/inbound")
+async def inbound_info() -> dict:
+    p = _inbound_path()
+    return {"enabled": bool(p), "path": p}
+
+
+@app.post("/api/inbound/enable")
+async def inbound_enable() -> dict:
+    tok = db.get_settings().get("inbound_token")
+    if not tok:
+        tok = secrets.token_urlsafe(12)
+        db.set_settings({"inbound_token": tok})
+    return {"ok": True, "path": f"/api/inbound/{tok}"}
+
+
+@app.post("/api/inbound/{token}")
+async def inbound_receive(token: str, request: Request) -> dict:
+    if token != db.get_settings().get("inbound_token"):
+        return JSONResponse({"error": "invalid token"}, status_code=404)
+    # accept any JSON or raw body; pull a human-readable message
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {"text": (await request.body()).decode("utf-8", "ignore")}
+    text = ""
+    if isinstance(payload, dict):
+        text = str(payload.get("text") or payload.get("message") or payload.get("content") or payload)
+    else:
+        text = str(payload)
+    sess = db.get_or_create_current()["id"]
+    db.save_message(sess, "inbound", "user", "[inbound] " + text[:1000])
+    db.add_decision("inbound", text[:120])
+    return {"ok": True}
+
+
 @app.get("/api/agents")
 async def list_agents() -> dict:
     s = db.get_settings()  # user-defined name overrides (agent_name_<id>)
