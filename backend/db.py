@@ -641,6 +641,17 @@ def delete_agent_mcp_conn(agent_id: str, conn_id: str) -> None:
     with _conn() as c:
         c.execute("DELETE FROM agent_mcp WHERE agent_id=? AND conn_id=?", (agent_id, conn_id))
 
+def clear_agent_mcp_conn(conn_id: str) -> None:
+    """Detach a directory connector from every agent (keeps the connection itself)."""
+    with _conn() as c:
+        c.execute("DELETE FROM agent_mcp WHERE conn_id=?", (conn_id,))
+
+def conn_agent_ids(conn_id: str) -> set:
+    """Agents that currently have this directory connector enabled."""
+    with _conn() as c:
+        rows = c.execute("SELECT agent_id FROM agent_mcp WHERE conn_id=?", (conn_id,)).fetchall()
+    return {r[0] for r in rows}
+
 
 # --- Directory connector credentials (connect once, reuse per agent) ---------
 def connect_mcp(conn_id: str, name: str, url: str, token: str) -> None:

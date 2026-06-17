@@ -1196,21 +1196,41 @@ async def agent_mcp_delete(p: dict) -> dict:
 
 
 # --- Connector directory (connect API once → toggle onto matching agents) ----
+def _matching_agents(entry) -> list:
+    """[(agent_id, agent_name)] for agents whose capabilities fit this connector."""
+    return [(a.id, a.name) for a in all_agents().values() if mcp_catalog.matches(a, entry)]
+
+
+def _apply_connector_agents(conn_id: str, agent_ids: set) -> None:
+    """Enable a connector for exactly ``agent_ids`` (restricted to matching agents)."""
+    entry = mcp_catalog.CATALOG_BY_ID.get(conn_id)
+    conn = db.get_mcp_connection(conn_id)
+    if not entry or not conn:
+        return
+    matching = {aid for aid, _ in _matching_agents(entry)}
+    db.clear_agent_mcp_conn(conn_id)
+    for aid in (agent_ids & matching):
+        db.add_agent_mcp(aid, conn["name"], conn["url"], conn.get("token") or "", conn_id=conn_id)
+
+
 @app.get("/api/mcp/directory")
 async def mcp_directory() -> dict:
     """The whole connector catalog with connection state + which agents each fits."""
     connected = db.connected_mcp_ids()
     conns = {c["conn_id"]: c for c in db.list_mcp_connections()}
-    agents = all_agents().values()
     out = []
     for c in mcp_catalog.CATALOG:
         conn = conns.get(c["id"])
+        is_conn = c["id"] in connected
+        enabled = db.conn_agent_ids(c["id"]) if is_conn else set()
+        matched = [{"id": aid, "name": nm, "enabled": aid in enabled} for aid, nm in _matching_agents(c)]
         out.append({
             "id": c["id"], "name": c["name"], "emoji": c["emoji"], "desc": c["desc"],
             "get": c["get"], "default_url": c["url"],
-            "connected": c["id"] in connected,
+            "connected": is_conn,
             "url": (conn or {}).get("url") or c["url"],
-            "agents": [a.name for a in agents if mcp_catalog.matches(a, c)],
+            "agents": [m["name"] for m in matched],
+            "matched": matched,
         })
     return {"connectors": out}
 
@@ -1224,6 +1244,19 @@ async def mcp_connect(p: dict) -> dict:
     url = (p.get("url") or "").strip() or entry["url"]
     token = (p.get("token") or "").strip()
     db.connect_mcp(cid, entry["name"], url, token)
+    # auto-enable for every matching agent the moment it's connected
+    _apply_connector_agents(cid, {aid for aid, _ in _matching_agents(entry)})
+    return {"ok": True}
+
+
+@app.post("/api/mcp/connector/agents")
+async def mcp_connector_agents(p: dict) -> dict:
+    """Choose exactly which matching agents a connected connector is enabled for."""
+    cid = (p.get("conn_id") or "").strip()
+    if not db.get_mcp_connection(cid):
+        return {"error": "ยังไม่ได้เชื่อม API ของ connector นี้"}
+    ids = set(p.get("agent_ids") or [])
+    _apply_connector_agents(cid, ids)
     return {"ok": True}
 
 
