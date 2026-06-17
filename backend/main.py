@@ -1088,6 +1088,26 @@ async def ws(websocket: WebSocket) -> None:
                 await send({"type": "history", **db.get_history(current_id)})
                 continue
 
+            if action == "translate_tasks":
+                import re as _re
+                for t in db.list_session_tasks(current_id)[:30]:
+                    txt = t.get("task") or ""
+                    # only translate ones that are mostly English (no Thai chars but has Latin)
+                    if _re.search(r"[฀-๿]", txt) or not _re.search(r"[A-Za-z]", txt):
+                        continue
+                    try:
+                        r = await _client.messages.create(
+                            model=get_model(), max_tokens=600, **thinking_kwargs(),
+                            system="แปลข้อความงานต่อไปนี้เป็นภาษาไทยที่กระชับ เข้าใจง่าย คงชื่อเฉพาะ/โค้ด/ตัวย่อไว้ ตอบเฉพาะข้อความที่แปลแล้วเท่านั้น",
+                            messages=[{"role": "user", "content": txt}])
+                        th = next((b.text for b in r.content if b.type == "text"), "").strip()
+                        if th:
+                            db.set_task_text(t["id"], th)
+                    except Exception:
+                        pass
+                await send({"type": "history", **db.get_history(current_id)})
+                continue
+
             if action == "delete_session":
                 sid = msg.get("id")
                 if sid:

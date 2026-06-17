@@ -226,6 +226,17 @@ def clear_tasks(session_id: int) -> None:
         c.execute("DELETE FROM tasks WHERE session_id=?", (session_id,))
 
 
+def set_task_text(task_id: int, task: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE tasks SET task=? WHERE id=?", (task, task_id))
+
+
+def list_session_tasks(session_id: int) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT id, agent_name, task, status FROM tasks WHERE session_id=? ORDER BY id", (session_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def update_task(task_id: int, status: Optional[str] = None, result: Optional[str] = None) -> None:
     with _conn() as c:
         if status is not None:
