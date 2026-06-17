@@ -135,6 +135,11 @@ async def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
+@app.get("/login")
+async def login() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "login.html")
+
+
 @app.get("/api/agents")
 async def list_agents() -> dict:
     s = db.get_settings()  # user-defined name overrides (agent_name_<id>)

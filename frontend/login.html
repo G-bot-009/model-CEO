@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mainframe® — we'd love to hear from you</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] } } } };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+  body { font-family: var(--font-sans); }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .animate-blink { animation: blink 1s step-end infinite; }
+  @keyframes dropIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .drop-in { opacity: 0; animation: dropIn 0.6s cubic-bezier(.2,.7,.2,1) forwards; }
+</style>
+</head>
+<body>
+<div class="relative bg-white text-neutral-900 font-sans selection:bg-[#EAECE9] selection:text-[#1C2E1E] antialiased overflow-x-hidden flex flex-col lg:block lg:min-h-screen">
+
+  <!-- 3) BACKGROUND VIDEO (native scrubbing on desktop, autoplay on mobile) -->
+  <div class="order-last lg:order-none relative lg:absolute lg:inset-0 lg:z-0 overflow-hidden pointer-events-none w-full aspect-square md:aspect-video lg:aspect-auto lg:h-full bg-neutral-50 lg:bg-transparent">
+    <video id="bgvid" muted playsinline preload="auto"
+      class="w-full h-full object-cover object-right lg:object-right-bottom"
+      src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260601_110537_3a579fa0-7bbc-4d94-9d25-0e816c7840f5.mp4"></video>
+  </div>
+
+  <!-- 4) NAVBAR -->
+  <header class="fixed top-0 inset-x-0 z-10 px-5 sm:px-8 py-4 sm:py-5 flex flex-row justify-between items-center bg-transparent">
+    <!-- logo -->
+    <a href="/" class="flex flex-row gap-3 items-center">
+      <span class="text-[21px] sm:text-[26px] tracking-tight text-black font-medium select-none">Mainframe&reg;</span>
+      <span class="text-[25px] sm:text-[30px] text-black select-none tracking-[-0.02em] font-medium leading-none mb-1">&#10033;</span>
+    </a>
+    <!-- desktop nav -->
+    <nav class="hidden md:flex text-[23px] text-black">
+      <a href="#" class="hover:opacity-60 transition-opacity">Labs</a><span class="opacity-40">,&nbsp;</span>
+      <a href="#" class="hover:opacity-60 transition-opacity">Studio</a><span class="opacity-40">,&nbsp;</span>
+      <a href="#" class="hover:opacity-60 transition-opacity">Openings</a><span class="opacity-40">,&nbsp;</span>
+      <a href="#" class="hover:opacity-60 transition-opacity">Shop</a>
+    </nav>
+    <!-- desktop CTA -->
+    <a href="/" class="hidden md:inline text-[23px] text-black underline underline-offset-2 hover:opacity-60 transition-opacity">Get in touch</a>
+    <!-- hamburger -->
+    <button id="burger" class="md:hidden flex flex-col gap-[5px] p-2" aria-label="menu">
+      <span class="block w-6 h-[2px] bg-black transition-all duration-300"></span>
+      <span class="block w-6 h-[2px] bg-black transition-all duration-300"></span>
+      <span class="block w-6 h-[2px] bg-black transition-all duration-300"></span>
+    </button>
+  </header>
+
+  <!-- mobile overlay -->
+  <div id="mobileMenu" class="md:hidden fixed inset-0 z-[9] bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center gap-8 text-[28px] text-black transition-opacity duration-300 opacity-0 pointer-events-none">
+    <a href="#" class="hover:opacity-60">Labs</a>
+    <a href="#" class="hover:opacity-60">Studio</a>
+    <a href="#" class="hover:opacity-60">Openings</a>
+    <a href="#" class="hover:opacity-60">Shop</a>
+    <a href="/" class="underline underline-offset-2">Get in touch</a>
+  </div>
+
+  <!-- 5) CONTENT LAYER -->
+  <div class="relative z-10 flex flex-col order-first lg:order-none w-full bg-white lg:bg-transparent pb-8 lg:pb-0 lg:min-h-screen">
+    <main id="spade-hero" class="w-full max-w-7xl mx-auto px-6 py-12 flex-1 flex flex-col justify-center">
+
+      <!-- 6) HEADLINE -->
+      <div class="drop-in" style="animation-delay:0s">
+        <h1 id="headline" class="text-5xl md:text-6xl lg:text-[76px] font-normal tracking-tight text-black leading-[1.08] mb-8 select-none w-full whitespace-pre-wrap"></h1>
+      </div>
+
+      <!-- 7) SECONDARY DESCRIPTION -->
+      <div class="drop-in" style="animation-delay:0.1s">
+        <p class="text-lg md:text-xl text-[#5A635A] leading-relaxed font-normal mb-14 max-w-2xl">
+          Whether you have questions, feedback, <br /> drop us a message and we'll get back to you as soon as possible.
+        </p>
+      </div>
+
+      <!-- 8) SERVICE PILLS -->
+      <div class="drop-in" style="animation-delay:0.2s">
+        <h2 class="text-2xl font-medium tracking-tight mb-2">What sort of service?</h2>
+        <p class="opacity-85 text-[#738273] mb-8">Select all that apply</p>
+        <div id="pills" class="flex flex-wrap gap-3"></div>
+        <div id="banner" class="mt-7"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  /* ---- mobile menu toggle (isMobileMenuOpen) ---- */
+  const burger = document.getElementById("burger");
+  const overlay = document.getElementById("mobileMenu");
+  const bars = burger.querySelectorAll("span");
+  let menuOpen = false;
+  function setMenu(open){
+    menuOpen = open;
+    overlay.classList.toggle("opacity-100", open);
+    overlay.classList.toggle("pointer-events-auto", open);
+    overlay.classList.toggle("opacity-0", !open);
+    overlay.classList.toggle("pointer-events-none", !open);
+    bars[0].style.transform = open ? "rotate(45deg) translateY(7px)" : "";
+    bars[1].style.opacity   = open ? "0" : "1";
+    bars[2].style.transform = open ? "rotate(-45deg) translateY(-7px)" : "";
+  }
+  burger.addEventListener("click", () => setMenu(!menuOpen));
+  overlay.querySelectorAll("a").forEach(a => a.addEventListener("click", () => setMenu(false)));
+
+  /* ---- background video: desktop mouse-scrubbing + mobile autoplay ---- */
+  const video = document.getElementById("bgvid");
+  let prevX = null, targetTime = 0, seeking = false;
+  function onMove(e){
+    if (window.innerWidth < 1024) return;          // disable scrubbing on mobile
+    if (!video.duration) return;
+    if (prevX === null) { prevX = e.clientX; return; }
+    const delta = e.clientX - prevX; prevX = e.clientX;
+    targetTime += (delta / window.innerWidth) * 0.8 * video.duration;
+    targetTime = Math.max(0, Math.min(video.duration, targetTime));
+    if (!seeking) { seeking = true; try { video.currentTime = targetTime; } catch(_){} }
+  }
+  video.addEventListener("seeked", () => {           // smooth frame-to-frame tracking
+    seeking = false;
+    if (Math.abs(video.currentTime - targetTime) > 0.01) { try { video.currentTime = targetTime; seeking = true; } catch(_){} }
+  });
+  function setupPlayback(){
+    if (window.innerWidth < 1024) { video.autoplay = true; video.muted = true; video.play().catch(()=>{}); }
+    else { try { video.pause(); video.currentTime = 0; } catch(_){} }
+  }
+  video.addEventListener("loadedmetadata", setupPlayback);
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("resize", () => { prevX = null; setupPlayback(); });
+
+  /* ---- typewriter hook (useTypewriter equivalent) ---- */
+  function useTypewriter(text, speed = 38, startDelay = 600, render){
+    let i = 0;
+    setTimeout(() => {
+      const iv = setInterval(() => {
+        i++;
+        render(text.slice(0, i), i >= text.length);
+        if (i >= text.length) clearInterval(iv);
+      }, speed);
+    }, startDelay);
+  }
+  const h1 = document.getElementById("headline");
+  useTypewriter("we'd love to\nhear from you!", 38, 600, (displayed, done) => {
+    h1.textContent = displayed;
+    if (!done) {
+      const c = document.createElement("span");
+      c.className = "inline-block w-[2px] h-[1.1em] bg-black align-middle ml-[2px] animate-blink";
+      h1.appendChild(c);
+    }
+  });
+
+  /* ---- interactive multi-select service pills ---- */
+  const OPTIONS = ["Brand", "Digital", "Campaign", "Other"];
+  const selected = new Set();
+  const pillsEl = document.getElementById("pills");
+  const bannerEl = document.getElementById("banner");
+  const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 pill-check"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+  function renderPills(){
+    pillsEl.innerHTML = "";
+    OPTIONS.forEach(opt => {
+      const on = selected.has(opt);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "inline-flex items-center gap-2 px-5 py-3 rounded-full text-base font-medium transition-all duration-200 " +
+        (on ? "bg-[#1C2E1E] text-white shadow-md shadow-emerald-950/5 transform"
+            : "bg-white text-[#1C2E1E] border border-[#F1F3F1] hover:bg-[#F1F3F1]/55");
+      b.innerHTML = (on ? CHECK : "") + `<span>${opt}</span>`;
+      b.addEventListener("click", () => { on ? selected.delete(opt) : selected.add(opt); renderPills(); renderBanner(); });
+      pillsEl.appendChild(b);
+      const chk = b.querySelector(".pill-check");
+      if (chk){ chk.style.transform = "scale(0)"; requestAnimationFrame(() => { chk.style.transition = "transform .25s cubic-bezier(.34,1.56,.64,1)"; chk.style.transform = "scale(1)"; }); }
+    });
+  }
+  function renderBanner(){
+    if (selected.size === 0){
+      bannerEl.innerHTML = `<p style="opacity:.5" class="italic text-xs text-[#1C2E1E]">Please click to select services above.</p>`;
+      return;
+    }
+    const list = OPTIONS.filter(o => selected.has(o)).join(", ");
+    bannerEl.innerHTML = `
+      <div class="bg-[#FAFBF9] border border-[#F1F3F1] rounded-2xl px-5 py-4 flex items-center justify-between gap-4 banner-in">
+        <span class="text-[#1C2E1E] text-sm md:text-base">Ready to inquire about: <b>${list}</b></span>
+        <a href="/" class="inline-flex items-center gap-1 text-[#4D6D47] uppercase text-xs font-semibold hover:opacity-70 transition-opacity">Let's Go
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="w-4 h-4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>`;
+    const el = bannerEl.querySelector(".banner-in");
+    el.style.opacity = "0"; el.style.maxHeight = "0"; el.style.overflow = "hidden";
+    requestAnimationFrame(() => { el.style.transition = "opacity .35s ease, max-height .35s ease"; el.style.opacity = "1"; el.style.maxHeight = "200px"; });
+  }
+  renderPills(); renderBanner();
+</script>
+</body>
+</html>
