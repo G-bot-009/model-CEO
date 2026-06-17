@@ -123,6 +123,11 @@ def init() -> None:
                 platform TEXT PRIMARY KEY, client_id TEXT, client_secret TEXT,
                 access_token TEXT, refresh_token TEXT, extra TEXT, updated_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS social_inbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform TEXT, sender TEXT, text TEXT, kind TEXT,
+                status TEXT, thread TEXT, reply TEXT, created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -505,6 +510,41 @@ def list_social() -> dict:
 def delete_social(platform: str) -> None:
     with _conn() as c:
         c.execute("DELETE FROM social_oauth WHERE platform=?", (platform,))
+
+
+# --- Social Inbox (unified comments/chats) ----------------------------------
+def add_inbox(platform: str, sender: str, text: str, kind: str = "chat", thread: str = "") -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO social_inbox (platform, sender, text, kind, status, thread, reply, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (platform, sender, text, kind, "pending", thread, "", _now()))
+        return cur.lastrowid
+
+def list_inbox(flt: str = "all", limit: int = 200) -> list[dict]:
+    where = ""
+    if flt == "comment": where = "WHERE kind='comment'"
+    elif flt == "chat":  where = "WHERE kind='chat'"
+    elif flt == "pending": where = "WHERE status='pending'"
+    with _conn() as c:
+        rows = c.execute(f"SELECT * FROM social_inbox {where} ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+def get_inbox(item_id: int) -> Optional[dict]:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM social_inbox WHERE id=?", (item_id,)).fetchone()
+    return dict(r) if r else None
+
+def set_inbox_reply(item_id: int, reply: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE social_inbox SET reply=?, status='replied' WHERE id=?", (reply, item_id))
+
+def inbox_counts() -> dict:
+    with _conn() as c:
+        rows = c.execute("SELECT status, kind, COUNT(*) n FROM social_inbox GROUP BY status, kind").fetchall()
+    total = sum(r["n"] for r in rows)
+    pending = sum(r["n"] for r in rows if r["status"] == "pending")
+    return {"total": total, "pending": pending}
 
 
 # --- Custom agents (user-created, add/remove from the dashboard) -------------

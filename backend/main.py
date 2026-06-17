@@ -312,6 +312,110 @@ async def oauth_callback(platform: str, request: Request, code: str = "", state:
                         "<script>try{window.opener&&window.opener.postMessage('social-connected','*')}catch(e){};setTimeout(()=>window.close(),900)</script></body>")
 
 
+# --- Social Inbox (unified comments/chats) ----------------------------------
+def _line_token() -> str:
+    row = db.get_connector("LINE OA")
+    if not row or row.get("status") != "connected":
+        return ""
+    try:
+        d = json.loads(row.get("config") or "{}")
+        return d.get("access_token") or d.get("channel_id") or ""
+    except Exception:
+        return (row.get("config") or "").strip()
+
+
+async def _line_push(to: str, text: str) -> bool:
+    tok = _line_token()
+    if not tok or not to:
+        return False
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post("https://api.line.me/v2/bot/message/push",
+                                  headers={"Authorization": f"Bearer {tok}"},
+                                  json={"to": to, "messages": [{"type": "text", "text": text}]})
+        return r.status_code < 400
+    except Exception:
+        return False
+
+
+async def _ai_reply(incoming: str) -> str:
+    """Short auto-reply via the model (used when auto-reply is ON)."""
+    try:
+        resp = await _client.messages.create(
+            model=get_model(), max_tokens=400, **thinking_kwargs(),
+            system="คุณเป็นแอดมินเพจที่สุภาพ ตอบลูกค้าสั้น กระชับ เป็นกันเอง เป็นภาษาไทย ไม่เกิน 3 ประโยค",
+            messages=[{"role": "user", "content": incoming}])
+        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+    except Exception:
+        return ""
+
+
+@app.get("/api/inbox")
+async def inbox_list(filter: str = "all") -> dict:
+    s = db.get_settings()
+    return {
+        "items": db.list_inbox(filter),
+        "counts": db.inbox_counts(),
+        "autoreply": s.get("inbox_autoreply", "false") == "true",
+        "inbound_path": _inbound_path(),
+    }
+
+
+@app.post("/api/inbox/test")
+async def inbox_test() -> dict:
+    import random
+    samples = [("LINE", "คุณน้ำหวาน", "สนใจแพ็กเกจรายเดือนค่ะ มีโปรอะไรบ้างคะ", "chat"),
+               ("facebook", "คุณบีม", "ของจริงไหมครับ ใช้แล้วเป็นยังไงบ้าง", "comment"),
+               ("instagram", "คุณแพรว", "ส่งของกี่วันถึงคะ", "chat")]
+    p = random.choice(samples)
+    db.add_inbox(p[0], p[1], p[2], p[3], thread="demo")
+    return {"ok": True}
+
+
+@app.post("/api/inbox/draft")
+async def inbox_draft(p: dict) -> dict:
+    item = db.get_inbox(int(p.get("id") or 0))
+    if not item:
+        return {"error": "ไม่พบข้อความ"}
+    return {"text": await _ai_reply(item.get("text") or "")}
+
+
+@app.post("/api/inbox/reply")
+async def inbox_reply(p: dict) -> dict:
+    item = db.get_inbox(int(p.get("id") or 0))
+    if not item:
+        return {"error": "ไม่พบข้อความ"}
+    text = (p.get("text") or "").strip()
+    if not text:
+        return {"error": "พิมพ์ข้อความตอบก่อน"}
+    sent = False
+    if item["platform"] == "LINE" and item.get("thread"):
+        sent = await _line_push(item["thread"], text)
+    db.set_inbox_reply(item["id"], text)
+    return {"ok": True, "sent": sent}
+
+
+@app.post("/api/inbox/inbound/{token}")
+async def inbox_inbound(token: str, p: dict) -> dict:
+    if token != db.get_settings().get("inbound_token"):
+        return JSONResponse({"error": "invalid token"}, status_code=404)
+    platform = (p.get("platform") or "webhook").strip()
+    sender = (p.get("sender") or p.get("from") or "ลูกค้า").strip()
+    text = (p.get("text") or p.get("message") or "").strip()
+    kind = (p.get("kind") or "chat").strip()
+    thread = (p.get("thread") or p.get("user_id") or "").strip()
+    if not text:
+        return {"error": "no text"}
+    iid = db.add_inbox(platform, sender, text, kind, thread)
+    # optional auto-reply (LINE only, when toggle is ON)
+    if db.get_settings().get("inbox_autoreply") == "true" and platform == "LINE" and thread:
+        reply = await _ai_reply(text)
+        if reply and await _line_push(thread, reply):
+            db.set_inbox_reply(iid, reply)
+    return {"ok": True, "id": iid}
+
+
 @app.post("/api/inbound/{token}")
 async def inbound_receive(token: str, request: Request) -> dict:
     if token != db.get_settings().get("inbound_token"):
