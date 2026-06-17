@@ -19,13 +19,14 @@
 </style>
 </head>
 <body>
-<div class="relative bg-white text-neutral-900 font-sans selection:bg-[#EAECE9] selection:text-[#1C2E1E] antialiased overflow-hidden min-h-screen">
+<div class="relative text-neutral-900 font-sans selection:bg-[#EAECE9] selection:text-[#1C2E1E] antialiased overflow-hidden min-h-screen" style="background:#ECEBF4">
 
-  <!-- background character video — shifted to sit centered behind the form -->
-  <div class="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-neutral-50">
+  <!-- background character video — shifted to sit centered behind the form;
+       scaled enough to leave no gap, on a matching backdrop colour -->
+  <div class="fixed inset-0 z-0 overflow-hidden pointer-events-none" style="background:#ECEBF4">
     <video id="bgvid" muted playsinline preload="auto"
       class="w-full h-full object-cover object-center"
-      style="transform: translateX(-20%) scale(1.25); transform-origin:center;"
+      style="transform: translateX(-20%) scale(1.45); transform-origin:center;"
       src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260601_110537_3a579fa0-7bbc-4d94-9d25-0e816c7840f5.mp4"></video>
   </div>
 
