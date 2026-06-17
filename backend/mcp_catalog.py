@@ -14,7 +14,7 @@ from __future__ import annotations
 # id, name, emoji, default url, Thai description, page to get the key, match keywords
 CATALOG = [
     {
-        "id": "notion", "name": "Notion", "emoji": "📓",
+        "id": "notion", "oauth": True, "name": "Notion", "emoji": "📓",
         "url": "https://mcp.notion.com/mcp",
         "desc": "ค้นหา/อัปเดตหน้างานใน Notion workspace ของคุณ — โน้ต เอกสาร ฐานข้อมูล",
         "get": "https://www.notion.so/my-integrations",
@@ -22,7 +22,7 @@ CATALOG = [
                   "วิจัย", "โน้ต", "แอดมิน", "workflow"],
     },
     {
-        "id": "canva", "name": "Canva", "emoji": "🎨",
+        "id": "canva", "oauth": True, "name": "Canva", "emoji": "🎨",
         "url": "https://mcp.canva.com/mcp",
         "desc": "ค้นหา สร้าง autofill และ export งานออกแบบใน Canva — thumbnail โลโก้ แบนเนอร์",
         "get": "https://www.canva.com/developers/",
@@ -30,21 +30,21 @@ CATALOG = [
                   "แบนเนอร์", "ออกแบบ", "คลิป", "วิดีโอ"],
     },
     {
-        "id": "clickup", "name": "ClickUp", "emoji": "✅",
+        "id": "clickup", "oauth": True, "name": "ClickUp", "emoji": "✅",
         "url": "https://mcp.clickup.com/mcp",
         "desc": "สร้าง/อัปเดตงาน รายการ และเอกสารใน ClickUp — จัดการโปรเจกต์และงานประจำวัน",
         "get": "https://app.clickup.com/settings/apps",
         "match": ["ops_bot", "admin", "workflow", "งาน", "นัด", "โปรเจ", "ออโต", "sync"],
     },
     {
-        "id": "asana", "name": "Asana", "emoji": "📋",
+        "id": "asana", "oauth": True, "name": "Asana", "emoji": "📋",
         "url": "https://mcp.asana.com/sse",
         "desc": "จัดการงานและโปรเจกต์ใน Asana — มอบหมายงาน ติดตามสถานะ",
         "get": "https://app.asana.com/0/my-apps",
         "match": ["ops_bot", "admin", "workflow", "งาน", "โปรเจ", "ออโต"],
     },
     {
-        "id": "linear", "name": "Linear", "emoji": "📐",
+        "id": "linear", "oauth": True, "name": "Linear", "emoji": "📐",
         "url": "https://mcp.linear.app/sse",
         "desc": "จัดการ issue และรอบงานพัฒนาใน Linear — บั๊ก ฟีเจอร์ สถานะงานทีมดีฟ",
         "get": "https://linear.app/settings/api",
@@ -58,14 +58,14 @@ CATALOG = [
         "match": ["developer", "โค้ด", "pr", "commit", "api", "เว็บ", "แอป", "รีวิว"],
     },
     {
-        "id": "atlassian", "name": "Atlassian (Jira/Confluence)", "emoji": "🧩",
+        "id": "atlassian", "oauth": True, "name": "Atlassian (Jira/Confluence)", "emoji": "🧩",
         "url": "https://mcp.atlassian.com/v1/sse",
         "desc": "เข้าถึง Jira และ Confluence จาก Claude — ตั๋วงาน เอกสารทีม",
         "get": "https://id.atlassian.com/manage-profile/security/api-tokens",
         "match": ["developer", "ops_bot", "jira", "confluence", "เอกสาร", "workflow"],
     },
     {
-        "id": "sentry", "name": "Sentry", "emoji": "🪲",
+        "id": "sentry", "oauth": True, "name": "Sentry", "emoji": "🪲",
         "url": "https://mcp.sentry.dev/mcp",
         "desc": "ดู error และ issue ของแอปจาก Sentry — ช่วยดีบั๊กของจริง",
         "get": "https://sentry.io/settings/account/api/auth-tokens/",
@@ -79,7 +79,7 @@ CATALOG = [
         "match": ["marketing", "trader", "admin", "รายได้", "ชำระเงิน", "แอด", "payment"],
     },
     {
-        "id": "intercom", "name": "Intercom", "emoji": "💬",
+        "id": "intercom", "oauth": True, "name": "Intercom", "emoji": "💬",
         "url": "https://mcp.intercom.com/sse",
         "desc": "อ่าน/ตอบแชทลูกค้าใน Intercom — งานซัพพอร์ตและการตลาดสนทนา",
         "get": "https://app.intercom.com/a/apps/_/developer-hub",

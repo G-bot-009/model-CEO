@@ -14,6 +14,8 @@ import json
 import os
 import re
 import secrets
+import time
+import urllib.parse
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -27,6 +29,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from . import db
 from . import skills
 from . import mcp_catalog
+from . import mcp_oauth
 from .agents import AGENTS, JARVIS, all_agents, compose_custom_system, SPECIALIST_FOOTER as _SPECIALIST_FOOTER
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
@@ -91,6 +94,25 @@ def model_for_agent(agent_id: str) -> str:
     return get_model()
 
 
+def _live_mcp_token(conn: dict) -> str:
+    """Current access token for a directory connection, refreshing OAuth if expired."""
+    tok = (conn.get("token") or "").strip()
+    exp = conn.get("expires_at") or 0
+    rt = (conn.get("refresh_token") or "").strip()
+    turl = (conn.get("token_url") or "").strip()
+    if rt and turl and exp and time.time() > (exp - 60):     # expired (or about to) → refresh
+        try:
+            r = mcp_oauth.refresh(turl, rt, conn.get("client_id") or "", conn.get("client_secret") or "")
+            new = r.get("access_token")
+            if new:
+                new_exp = time.time() + int(r.get("expires_in", 3600)) if r.get("expires_in") else 0
+                db.update_mcp_tokens(conn["conn_id"], new, r.get("refresh_token", ""), new_exp)
+                return new
+        except Exception:
+            pass     # fall back to the (possibly stale) token; the run will retry/normal-fallback
+    return tok
+
+
 def mcp_for_agent(agent_id: str) -> list:
     """Per-agent MCP servers → mcp_servers entries for the Messages API."""
     out = []
@@ -98,9 +120,16 @@ def mcp_for_agent(agent_id: str) -> list:
         for m in db.list_agent_mcp(agent_id):
             if not m.get("url"):
                 continue
-            e = {"type": "url", "name": m.get("name") or "mcp", "url": m["url"]}
+            url = m["url"]
             tok = (m.get("token") or "").strip()
-            tok = _resolve_secret(tok) or tok          # accept a secret_ref or a raw token
+            cid = m.get("conn_id")
+            if cid:                                  # directory connector → use the live token
+                conn = db.get_mcp_connection(cid)
+                if conn:
+                    url = conn.get("url") or url
+                    tok = _live_mcp_token(conn)
+            tok = _resolve_secret(tok) or tok        # accept a secret_ref or a raw token
+            e = {"type": "url", "name": m.get("name") or "mcp", "url": url}
             if tok:
                 e["authorization_token"] = tok
             out.append(e)
@@ -1228,6 +1257,7 @@ async def mcp_directory() -> dict:
             "id": c["id"], "name": c["name"], "emoji": c["emoji"], "desc": c["desc"],
             "get": c["get"], "default_url": c["url"],
             "connected": is_conn,
+            "oauth": bool(c.get("oauth")),
             "url": (conn or {}).get("url") or c["url"],
             "agents": [m["name"] for m in matched],
             "matched": matched,
@@ -1266,6 +1296,70 @@ async def mcp_disconnect(p: dict) -> dict:
     if cid:
         db.disconnect_mcp(cid)
     return {"ok": True}
+
+
+# --- One-click OAuth for a connector (no manual token paste) -----------------
+_MCP_OAUTH_PENDING: dict = {}          # state -> {conn_id, verifier, token_endpoint, client_id, client_secret, redirect_uri}
+
+
+def _mcp_redirect_uri(request: Request) -> str:
+    return str(request.base_url).rstrip("/") + "/oauth/mcp-callback"
+
+
+@app.get("/oauth/mcp/{conn_id}/start")
+async def mcp_oauth_start(conn_id: str, request: Request):
+    entry = mcp_catalog.CATALOG_BY_ID.get(conn_id)
+    if not entry:
+        return RedirectResponse("/?mcp_error=" + urllib.parse.quote("ไม่รู้จัก connector นี้"))
+    redirect_uri = _mcp_redirect_uri(request)
+    try:
+        meta = mcp_oauth.discover(entry["url"])
+        client = db.get_mcp_oauth_client(conn_id)
+        if client and client.get("client_id"):
+            client_id, client_secret = client["client_id"], client.get("client_secret") or ""
+        elif meta.get("registration_endpoint"):
+            client_id, client_secret = mcp_oauth.register_client(meta["registration_endpoint"], redirect_uri)
+            db.save_mcp_oauth_client(conn_id, client_id or "", client_secret or "")
+        else:
+            return RedirectResponse("/?mcp_error=" + urllib.parse.quote(
+                "เซิร์ฟเวอร์นี้ไม่รองรับการลงทะเบียนอัตโนมัติ — ใช้วิธีวาง token แทน"))
+        if not client_id:
+            return RedirectResponse("/?mcp_error=" + urllib.parse.quote("ลงทะเบียน client ไม่สำเร็จ"))
+        verifier, challenge = mcp_oauth.pkce()
+        state = secrets.token_urlsafe(24)
+        _MCP_OAUTH_PENDING[state] = {
+            "conn_id": conn_id, "verifier": verifier, "token_endpoint": meta["token_endpoint"],
+            "client_id": client_id, "client_secret": client_secret, "redirect_uri": redirect_uri,
+        }
+        url = mcp_oauth.build_authorize_url(meta, client_id, redirect_uri, state, challenge,
+                                            scope=entry.get("scope"), resource=entry["url"])
+        return RedirectResponse(url)
+    except Exception as exc:
+        return RedirectResponse("/?mcp_error=" + urllib.parse.quote(f"เชื่อมไม่สำเร็จ: {str(exc)[:120]}"))
+
+
+@app.get("/oauth/mcp-callback")
+async def mcp_oauth_callback(request: Request):
+    q = request.query_params
+    state, code, err = q.get("state"), q.get("code"), q.get("error")
+    pend = _MCP_OAUTH_PENDING.pop(state or "", None)
+    if err or not code or not pend:
+        return RedirectResponse("/?mcp_error=" + urllib.parse.quote("ผู้ใช้ยกเลิก หรือคำขอหมดอายุ"))
+    try:
+        tok = mcp_oauth.exchange_code(pend["token_endpoint"], code, pend["redirect_uri"],
+                                      pend["client_id"], pend["verifier"], pend.get("client_secret") or "")
+        access = tok.get("access_token")
+        if not access:
+            return RedirectResponse("/?mcp_error=" + urllib.parse.quote("ไม่ได้รับ access token"))
+        expires_at = time.time() + int(tok.get("expires_in", 3600)) if tok.get("expires_in") else 0
+        entry = mcp_catalog.CATALOG_BY_ID[pend["conn_id"]]
+        db.connect_mcp_oauth(pend["conn_id"], entry["name"], entry["url"], access,
+                             tok.get("refresh_token", ""), expires_at, pend["token_endpoint"],
+                             pend["client_id"], pend.get("client_secret") or "")
+        _apply_connector_agents(pend["conn_id"], {aid for aid, _ in _matching_agents(entry)})
+        return RedirectResponse("/?mcp_connected=" + urllib.parse.quote(pend["conn_id"]))
+    except Exception as exc:
+        return RedirectResponse("/?mcp_error=" + urllib.parse.quote(f"แลก token ไม่สำเร็จ: {str(exc)[:120]}"))
 
 
 @app.get("/api/agent/{agent_id}/connectors")

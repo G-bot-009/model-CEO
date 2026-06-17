@@ -146,6 +146,9 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS mcp_connections (
                 conn_id TEXT PRIMARY KEY, name TEXT, url TEXT, token TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
+                conn_id TEXT PRIMARY KEY, client_id TEXT, client_secret TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -170,6 +173,13 @@ def init() -> None:
         mcols = {r[1] for r in c.execute("PRAGMA table_info(agent_mcp)").fetchall()}
         if "conn_id" not in mcols:
             c.execute("ALTER TABLE agent_mcp ADD COLUMN conn_id TEXT")
+        # OAuth fields on directory connections (refresh, expiry, client creds)
+        ccols = {r[1] for r in c.execute("PRAGMA table_info(mcp_connections)").fetchall()}
+        for col in ("refresh_token", "token_url", "client_id", "client_secret"):
+            if col not in ccols:
+                c.execute(f"ALTER TABLE mcp_connections ADD COLUMN {col} TEXT")
+        if "expires_at" not in ccols:
+            c.execute("ALTER TABLE mcp_connections ADD COLUMN expires_at REAL")
 
 
 def _now() -> str:
@@ -655,21 +665,55 @@ def conn_agent_ids(conn_id: str) -> set:
 
 # --- Directory connector credentials (connect once, reuse per agent) ---------
 def connect_mcp(conn_id: str, name: str, url: str, token: str) -> None:
+    """Manual-token connection (no refresh)."""
     with _conn() as c:
         c.execute(
             "INSERT INTO mcp_connections (conn_id, name, url, token, created_at) VALUES (?,?,?,?,?) "
-            "ON CONFLICT(conn_id) DO UPDATE SET name=excluded.name, url=excluded.url, token=excluded.token",
+            "ON CONFLICT(conn_id) DO UPDATE SET name=excluded.name, url=excluded.url, token=excluded.token, "
+            "refresh_token=NULL, expires_at=NULL, token_url=NULL",
             (conn_id, name, url, token, _now()))
+
+def connect_mcp_oauth(conn_id: str, name: str, url: str, token: str, refresh_token: str,
+                      expires_at: float, token_url: str, client_id: str, client_secret: str) -> None:
+    """OAuth connection with refresh material."""
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO mcp_connections (conn_id, name, url, token, refresh_token, expires_at, "
+            "token_url, client_id, client_secret, created_at) VALUES (?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(conn_id) DO UPDATE SET name=excluded.name, url=excluded.url, token=excluded.token, "
+            "refresh_token=excluded.refresh_token, expires_at=excluded.expires_at, token_url=excluded.token_url, "
+            "client_id=excluded.client_id, client_secret=excluded.client_secret",
+            (conn_id, name, url, token, refresh_token, expires_at, token_url, client_id, client_secret, _now()))
+
+def update_mcp_tokens(conn_id: str, token: str, refresh_token: str, expires_at: float) -> None:
+    """Store a freshly-refreshed access token."""
+    with _conn() as c:
+        c.execute("UPDATE mcp_connections SET token=?, refresh_token=COALESCE(NULLIF(?,''), refresh_token), "
+                  "expires_at=? WHERE conn_id=?", (token, refresh_token, expires_at, conn_id))
+
+_MCP_CONN_COLS = "conn_id, name, url, token, refresh_token, expires_at, token_url, client_id, client_secret"
 
 def get_mcp_connection(conn_id: str) -> Optional[dict]:
     with _conn() as c:
-        r = c.execute("SELECT conn_id, name, url, token FROM mcp_connections WHERE conn_id=?", (conn_id,)).fetchone()
+        r = c.execute(f"SELECT {_MCP_CONN_COLS} FROM mcp_connections WHERE conn_id=?", (conn_id,)).fetchone()
     return dict(r) if r else None
 
 def list_mcp_connections() -> list[dict]:
     with _conn() as c:
-        rows = c.execute("SELECT conn_id, name, url, token FROM mcp_connections ORDER BY conn_id").fetchall()
+        rows = c.execute(f"SELECT {_MCP_CONN_COLS} FROM mcp_connections ORDER BY conn_id").fetchall()
     return [dict(r) for r in rows]
+
+# Remember a dynamically-registered OAuth client so we don't re-register each time.
+def save_mcp_oauth_client(conn_id: str, client_id: str, client_secret: str) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO mcp_oauth_clients (conn_id, client_id, client_secret, created_at) VALUES (?,?,?,?) "
+                  "ON CONFLICT(conn_id) DO UPDATE SET client_id=excluded.client_id, client_secret=excluded.client_secret",
+                  (conn_id, client_id, client_secret, _now()))
+
+def get_mcp_oauth_client(conn_id: str) -> Optional[dict]:
+    with _conn() as c:
+        r = c.execute("SELECT client_id, client_secret FROM mcp_oauth_clients WHERE conn_id=?", (conn_id,)).fetchone()
+    return dict(r) if r else None
 
 def connected_mcp_ids() -> set:
     with _conn() as c:
@@ -681,6 +725,7 @@ def disconnect_mcp(conn_id: str) -> None:
     with _conn() as c:
         c.execute("DELETE FROM mcp_connections WHERE conn_id=?", (conn_id,))
         c.execute("DELETE FROM agent_mcp WHERE conn_id=?", (conn_id,))
+        c.execute("DELETE FROM mcp_oauth_clients WHERE conn_id=?", (conn_id,))
 
 
 # --- Social Inbox (unified comments/chats) ----------------------------------
