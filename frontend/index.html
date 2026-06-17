@@ -280,8 +280,6 @@
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
-      <div class="menu-item" data-view="admin"><span class="ico">🔑</span><span class="label">Admin Usage</span></div>
-      <div class="menu-item" data-view="settings"><span class="ico">⚙️</span><span class="label">Settings</span></div>
     </nav>
     <div class="side-title">ทีมเอเจนต์</div>
     <div class="agent-list" id="agentList"></div>
@@ -297,7 +295,6 @@
       <div class="pill" title="โทเค็นที่ใช้วันนี้">🪙 <span id="tokTotal">0</span><small>tokens</small></div>
       <div class="pill" title="ค่าใช้จ่ายวันนี้">💵 $<span id="costUsd">0.00</span></div>
       <div class="pill"><span class="conn-dot" id="connDot"></span><span id="clock">--:--:--</span></div>
-      <div class="icon-btn" id="byok" title="ใช้ API key ของคุณเอง">🔑</div>
       <div class="icon-btn" id="bell">🔔<span class="badge" id="bellBadge" style="display:none">0</span></div>
       <div class="icon-btn" id="gear" title="ตั้งค่า">⚙️</div>
       <div id="gearMenu" class="gear-menu" hidden>
@@ -2263,7 +2260,6 @@ function byokNote(){ const p=$("byokProvider").value;
     ? "💻 รันโมเดลในเครื่องฟรี! ลง <b>Ollama</b> + <b>LiteLLM proxy</b> (Anthropic-compatible) → ใส่ Base URL (เช่น http://localhost:4000) + ชื่อโมเดล (เช่น llama3.1) · ไม่เสียค่า token เลย"
     : "ℹ️ provider นี้ใช้ผ่านโหมด Local/Base URL (ต้องมี proxy ที่พูดภาษา Anthropic) — ใส่ Base URL ด้านล่าง"; }
 $("byokProvider").addEventListener("change", byokNote); byokNote();
-$("byok").addEventListener("click", () => showView("admin"));
 $("byokSave").addEventListener("click", () => {
   const provider=$("byokProvider").value, key=$("byokKey").value.trim(), model=$("byokModel").value.trim(), base_url=$("byokBase").value.trim();
   localStorage.setItem("byok", JSON.stringify({provider, model, base_url}));
