@@ -591,20 +591,25 @@
             <button class="qbtn" id="openDirectory" style="font-weight:700">📂 Directory — เชื่อม API</button>
           </div>
           <div id="adConnectors" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px"></div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px">
-            <button class="qbtn mcp-preset" data-n="Notion" data-u="https://mcp.notion.com/mcp">📓 Notion</button>
-            <button class="qbtn mcp-preset" data-n="Canva" data-u="https://mcp.canva.com/mcp">🎨 Canva</button>
-            <button class="qbtn mcp-preset" data-n="ClickUp" data-u="https://mcp.clickup.com/mcp">✅ ClickUp</button>
-            <button class="qbtn mcp-preset" data-n="Google Drive" data-u="https://mcp.googleapis.com/drive">📁 Google Drive</button>
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">
-            <input id="adMcpName" class="numfld" style="width:120px; margin:0; padding:7px 9px" placeholder="ชื่อ เช่น Notion">
-            <input id="adMcpUrl" class="numfld" style="flex:1; min-width:200px; margin:0; padding:7px 9px" placeholder="MCP server URL">
-            <input id="adMcpTok" class="numfld" style="width:160px; margin:0; padding:7px 9px" placeholder="token / secret_ref">
-            <button class="qbtn" id="adMcpAdd" style="font-weight:700">➕ เพิ่ม</button>
+          <div style="font-size:12px; color:#94a3b8; margin-bottom:6px">เครื่องมือยอดนิยม — เชื่อมด้วย <b>OAuth คลิกเดียว</b> (ไม่ต้องใส่ token):</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px">
+            <button class="qbtn mcp-godir">📓 Notion</button>
+            <button class="qbtn mcp-godir">🎨 Canva</button>
+            <button class="qbtn mcp-godir">✅ ClickUp</button>
+            <button class="qbtn mcp-godir">📁 Google Drive</button>
+            <button class="qbtn mcp-godir" style="font-weight:700;background:#4f46e5;color:#fff;border-color:#4f46e5">📂 เปิด Directory เพื่อเชื่อม</button>
           </div>
           <div id="adMcpList" style="display:flex; flex-direction:column; gap:8px; margin-top:10px"></div>
-          <div style="font-size:11px; color:#64748b; margin-top:8px">* URL/token ขอจากหน้า MCP ของผู้ให้บริการ (ตรวจ URL ให้ตรงเจ้านั้น) · ถ้า API ไม่รองรับ MCP ระบบจะรันแบบปกติให้อัตโนมัติ</div>
+          <details style="margin-top:10px">
+            <summary style="cursor:pointer; color:#94a3b8; font-size:12px; list-style:none">⚙️ ขั้นสูง: เพิ่ม MCP server เองด้วย URL (สำหรับเซิร์ฟเวอร์ที่ใช้ token เอง)</summary>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:8px">
+              <input id="adMcpName" class="numfld" style="width:120px; margin:0; padding:7px 9px" placeholder="ชื่อ">
+              <input id="adMcpUrl" class="numfld" style="flex:1; min-width:200px; margin:0; padding:7px 9px" placeholder="MCP server URL">
+              <input id="adMcpTok" class="numfld" style="width:160px; margin:0; padding:7px 9px" placeholder="token (ไม่บังคับ)">
+              <button class="qbtn" id="adMcpAdd" style="font-weight:700">➕ เพิ่ม</button>
+            </div>
+            <div style="font-size:11px; color:#64748b; margin-top:8px">ใส่ token เฉพาะเซิร์ฟเวอร์ที่ต้องใช้ · เครื่องมือ OAuth ด้านบนไม่ต้องใส่ · ถ้า API ไม่รองรับ MCP ระบบจะรันแบบปกติให้อัตโนมัติ</div>
+          </details>
         </div>
         <div class="panel"><h3>ผลงานล่าสุด</h3><div id="adWorks"></div></div>
       </section>
@@ -4596,9 +4601,7 @@ $("adsReview").addEventListener("click", async () => {
   history.replaceState({}, "", location.pathname);   // clean the URL
   setTimeout(openDirectory, 400);
 })();
-document.querySelectorAll(".mcp-preset").forEach(b => b.addEventListener("click", () => {
-  $("adMcpName").value = b.dataset.n; $("adMcpUrl").value = b.dataset.u; $("adMcpTok").focus();
-}));
+document.querySelectorAll(".mcp-godir").forEach(b => b.addEventListener("click", openDirectory));
 $("jarvisSend").addEventListener("click", () => jarvisSend());
 $("jarvisGoal").addEventListener("keydown", e => { if (e.key === "Enter") jarvisSend(); });
 $("jarvisRoutine").addEventListener("click", () => { jarvisRaw=""; $("jarvisOut").innerHTML="⏳ Jarvis กำลังรันรูทีนเช้า…"; ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({action:"jarvis_routine"})); });
