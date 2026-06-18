@@ -174,6 +174,10 @@ def init() -> None:
                 project_id INTEGER, idx INTEGER, name TEXT, agents TEXT,
                 goal TEXT, status TEXT, result TEXT, updated_at TEXT, key_id INTEGER
             );
+            CREATE TABLE IF NOT EXISTS project_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, summary TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -1157,6 +1161,14 @@ def set_stage_result(stage_id, status, result) -> None:
 def set_project_summary(pid, summary) -> None:
     with _conn() as c:
         c.execute("UPDATE projects SET summary=? WHERE id=?", (summary, pid))
+        c.execute("INSERT INTO project_summaries (project_id, summary, created_at) VALUES (?,?,?)",
+                  (pid, summary, _now()))
+
+def list_project_summaries(pid) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT id, summary, created_at FROM project_summaries WHERE project_id=? ORDER BY id DESC",
+                         (pid,)).fetchall()
+    return [dict(r) for r in rows]
 
 def set_project_status(pid, status) -> None:
     with _conn() as c:

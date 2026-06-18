@@ -1964,7 +1964,7 @@ async def projects_detail(pid: int) -> dict:
         st["has_visual"] = any(a in ("designer", "content") for a in st.get("agents", []))
     engines = [{"id": 0, "label": "ค่าเริ่มต้น (env / คีย์ของเอเจนต์)"}] + \
               [{"id": k["id"], "label": k["label"]} for k in db.list_api_keys()]
-    return {"project": proj, "engines": engines}
+    return {"project": proj, "engines": engines, "summaries": db.list_project_summaries(pid)}
 
 
 @app.post("/api/projects/stage/run")

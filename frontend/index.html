@@ -406,8 +406,9 @@
     <div class="brand"><span style="font-size:22px">🏢</span><span class="label" id="brandName">ToonOffice</span></div>
     <nav class="menu" id="menu">
       <div class="menu-item active" data-view="dashboard"><span class="ico">🗺️</span><span class="label">Dashboard</span></div>
-      <div class="menu-item" data-view="console"><span class="ico">🏠</span><span class="label">CEO Console</span></div>
       <div class="menu-item" data-view="jarvis"><span class="ico">🤖</span><span class="label">Jarvis</span></div>
+      <div class="menu-item" data-view="console"><span class="ico">🏠</span><span class="label">CEO Console</span></div>
+      <div class="menu-item" data-view="projects"><span class="ico">📂</span><span class="label">Project</span></div>
       <div class="menu-item" data-view="agents"><span class="ico">🧑‍💼</span><span class="label">Agents</span></div>
       <div class="menu-item" data-view="tasks"><span class="ico">📋</span><span class="label">งาน (Tasks)</span></div>
       <div class="menu-item" data-view="connectors"><span class="ico">🔌</span><span class="label">Connectors</span></div>
@@ -415,10 +416,8 @@
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
-      <div class="menu-item" data-view="projects"><span class="ico">📂</span><span class="label">โปรเจกต์</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
-      <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
     </nav>
     <div class="side-title">ทีมเอเจนต์</div>
     <div class="agent-list" id="agentList"></div>
@@ -437,6 +436,7 @@
       <div class="icon-btn" id="themeToggle" title="สลับโหมดกลางวัน/กลางคืน">🌙</div>
       <div class="icon-btn" id="gear" title="ตั้งค่า">⚙️</div>
       <div id="gearMenu" class="gear-menu" hidden>
+        <div class="gear-item" data-view="tokens">🪙 Token Usage</div>
         <div class="gear-item" data-view="admin">🔑 Admin Usage</div>
         <div class="gear-item" data-view="settings">⚙️ Settings</div>
         <div class="gear-item" id="logout">🚪 ออกจากระบบ</div>
@@ -2176,7 +2176,13 @@ function addUsage(agent, inp, out) {
 function renderHistory(messages, tasks) {
   $("activityLog").innerHTML = ""; liveBlocks = {};
   const hb = $("historyBody"); hb.innerHTML = "";
-  const mkRow = (emoji,label,text,accent) => {
+  const mkRow = (emoji,label,text,accent,collapsible,open) => {
+    if (collapsible){
+      const d = document.createElement("details"); d.className="card"; d.open = !!open; if(accent) d.style.borderColor=accent;
+      d.innerHTML = `<summary style="padding:8px 12px;font-weight:800;cursor:pointer">${emoji} ${label} <span style="color:#64748b;font-size:12px;font-weight:400">— คลิกเพื่อดู/ย่อ</span></summary>
+         <div class="stream" style="padding:12px;font-size:14px;color:#e2e8f0;border-top:1px solid #1e293b">${mdToHtml(text)}</div>`;
+      hb.appendChild(d); return;
+    }
     const d = document.createElement("div"); d.className="card"; if(accent) d.style.borderColor=accent;
     d.innerHTML = `<div style="padding:8px 12px;border-bottom:1px solid #1e293b;font-weight:800">${emoji} ${label}</div>
        <div class="stream" style="padding:12px;font-size:14px;color:#e2e8f0">${mdToHtml(text)}</div>`;
@@ -2184,9 +2190,9 @@ function renderHistory(messages, tasks) {
   };
   if (!messages || !messages.length) mkRow("📭","ยังไม่มีประวัติในเซสชันนี้","ส่งคำสั่งถึง CEO เพื่อเริ่มต้น");
   (messages||[]).forEach(m => {
-    if (m.role==="user") mkRow("▶️","เป้าหมาย", m.content, "#f5b301");
-    else if (m.role==="final") mkRow("✅","ผลลัพธ์สุดท้าย (CEO)", m.content, "#22c55e");
-    else { const a=meta(m.agent_name); mkRow(a.emoji, a.name, m.content, color(m.agent_name)); }
+    if (m.role==="user") mkRow("▶️","เป้าหมาย", m.content, "#f5b301");                       // short — stays open
+    else if (m.role==="final") mkRow("✅","ผลลัพธ์สุดท้าย (CEO)", m.content, "#22c55e", true, true);  // collapsible, open
+    else { const a=meta(m.agent_name); mkRow(a.emoji, a.name, m.content, color(m.agent_name), true, false); } // collapsed
   });
   // tasks view
   const tb = $("tasksBody");
@@ -2897,6 +2903,17 @@ async function prOpen(pid){
       ${s.result?`<div style="font-size:13px;color:#cbd5e1;white-space:pre-wrap;margin-top:8px;background:#0b1220;border-radius:8px;padding:10px;max-height:300px;overflow:auto">${escapeHtml(s.result)}</div>`:''}
     </div>`;
   }).join("");
+  const sums = resp.summaries || [];
+  const sumSection = sums.length ? `
+    <div class="panel" style="border:1px solid #4f46e555">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0">🧠 สรุปจาก CEO</h3>
+        <select id="prSumSel" class="numfld" style="width:auto;margin:0">
+          ${sums.map((s,i)=>`<option value="${i}">🕒 ${s.created_at.replace('T',' ').slice(0,16)}${i===0?' (ล่าสุด)':''}</option>`).join("")}
+        </select>
+      </div>
+      <div id="prSumText" style="font-size:13px;color:#e2e8f0;white-space:pre-wrap;margin-top:10px"></div>
+    </div>` : '';
   $("prDetail").innerHTML = `
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -2909,8 +2926,13 @@ async function prOpen(pid){
         </div>
       </div>
     </div>
-    ${d.summary?`<div class="panel" style="border:1px solid #4f46e555"><h3>🧠 สรุปจาก CEO</h3><div style="font-size:13px;color:#e2e8f0;white-space:pre-wrap">${escapeHtml(d.summary)}</div></div>`:''}
-    ${stageHtml}`;
+    ${stageHtml}
+    ${sumSection}`;
+  if (sums.length){
+    const setSum = i => $("prSumText").innerHTML = escapeHtml(sums[i].summary || "");
+    setSum(0);
+    $("prSumSel").onchange = e => setSum(+e.target.value);
+  }
   $("prBack").onclick = loadProjects;
   $("prRefresh").onclick = () => prOpen(pid);
   $("prRunAll").onclick = async () => { await postJSON(`/api/projects/${pid}/run-all`,{}); toastNote("เริ่มรันทั้งหมดเบื้องหลัง — จะหยุดที่ขั้นที่ API มีปัญหา · กด 🔄 ดูความคืบหน้า","#a855f7"); };
