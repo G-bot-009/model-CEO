@@ -305,6 +305,9 @@
            box-shadow:0 10px 30px rgba(0,0,0,.4); animation:slideIn .3s ease; }
   .toast b { display:block; }
   @keyframes slideIn { from{ transform:translateX(120%);} to{ transform:translateX(0);} }
+  @keyframes cfDance { 0%,100%{ transform:translateY(0) rotate(-8deg);} 50%{ transform:translateY(-14px) rotate(8deg);} }
+  @keyframes cfDotB { 0%,80%,100%{ opacity:.25; transform:translateY(0);} 40%{ opacity:1; transform:translateY(-5px);} }
+  .cf-dot { display:inline-block; width:8px; height:8px; margin:0 3px; border-radius:50%; background:#7c5cff; animation:cfDotB 1.2s ease-in-out infinite; }
 
   /* ---------- notification panel ---------- */
   .drawer { position:fixed; top:0; right:0; height:100vh; width:330px; background:#10182b; border-left:1px solid #1e293b;
@@ -1226,6 +1229,19 @@
     <button id="lbClose" class="qbtn" style="position:absolute; top:12px; right:14px; z-index:2">✕ ปิด</button>
     <div id="lbTitle" style="color:#fff; font-weight:800; margin:2px 56px 12px 2px"></div>
     <div id="lbBody" style="background:#fff; border-radius:12px; padding:10px"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cfProducing" hidden style="z-index:210">
+  <div style="width:min(380px,92vw);background:#0b1220;border:1px solid #1e293b;border-radius:18px;padding:26px 22px;text-align:center">
+    <div style="font-size:64px;display:flex;justify-content:center;gap:6px">
+      <span style="display:inline-block;animation:cfDance .8s ease-in-out infinite">🕺</span>
+      <span style="display:inline-block;animation:cfDance .8s ease-in-out infinite .4s">💃</span>
+    </div>
+    <div style="color:#fff;font-weight:800;font-size:18px;margin-top:14px">กำลังผลิตให้สักครู่…</div>
+    <div style="color:#94a3b8;font-size:13px;margin-top:6px">ทีม AI กำลังส่องเทรนด์ → เขียนแคปชั่น → ทำภาพ 🎨</div>
+    <div style="margin-top:10px"><span class="cf-dot"></span><span class="cf-dot" style="animation-delay:.2s"></span><span class="cf-dot" style="animation-delay:.4s"></span></div>
+    <button class="qbtn" id="cfCancel" style="margin-top:20px;color:#f87171;font-weight:700;background:#3b1212;border-color:#7f1d1d">✖ ยกเลิก</button>
   </div>
 </div>
 
@@ -2975,9 +2991,22 @@ function cfMediaPopup(kind){
   };
   openModal("genModal");
 }
+let cfAbort = null;
 async function cfRun(){
   const b=$("cfRun"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังผลิต…";
-  const r=await postJSON("/api/content/run",{});
+  cfAbort = new AbortController();
+  $("cfProducing").hidden = false;
+  let r;
+  try {
+    const resp = await fetch("/api/content/run", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}", signal:cfAbort.signal});
+    r = await resp.json();
+  } catch(e){
+    $("cfProducing").hidden = true; b.disabled=false; b.textContent=o;
+    if (e.name === "AbortError") toastNote("ยกเลิกการผลิตแล้ว","#f59e0b");
+    else toastNote("ผลิตไม่สำเร็จ: เครือข่ายมีปัญหา","#ef4444");
+    return;
+  }
+  $("cfProducing").hidden = true; cfAbort = null;
   if(r.error) toastNote(r.error,"#f59e0b");
   else if(r.post && r.post.media_error) toastNote("⚠️ เขียนแคปชั่นได้ แต่สร้างรูปไม่สำเร็จ — บันทึกเป็นร่าง (ยังไม่ควรโพสต์)","#f59e0b");
   else toastNote("ผลิตคอนเทนต์ 1 ชิ้นแล้ว ✅","#22c55e");
@@ -4300,6 +4329,7 @@ $("openDirectory").addEventListener("click", openDirectory);
 $("tbSave").addEventListener("click", tbSaveBot);
 $("tbAi").addEventListener("click", tbAiStrategy);
 $("cfRun").addEventListener("click", cfRun);
+$("cfCancel").addEventListener("click", () => { if (cfAbort) cfAbort.abort(); $("cfProducing").hidden = true; });
 $("cfSaveRules").addEventListener("click", cfSaveRules);
 $("prCreate").addEventListener("click", prCreate);
 $("prTemplate").addEventListener("change", prTplPreview);
