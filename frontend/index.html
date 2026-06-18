@@ -2827,7 +2827,8 @@ async function loadProjects(){
   $("prDetail").style.display = "none"; $("prListWrap").style.display = "";
   if (!PR_TEMPLATES.length){
     try { PR_TEMPLATES = (await (await fetch("/api/projects/templates")).json()).templates || []; } catch(e){}
-    $("prTemplate").innerHTML = PR_TEMPLATES.map(t => `<option value="${t.id}">${t.emoji} ${t.name}</option>`).join("");
+    $("prTemplate").innerHTML = PR_TEMPLATES.map(t => `<option value="${t.id}">${t.emoji} ${t.name}</option>`).join("")
+      + '<option value="custom">✨ สร้างเอง (AI ออกแบบทีม/agent ให้)</option>';
     prTplPreview();
   }
   let d; try { d = await (await fetch("/api/projects")).json(); } catch(e){ return; }
@@ -2844,37 +2845,71 @@ async function loadProjects(){
   $("prList").querySelectorAll(".pr-del").forEach(x => x.onclick = async (e) => { e.stopPropagation(); if(!confirm("ลบโปรเจกต์นี้?"))return; await postJSON(`/api/projects/${x.dataset.id}/delete`,{}); loadProjects(); });
 }
 function prTplPreview(){
+  if ($("prTemplate").value === "custom"){
+    $("prTplPreview").innerHTML = "✨ AI จะออกแบบขั้นตอนและสร้าง agent ตามหน้าที่ จากชื่อ + คำอธิบายของคุณ (ใส่คำอธิบายให้ชัด)";
+    return;
+  }
   const t = PR_TEMPLATES.find(x => x.id === $("prTemplate").value);
   $("prTplPreview").innerHTML = t ? "ขั้นตอน: " + t.stages.map(s => s.name).join(" → ") : "";
 }
-function prCreate(){
-  const t = PR_TEMPLATES.find(x => x.id === $("prTemplate").value);
-  if (!t){ toastNote("เลือกแม่แบบก่อน","#f59e0b"); return; }
-  const name = $("prName").value.trim() || t.name;
-  const brief = $("prBrief").value.trim() || "(ยังไม่ระบุรายละเอียด)";
-  const stages = t.stages.map(s => `
-    <div style="border:1px solid #1e293b;border-radius:10px;padding:10px;margin-bottom:8px">
-      <div style="font-weight:700;color:#fff">${escapeHtml(s.name)}</div>
-      ${(s.agent_detail||[]).map(a => `<div style="font-size:13px;color:#cbd5e1;margin-top:4px">${a.emoji} <b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.desc||"")}</div>`).join("")}
-    </div>`).join('<div style="text-align:center;color:#475569;margin:-2px 0 6px">↓</div>');
+let prPending = null;
+async function prCreate(){
+  const val = $("prTemplate").value;
+  const name = $("prName").value.trim();
+  const brief = $("prBrief").value.trim();
+  if (val === "custom"){
+    if (!brief){ toastNote("ใส่คำอธิบายโปรเจกต์ก่อน — AI จะออกแบบทีม/agent ให้","#f59e0b"); return; }
+    const b=$("prCreate"), o=b.textContent; b.disabled=true; b.textContent="⏳ AI ออกแบบทีม…";
+    const r = await postJSON("/api/projects/design", { name, brief });
+    b.disabled=false; b.textContent=o;
+    if (r.error){ toastNote(r.error,"#f59e0b"); return; }
+    const stages = (r.plan.stages||[]).map(s => ({ name:s.name, agents:(s.agents||[]).map(a => ({emoji:a.emoji||"🧩", name:a.name, desc:a.role||""})) }));
+    prPending = { mode:"custom", name: name||"โปรเจกต์ใหม่", brief, plan:r.plan };
+    prRenderPopup("✨", prPending.name, brief, stages);
+  } else {
+    const t = PR_TEMPLATES.find(x => x.id === val);
+    if (!t){ toastNote("เลือกแม่แบบก่อน","#f59e0b"); return; }
+    const stages = t.stages.map(s => ({ name:s.name, agents:(s.agent_detail||[]).map(a => ({emoji:a.emoji, name:a.name, desc:a.desc||""})) }));
+    prPending = { mode:"template", template:val };
+    prRenderPopup(t.emoji, name||t.name, brief||"(ยังไม่ระบุรายละเอียด)", stages);
+  }
+}
+function prRenderPopup(emoji, name, brief, stages){
+  const stageHtml = stages.map(s => `
+    <div style="border:1px solid #e5e1d8;border-radius:12px;padding:12px;margin-bottom:8px;background:#fffdf8">
+      <div style="font-weight:800;color:#1f2937;margin-bottom:10px">${escapeHtml(s.name)}</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center">
+        ${s.agents.map(a => `<div style="width:148px;text-align:center">
+          <div style="font-size:36px;width:62px;height:62px;line-height:62px;margin:0 auto;background:#e0e7ff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,.12)">${a.emoji||"🧩"}</div>
+          <div style="font-weight:800;color:#1f2937;margin-top:6px">${escapeHtml(a.name)}</div>
+          <div style="font-size:12px;color:#475569;margin-top:2px;line-height:1.5">${escapeHtml(a.desc||"")}</div>
+        </div>`).join("")}
+      </div></div>`).join('<div style="text-align:center;color:#9ca3af;margin:-2px 0 6px;font-size:18px">↓</div>');
   $("prConfirmBody").innerHTML = `
-    <div class="conn-howto"><div class="conn-howto-h">สรุปโปรเจกต์</div>
-      <div style="font-weight:800;color:#fff;font-size:15px">${t.emoji} ${escapeHtml(name)}</div>
-      <div style="color:#94a3b8;font-size:13px;margin-top:4px">${escapeHtml(brief)}</div>
+    <div style="background:#f1ede3;border-radius:12px;padding:12px;margin-bottom:8px">
+      <div style="color:#6b7280;font-size:12px;font-weight:700">สรุปโปรเจกต์</div>
+      <div style="font-weight:800;color:#111827;font-size:16px;margin-top:4px">${emoji} ${escapeHtml(name)}</div>
+      <div style="color:#4b5563;font-size:13px;margin-top:4px">${escapeHtml(brief)}</div>
     </div>
-    <h4 style="margin:14px 0 8px">🔁 ทีม AI ที่จะทำงาน (ครบทุกขั้น ปิดลูป)</h4>
-    ${stages}
+    <h4 style="margin:14px 0 10px;color:#111827">🔁 ทีม AI ที่จะทำงาน (ครบทุกขั้น ปิดลูป)</h4>
+    ${stageHtml}
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="save" id="prConfirmBtn" style="flex:1">✅ ยืนยัน — สร้างโปรเจกต์</button>
-      <button class="qbtn" id="prCancelBtn" style="flex:1;color:#f87171;font-weight:700">🗑️ ลบ (ปิด)</button>
+      <button class="qbtn" id="prCancelBtn" style="flex:1;color:#b91c1c;font-weight:700;background:#fee2e2;border-color:#fecaca">🗑️ ลบ (ปิด)</button>
     </div>`;
   openModal("prConfirmModal");
   $("prConfirmBtn").onclick = prConfirmCreate;
-  $("prCancelBtn").onclick = () => closeModal("prConfirmModal");
+  $("prCancelBtn").onclick = () => { closeModal("prConfirmModal"); prPending = null; };
 }
 async function prConfirmCreate(){
-  const r = await postJSON("/api/projects", { template:$("prTemplate").value, name:$("prName").value.trim(), brief:$("prBrief").value.trim() });
-  closeModal("prConfirmModal");
+  if (!prPending) return;
+  const btn = $("prConfirmBtn"); btn.disabled = true; btn.textContent = "⏳ กำลังสร้าง…";
+  let r;
+  if (prPending.mode === "custom")
+    r = await postJSON("/api/projects/custom", { name:prPending.name, brief:prPending.brief, plan:prPending.plan });
+  else
+    r = await postJSON("/api/projects", { template:prPending.template, name:$("prName").value.trim(), brief:$("prBrief").value.trim() });
+  closeModal("prConfirmModal"); prPending = null;
   if (r.error){ toastNote(r.error,"#f59e0b"); return; }
   $("prName").value=""; $("prBrief").value=""; toastNote("สร้างโปรเจกต์แล้ว ✅","#22c55e");
   prOpen(r.id);

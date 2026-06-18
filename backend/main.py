@@ -1953,6 +1953,64 @@ async def projects_create(p: dict) -> dict:
     return {"ok": True, "id": pid}
 
 
+_DESIGN_PROMPT = (
+    "คุณคือ CEO ที่ออกแบบทีม AI สำหรับโปรเจกต์ จากชื่อและคำอธิบายของผู้ใช้ "
+    "ออกแบบขั้นตอนการทำงาน 3-6 ขั้น ให้ครบลูป (ขั้นสุดท้ายต้องวัดผล/ปิดลูป). "
+    "แต่ละขั้นมอบให้เอเจนต์ที่เหมาะ 1-2 ตัว พร้อมบทบาทหน้าที่.\n"
+    "ชื่อโปรเจกต์: {name}\nคำอธิบาย/เป้าหมาย: {brief}\n\n"
+    "ตอบเป็น JSON อย่างเดียว ตามรูปแบบนี้:\n"
+    '{{"stages":[{{"name":"1. ชื่อขั้น","goal":"สิ่งที่ต้องทำในขั้นนี้ (ภาษาไทย กระชับ)",'
+    '"agents":[{{"name":"ชื่อบทบาท","emoji":"🔬","role":"หน้าที่สั้นๆ (ภาษาไทย)",'
+    '"system":"a concise one-paragraph English system prompt describing this specialist"}}]}}]}}'
+)
+
+
+@app.post("/api/projects/design")
+async def projects_design(p: dict) -> dict:
+    """AI designs a custom project pipeline + team from name + description."""
+    name = (p.get("name") or "").strip() or "โปรเจกต์ใหม่"
+    brief = (p.get("brief") or "").strip()
+    if not brief:
+        return {"error": "ใส่คำอธิบาย/เป้าหมายของโปรเจกต์ก่อน"}
+    try:
+        raw = await _run_agent("ceo", _DESIGN_PROMPT.format(name=name, brief=brief))
+        plan = _parse_json(raw)
+        if not plan.get("stages"):
+            return {"error": "AI ออกแบบไม่สำเร็จ ลองใส่คำอธิบายให้ชัดขึ้น"}
+        return {"ok": True, "plan": plan}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.post("/api/projects/custom")
+async def projects_custom(p: dict) -> dict:
+    """Create a project from an AI-designed plan, spawning custom agents per role."""
+    name = (p.get("name") or "โปรเจกต์ใหม่").strip()
+    brief = (p.get("brief") or "").strip()
+    plan = p.get("plan") or {}
+    stages_in = plan.get("stages") or []
+    if not stages_in:
+        return {"error": "ไม่มีแผนงาน"}
+    agent_map: dict = {}                      # role-name -> created agent id
+    stages = []
+    for i, s in enumerate(stages_in):
+        aids = []
+        for a in (s.get("agents") or []):
+            nm = (a.get("name") or "Agent").strip()
+            if nm not in agent_map:
+                slug = re.sub(r"[^a-z0-9]+", "", nm.lower())[:12] or "agent"
+                aid = "x_pj_" + slug + secrets.token_hex(2)
+                sysp = (a.get("system") or f"You are {nm}, {a.get('role','')}.") + _SPECIALIST_FOOTER
+                db.add_custom_agent(aid, nm, (a.get("role") or "")[:60], a.get("emoji") or "🧩",
+                                    "#6366f1", "project", sysp)
+                agent_map[nm] = aid
+            aids.append(agent_map[nm])
+        stages.append({"name": s.get("name") or f"{i+1}.", "agents": aids,
+                       "goal": s.get("goal") or f"{s.get('name','')} สำหรับโปรเจกต์: {brief}"})
+    pid = db.create_project(name, "custom", brief, stages)
+    return {"ok": True, "id": pid}
+
+
 @app.get("/api/projects/{pid}")
 async def projects_detail(pid: int) -> dict:
     proj = db.get_project(pid)
