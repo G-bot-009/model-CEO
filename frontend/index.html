@@ -420,6 +420,7 @@
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
       <div class="menu-item" data-view="music"><span class="ico">🎵</span><span class="label">Music AI</span></div>
+      <div class="menu-item" data-view="imageai"><span class="ico">🖼️</span><span class="label">Image AI</span></div>
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
       <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
@@ -1005,6 +1006,33 @@
 
         <div class="panel"><h3>🎧 เพลงที่สร้างไว้</h3>
           <div id="muList" style="display:flex;flex-direction:column;gap:12px"></div>
+        </div>
+      </section>
+
+      <!-- IMAGE AI -->
+      <section class="view" id="view-imageai">
+        <h2 style="color:#fff;margin:0 0 6px">🖼️ Image AI</h2>
+        <p style="color:#94a3b8;font-size:13px;margin:0 0 14px">สร้างภาพจากคำอธิบาย — เลือกผู้ให้บริการ + โมเดล แล้วใส่คีย์ของคุณ (Gemini / OpenAI / Stability) · ใช้คีย์รูปชุดเดียวกับโรงงานคอนเทนต์</p>
+
+        <div class="panel"><h3>🎚️ ผู้ให้บริการ + คีย์
+            <span style="flex:1"></span>
+            <span id="iaProvLabel" style="font-size:12px;color:#94a3b8"></span></h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="iaProvider" class="numfld" style="width:auto;margin:0"></select>
+            <select id="iaModel" class="numfld" style="width:auto;margin:0"></select>
+            <button class="qbtn" id="iaKeyBtn" style="font-weight:700">🔑 ใส่/แก้คีย์</button>
+            <span id="iaKeyState" style="font-size:12px"></span>
+          </div>
+        </div>
+
+        <div class="panel"><h3>🎨 สร้างภาพใหม่</h3>
+          <textarea id="iaPrompt" class="numfld" style="width:100%;min-height:70px;margin:0 0 8px" placeholder="อธิบายภาพที่อยากได้ เช่น 'โปสเตอร์โปรโมชั่นกาแฟเย็น สดใส มินิมอล' หรือ 'โลโก้แมวน่ารัก โทนพาสเทล'"></textarea>
+          <button class="send" id="iaGo" style="padding:10px 20px">🖌️ สร้างภาพ</button>
+          <div style="font-size:11px;color:#64748b;margin-top:8px">สร้างจริงต้องมีคีย์ + เครดิตของผู้ให้บริการ · ภาพขนาด 1024×1024</div>
+        </div>
+
+        <div class="panel"><h3>🖼️ ภาพที่สร้างไว้</h3>
+          <div id="iaList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px"></div>
         </div>
       </section>
 
@@ -3076,6 +3104,70 @@ $("muGo").addEventListener("click", async () => {
   else { toastNote("สร้างเพลงสำเร็จ 🎶","#22c55e"); $("muPrompt").value=""; loadMusic(); }
 });
 
+/* ---------- Image AI ---------- */
+let IA_PROVIDERS = [];
+async function loadImageAI(){
+  let d; try { d = await (await fetch("/api/imageai/board")).json(); } catch(e){ return; }
+  IA_PROVIDERS = d.providers || [];
+  const sel = d.selection || {};
+  $("iaProvider").innerHTML = IA_PROVIDERS.map(p => `<option value="${p.id}" ${p.id===sel.provider?'selected':''}>${escapeHtml(p.name)}</option>`).join("");
+  iaFillModels(sel.model);
+  $("iaKeyState").textContent = sel.has ? "✅ มีคีย์แล้ว" : "⚠️ ยังไม่มีคีย์";
+  $("iaKeyState").style.color = sel.has ? "#22c55e" : "#f59e0b";
+  const list = $("iaList");
+  list.innerHTML = (d.images||[]).length ? d.images.map(t => `
+    <div style="border:1px solid #1e293b;border-radius:10px;overflow:hidden;background:#0b1220">
+      <img class="ia-img" data-ref="${t.image_ref}" data-cap="${escapeHtml(t.prompt||'')}" src="${t.image_ref}" title="คลิกเพื่อดูภาพใหญ่" style="width:100%;display:block;cursor:zoom-in;aspect-ratio:1/1;object-fit:cover">
+      <div style="padding:8px">
+        <div style="font-size:12px;color:#cbd5e1;line-height:1.4;max-height:34px;overflow:hidden">${escapeHtml(t.prompt||"")}</div>
+        <div style="font-size:10px;color:#64748b;margin-top:3px">${escapeHtml(t.provider||"")} · ${(t.created_at||'').replace('T',' ').slice(5,16)}</div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <a class="qbtn" href="${t.image_ref}" download="goffice-image-${t.id}.png" style="font-size:11px;padding:4px 8px">⬇️</a>
+          <button class="qbtn ia-del" data-id="${t.id}" style="font-size:11px;padding:4px 8px;color:#f87171">🗑️</button>
+        </div>
+      </div>
+    </div>`).join("") : '<div style="color:#64748b">ยังไม่มีภาพ — พิมพ์คำอธิบายแล้วกด “สร้างภาพ”</div>';
+  list.querySelectorAll(".ia-img").forEach(x => x.onclick = () => openLightbox(`<img src="${x.dataset.ref}">`, x.dataset.cap));
+  list.querySelectorAll(".ia-del").forEach(x => x.onclick = async () => { await postJSON("/api/imageai/delete",{id:+x.dataset.id}); loadImageAI(); });
+}
+function iaFillModels(selModel){
+  const p = IA_PROVIDERS.find(x => x.id === $("iaProvider").value) || IA_PROVIDERS[0];
+  $("iaModel").innerHTML = (p? p.models:[]).map(m => `<option value="${m}" ${m===selModel?'selected':''}>${escapeHtml(m)}</option>`).join("");
+  const cur = IA_PROVIDERS.find(x => x.id === $("iaProvider").value);
+  $("iaProvLabel").textContent = cur ? ("คีย์ขอที่ " + cur.name) : "";
+}
+$("iaProvider").addEventListener("change", () => { iaFillModels(); postJSON("/api/imageai/key",{provider:$("iaProvider").value, model:$("iaModel").value}); });
+$("iaModel").addEventListener("change", () => postJSON("/api/imageai/key",{provider:$("iaProvider").value, model:$("iaModel").value}));
+$("iaKeyBtn").addEventListener("click", () => {
+  const cur = IA_PROVIDERS.find(x => x.id === $("iaProvider").value) || {};
+  $("genTitle").textContent = "คีย์ Image AI — " + (cur.name||"");
+  $("genBody").innerHTML = `
+    <p class="conn-note">วางคีย์ของ ${escapeHtml(cur.name||"")} (เก็บไว้ในเซิร์ฟเวอร์ของคุณ · ใช้ร่วมกับโรงงานคอนเทนต์)</p>
+    <a class="conn-doc" href="${cur.get||'#'}" target="_blank" rel="noopener">ขอคีย์ที่นี่ ↗</a>
+    <label>API key</label><input id="ia_key" type="password" placeholder="วาง API key">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="save" id="ia_save" style="flex:1">บันทึกคีย์</button>
+      <button class="qbtn" id="ia_clear" style="flex:1;color:#f87171">ลบคีย์</button>
+    </div>`;
+  $("ia_save").onclick = async () => {
+    const key = $("ia_key").value.trim();
+    if (!key){ toastNote("วางคีย์ก่อน","#f59e0b"); return; }
+    await postJSON("/api/imageai/key", { provider:$("iaProvider").value, model:$("iaModel").value, key });
+    closeModal("genModal"); toastNote("บันทึกคีย์ Image AI แล้ว ✅","#22c55e"); loadImageAI();
+  };
+  $("ia_clear").onclick = async () => { await postJSON("/api/imageai/key/clear",{}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadImageAI(); };
+  openModal("genModal");
+});
+$("iaGo").addEventListener("click", async () => {
+  const prompt = $("iaPrompt").value.trim();
+  if (!prompt){ toastNote("ใส่คำอธิบายภาพก่อน","#f59e0b"); return; }
+  const b=$("iaGo"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังสร้างภาพ…";
+  const r=await postJSON("/api/imageai/generate",{prompt});
+  b.disabled=false;b.textContent=o;
+  if(r.error) toastNote("❌ "+r.error,"#ef4444");
+  else { toastNote("สร้างภาพสำเร็จ 🖼️","#22c55e"); $("iaPrompt").value=""; loadImageAI(); }
+});
+
 /* ---------- Projects ---------- */
 let PR_TEMPLATES = [];
 const PR_ST = { pending:["#1e293b","#94a3b8","รอรัน"], running:["#78350f","#fbbf24","กำลังรัน"], done:["#064e3b","#6ee7b7","เสร็จ"], failed:["#7f1d1d","#fca5a5","⚠️ API มีปัญหา"] };
@@ -3440,7 +3532,7 @@ async function biOpen(pid){
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", music:"Music AI", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", music:"Music AI", imageai:"Image AI", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
@@ -3449,6 +3541,7 @@ function showView(v) {
   if (v === "tradebot") loadTradeBots();
   if (v === "content") loadContentFactory();
   if (v === "music") loadMusic();
+  if (v === "imageai") loadImageAI();
   if (v === "bio") loadBio();
   if (v === "ads") loadAds();
   if (v === "projects") loadProjects();

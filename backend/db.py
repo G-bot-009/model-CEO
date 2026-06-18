@@ -221,6 +221,11 @@ def init() -> None:
                 prompt TEXT, provider TEXT, model TEXT,
                 mime TEXT, audio_ref TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS image_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prompt TEXT, provider TEXT, model TEXT,
+                mime TEXT, image_ref TEXT, created_at TEXT
+            );
             """
         )
         # migrate older DBs that predate the skills columns
@@ -1429,3 +1434,21 @@ def music_list(limit=40) -> list[dict]:
 def music_delete(tid) -> None:
     with _conn() as c:
         c.execute("DELETE FROM music_tracks WHERE id=?", (tid,))
+
+
+# --- Image AI tracks --------------------------------------------------------
+def image_add(prompt, provider, model, mime, image_ref) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO image_tracks (prompt, provider, model, mime, image_ref, created_at) "
+            "VALUES (?,?,?,?,?,?)", (prompt, provider, model, mime, image_ref, _now()))
+        return cur.lastrowid
+
+def image_list(limit=40) -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM image_tracks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+
+def image_delete(tid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM image_tracks WHERE id=?", (tid,))

@@ -1993,6 +1993,65 @@ async def music_delete(p: dict) -> dict:
     return {"ok": True}
 
 
+# ============================== Image AI ====================================
+@app.get("/api/imageai/board")
+async def imageai_board() -> dict:
+    c = _media_cfg("image")
+    return {
+        "providers": media.PROVIDERS["image"],
+        "selection": {"provider": c["provider"], "model": c["model"],
+                      "key": (c["key"][:4] + "…") if c["key"] else "", "has": bool(c["key"])},
+        "images": db.image_list(),
+    }
+
+
+@app.post("/api/imageai/key")
+async def imageai_key_set(p: dict) -> dict:
+    upd = {}
+    if p.get("provider"):
+        upd["media_image_provider"] = p["provider"].strip()
+    if p.get("model") is not None:
+        upd["media_image_model"] = (p.get("model") or "").strip()
+    if p.get("key"):
+        upd["media_image_key"] = p["key"].strip()
+    if upd:
+        db.set_settings(upd)
+    return {"ok": True}
+
+
+@app.post("/api/imageai/key/clear")
+async def imageai_key_clear(p: dict) -> dict:
+    db.set_settings({"media_image_key": ""})
+    return {"ok": True}
+
+
+@app.post("/api/imageai/generate")
+async def imageai_generate(p: dict) -> dict:
+    prompt = (p.get("prompt") or "").strip()
+    if not prompt:
+        return {"error": "ใส่คำอธิบายภาพก่อน (เช่น 'โลโก้ร้านกาแฟ มินิมอล โทนน้ำตาล')"}
+    cfg = _media_cfg("image")
+    if not cfg["key"]:
+        return {"error": "ยังไม่ได้ใส่คีย์ Image AI — กด 🔑 ใส่คีย์ ก่อน"}
+    try:
+        im = await __import__("asyncio").to_thread(
+            media.generate_image, cfg["provider"], cfg["model"], cfg["key"], prompt)
+        b64 = (im.get("b64") or "").strip()
+        if len(b64) < 100:
+            return {"error": "ภาพที่ได้ว่างเปล่า — ลองใหม่หรือเปลี่ยน provider"}
+        ref = f"data:{im['mime']};base64,{b64}"
+        tid = db.image_add(prompt, cfg["provider"], cfg["model"], im["mime"], ref)
+        return {"ok": True, "image": next((t for t in db.image_list() if t["id"] == tid), None)}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.post("/api/imageai/delete")
+async def imageai_delete(p: dict) -> dict:
+    db.image_delete(int(p.get("id")))
+    return {"ok": True}
+
+
 # ============================== Projects ====================================
 def _stage_client(stage: dict):
     """Per-stage engine override (a chosen API key), else None (= per-agent default)."""
