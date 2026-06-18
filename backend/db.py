@@ -149,7 +149,7 @@ def init() -> None:
                 conn_id TEXT PRIMARY KEY, name TEXT, url TEXT, token TEXT, created_at TEXT
             );
             CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
-                conn_id TEXT PRIMARY KEY, client_id TEXT, client_secret TEXT, created_at TEXT
+                conn_id TEXT PRIMARY KEY, client_id TEXT, client_secret TEXT, redirect_uri TEXT, created_at TEXT
             );
             CREATE TABLE IF NOT EXISTS trade_bots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,6 +238,10 @@ def init() -> None:
         ucols = {r[1] for r in c.execute("PRAGMA table_info(token_usage)").fetchall()}
         if "key_id" not in ucols:
             c.execute("ALTER TABLE token_usage ADD COLUMN key_id INTEGER")
+        # MCP oauth client: remember which redirect_uri it was registered with
+        occols = {r[1] for r in c.execute("PRAGMA table_info(mcp_oauth_clients)").fetchall()}
+        if "redirect_uri" not in occols:
+            c.execute("ALTER TABLE mcp_oauth_clients ADD COLUMN redirect_uri TEXT")
         # link agent_mcp rows back to a directory connector (NULL = manual entry)
         mcols = {r[1] for r in c.execute("PRAGMA table_info(agent_mcp)").fetchall()}
         if "conn_id" not in mcols:
@@ -783,15 +787,15 @@ def list_mcp_connections() -> list[dict]:
     return [dict(r) for r in rows]
 
 # Remember a dynamically-registered OAuth client so we don't re-register each time.
-def save_mcp_oauth_client(conn_id: str, client_id: str, client_secret: str) -> None:
+def save_mcp_oauth_client(conn_id: str, client_id: str, client_secret: str, redirect_uri: str = "") -> None:
     with _conn() as c:
-        c.execute("INSERT INTO mcp_oauth_clients (conn_id, client_id, client_secret, created_at) VALUES (?,?,?,?) "
-                  "ON CONFLICT(conn_id) DO UPDATE SET client_id=excluded.client_id, client_secret=excluded.client_secret",
-                  (conn_id, client_id, client_secret, _now()))
+        c.execute("INSERT INTO mcp_oauth_clients (conn_id, client_id, client_secret, redirect_uri, created_at) VALUES (?,?,?,?,?) "
+                  "ON CONFLICT(conn_id) DO UPDATE SET client_id=excluded.client_id, client_secret=excluded.client_secret, redirect_uri=excluded.redirect_uri",
+                  (conn_id, client_id, client_secret, redirect_uri, _now()))
 
 def get_mcp_oauth_client(conn_id: str) -> Optional[dict]:
     with _conn() as c:
-        r = c.execute("SELECT client_id, client_secret FROM mcp_oauth_clients WHERE conn_id=?", (conn_id,)).fetchone()
+        r = c.execute("SELECT client_id, client_secret, redirect_uri FROM mcp_oauth_clients WHERE conn_id=?", (conn_id,)).fetchone()
     return dict(r) if r else None
 
 def connected_mcp_ids() -> set:

@@ -1380,11 +1380,12 @@ async def mcp_oauth_start(conn_id: str, request: Request):
     try:
         meta = mcp_oauth.discover(entry["url"])
         client = db.get_mcp_oauth_client(conn_id)
-        if client and client.get("client_id"):
+        # reuse a cached client only if it was registered with the SAME redirect_uri
+        if client and client.get("client_id") and (client.get("redirect_uri") or "") == redirect_uri:
             client_id, client_secret = client["client_id"], client.get("client_secret") or ""
         elif meta.get("registration_endpoint"):
             client_id, client_secret = mcp_oauth.register_client(meta["registration_endpoint"], redirect_uri)
-            db.save_mcp_oauth_client(conn_id, client_id or "", client_secret or "")
+            db.save_mcp_oauth_client(conn_id, client_id or "", client_secret or "", redirect_uri)
         else:
             return RedirectResponse("/?mcp_error=" + urllib.parse.quote(
                 "เซิร์ฟเวอร์นี้ไม่รองรับการลงทะเบียนอัตโนมัติ — ใช้วิธีวาง token แทน"))
