@@ -2713,15 +2713,23 @@ const CONN_GUIDE = {
              {key:"pass", label:"รหัสผ่าน / App Password", placeholder:"App Password 16 หลัก"},
              {key:"to", label:"ส่งถึง (ผู้รับ)", placeholder:"to@example.com"}] },
   "WordPress": { doc: "https://wordpress.org/documentation/article/application-passwords/", docLabel: "วิธีสร้าง Application Password",
-    desc: "เขียนบทความขึ้นเว็บ WordPress ของคุณจริง (สร้างเป็นฉบับร่าง)",
-    steps: ["WP Admin → Users → Profile → Application Passwords → สร้างใหม่ คัดลอกรหัส",
-            "กรอก URL เว็บ + ชื่อผู้ใช้ + Application Password ด้านล่าง",
-            "กด “ส่งทดสอบ” จะสร้างโพสต์ฉบับร่างจริงบนเว็บ"],
-    fields: [{key:"url", label:"URL เว็บไซต์", placeholder:"https://yoursite.com"},
-             {key:"user", label:"ชื่อผู้ใช้ WordPress", placeholder:"admin"},
-             {key:"pass", label:"Application Password", placeholder:"xxxx xxxx xxxx xxxx"}] },
+    steps: ["เข้าสู่ระบบหน้าแอดมิน WordPress ของคุณ (yoursite.com/wp-admin)",
+            "ไปที่ Users → Profile (หรือ Users → ผู้ใช้ของคุณ) → เลื่อนหา “Application Passwords”",
+            "ตั้งชื่อเช่น “{BRAND}” → กด “Add New Application Password” → คัดลอกรหัสที่ขึ้นมา (มีเว้นวรรค เช่น abcd efgh ijkl …) — แสดงครั้งเดียวเท่านั้น",
+            "วาง Site URL, ชื่อผู้ใช้ WordPress และ Application Password นั้นด้านล่าง (เคล็ดลับ: วางที่อยู่เว็บปกติ — yoursite.com — ไม่ใช่ลิงก์ /wp-admin เดี๋ยวระบบจัดการให้เอง)",
+            "เสร็จ — สั่งทีมว่า “เขียนบทความเรื่อง…” แล้วระบบจะเผยแพร่ขึ้น WordPress ให้"],
+    fields: [{key:"url", label:"Site URL (ที่อยู่เว็บ WordPress)", placeholder:"https://yoursite.com"},
+             {key:"user", label:"ชื่อผู้ใช้ WordPress", placeholder:"ชื่อผู้ใช้ของคุณ"},
+             {key:"pass", label:"Application Password", placeholder:"xxxx xxxx xxxx xxxx xxxx xxxx"}] },
   "Facebook & Instagram": { field: "Access token", doc: "https://developers.facebook.com/", docLabel: "เปิด Meta for Developers", desc: "โพสต์/จัดการเพจ FB และ IG (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
-  "Shopify": { field: "Admin API access token", doc: "https://admin.shopify.com/", docLabel: "เปิด Shopify Admin", desc: "จัดการสินค้า/บทความร้าน Shopify (ต้องตั้ง Custom App — เก็บไว้ก่อน)" },
+  "Shopify": { doc: "https://help.shopify.com/en/manual/apps/app-types/custom-apps", docLabel: "วิธีสร้าง Custom App ของ Shopify",
+    steps: ["ในแอดมิน Shopify: Settings → Apps and sales channels → “Develop apps” → “Allow custom app development” (ทำครั้งเดียว)",
+            "กด “Create an app” → ตั้งชื่อ “{BRAND}” → แท็บ “Configuration” → “Admin API integration” → เพิ่ม scope: write_content (และ read_content) แล้ว Save",
+            "แท็บ “API credentials” → “Install app” → กดเผย & คัดลอก “Admin API access token” (ขึ้นต้นด้วย shpat_…) — แสดงครั้งเดียว",
+            "วางที่อยู่ร้าน (แบบ your-store.myshopify.com — ไม่ใช่โดเมนที่ตั้งเอง) และ token นั้นด้านล่าง",
+            "เสร็จ — สั่งว่า “เขียนบทความลงร้าน…” แล้วทีมจะเผยแพร่ขึ้นบล็อก Shopify ให้"],
+    fields: [{key:"store", label:"Store address", placeholder:"your-store.myshopify.com"},
+             {key:"token", label:"Admin API access token", placeholder:"shpat_…"}] },
   "Google Drive": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียนไฟล์ใน Google Drive (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
   "Google Sheets": { field: "OAuth credential / Key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อ่าน/เขียน Google Sheets (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
   "YouTube": { field: "OAuth credential / API key", doc: "https://console.cloud.google.com/apis/credentials", docLabel: "เปิด Google Cloud Credentials", desc: "อัปโหลด/จัดการวิดีโอ YouTube (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
@@ -2751,10 +2759,11 @@ const CONN_GUIDE = {
   "MetaTrader 5 (Forex)": { field: "Webhook / Bridge URL", doc: "https://www.metatrader5.com/", docLabel: "เปิดเว็บ MetaTrader 5", desc: "เชื่อมสัญญาณเข้า MT5 ผ่าน bridge/webhook (ต้องใช้ตัวกลาง เช่น MetaApi — เก็บไว้ก่อน)" },
   "Shopee Affiliate": { field: "App ID / Secret", doc: "https://open.shopee.com/", docLabel: "เปิด Shopee Open Platform", desc: "ดึงลิงก์/รายงานพันธมิตร Shopee" },
 };
+function brand(){ return (($("brandName") && $("brandName").textContent) || "ToonOffice").trim(); }
 function openConnect(name, after){
   const g = CONN_GUIDE[name] || {};
   $("genTitle").textContent = "เชื่อม " + name;
-  const steps = (g.steps && g.steps.length) ? `<ol class="conn-steps">${g.steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>` : "";
+  const steps = (g.steps && g.steps.length) ? `<ol class="conn-steps">${g.steps.map(s => `<li>${escapeHtml(s.replace(/\{BRAND\}/g, brand()))}</li>`).join("")}</ol>` : "";
   const doc = g.doc ? `<a class="conn-doc" href="${g.doc}" target="_blank" rel="noopener">${escapeHtml(g.docLabel || "เปิดหน้าขอคีย์ / เว็บผู้ให้บริการ")} ↗</a>` : "";
   const vid = g.video ? `<a class="conn-vid" href="${g.video}" target="_blank" rel="noopener">${escapeHtml(g.videoLabel || "ดูวิดีโอสอน")} ▶</a>` : "";
   const fields = g.fields || [{ key:"config", label:(g.field || "API token / Webhook URL"), placeholder:(g.placeholder || "วางคีย์ / URL ที่นี่") }];
@@ -2763,7 +2772,7 @@ function openConnect(name, after){
     ${g.desc ? `<p class="conn-desc">${escapeHtml(g.desc)}</p>` : ""}
     ${(steps || doc || vid) ? `<div class="conn-howto"><div class="conn-howto-h">วิธีขอคีย์ / เชื่อม</div>${steps}${doc}${vid}</div>` : ""}
     ${inputs}
-    <p class="conn-note">นี่คือ<b>บัญชีของคุณเอง</b> — เอเจนต์จะทำงานก็ต่อเมื่อคุณสั่งเท่านั้น ToonOffice แค่รันคำสั่งที่คุณกด ไม่มีอะไรเกิดขึ้นเอง</p>
+    <p class="conn-note">นี่คือ<b>บัญชีของคุณเอง</b> — เอเจนต์จะทำงานก็ต่อเมื่อคุณสั่งเท่านั้น ${escapeHtml(brand())} แค่รันคำสั่งที่คุณกด ไม่มีอะไรเกิดขึ้นเอง</p>
     <button class="save" id="conn_save">บันทึก / เชื่อม</button>`;
   $("conn_save").addEventListener("click", async () => {
     let config;
@@ -2857,7 +2866,7 @@ async function disconnectConnector(name){
 }
 async function sendTest(name){
   toastNote("กำลังส่งทดสอบไป " + name + "…", "#7c5cff");
-  let r; try { r = await postJSON("/api/connector/send", { name, text: "🔔 ทดสอบจาก ToonOffice — เชื่อมต่อสำเร็จ!" }); }
+  let r; try { r = await postJSON("/api/connector/send", { name, text: "🔔 ทดสอบจาก " + brand() + " — เชื่อมต่อสำเร็จ!" }); }
   catch(e){ r = { error: "ส่งไม่สำเร็จ" }; }
   if (r && r.ok) toastNote(name + ": " + (r.msg || "ส่งสำเร็จ ✅ ไปเช็กปลายทางได้เลย"), "#22c55e");
   else toastNote(name + ": " + (r && r.error || "ส่งไม่สำเร็จ"), "#ef4444");
