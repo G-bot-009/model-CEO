@@ -2569,7 +2569,7 @@ async function genImage(prompt, size){
 function openAgentCmd(id){
   const m = meta(id);
   openGen(`สั่งงาน ${m.emoji} ${m.name} โดยตรง`,
-    [{key:"task", label:"คำสั่ง / งานที่อยากให้ทำ", type:"textarea", placeholder:"เช่น เขียนสคริปต์คลิปสั้นแนะนำสินค้า"}],
+    [{key:"task", label:"คำสั่ง / งานที่อยากให้ทำ", type:"textarea", placeholder:"เช่น ให้ฉันช่วยเหลือคุณอย่างไร"}],
     (v) => { if (!v.task) return; closeModal("genModal"); sendAgentTask(id, v.task); });
 }
 function sendAgentTask(id, task){
