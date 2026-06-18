@@ -1056,6 +1056,20 @@
           </div>
           <div style="font-size:11px;color:#64748b;margin-top:6px">token + Ad Account ID เอาจาก Meta Graph API / Ads Manager (เลขหลัง act_)</div>
         </div>
+        <div class="panel"><h3>🖼️ ตรวจรูปก่อนยิงแอด (AI วิเคราะห์ภาพ)</h3>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:10px">อัปโหลดรูปครีเอทีฟ → AI เช็คโอกาสผ่านรีวิว Meta · เสี่ยงเข้าข่ายพนัน/เนื้อหาต้องห้ามไหม · คนเห็นแล้วรู้สึกยังไง · พร้อมคำแนะนำให้ผ่าน</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+            <div style="display:flex;flex-direction:column;gap:8px;width:200px;max-width:45%">
+              <input type="file" id="adsImgFile" accept="image/*" style="font-size:12px;color:#cbd5e1">
+              <img id="adsImgPrev" style="display:none;width:100%;border-radius:10px;border:1px solid #334155">
+            </div>
+            <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:8px">
+              <input id="adsImgNote" class="numfld" style="margin:0" placeholder="แคปชั่น/บริบทที่จะใช้ (ไม่บังคับ)">
+              <button class="send" id="adsImgGo" style="padding:10px 18px;align-self:flex-start">🔍 วิเคราะห์ภาพ</button>
+            </div>
+          </div>
+          <div id="adsImgResult" style="margin-top:14px"></div>
+        </div>
         <div class="panel"><h3>🤖 คำแนะนำจาก AI (แยกตามบัญชี)</h3>
           <div id="adsTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
           <div id="adsRecos" style="display:flex;flex-direction:column;gap:10px"></div></div>
@@ -4132,6 +4146,40 @@ $("adsAccAdd").addEventListener("click", async () => {
   if (r.error){ toastNote(r.error,"#f59e0b"); return; }
   $("adsAccLabel").value=""; $("adsAccToken").value=""; $("adsAccId").value="";
   toastNote("เพิ่มบัญชี Facebook แล้ว ✅","#22c55e"); loadAds();
+});
+let adsImgData = null, adsImgMime = "image/jpeg";
+$("adsImgFile").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  adsImgMime = f.type || "image/jpeg";
+  const rd = new FileReader();
+  rd.onload = () => {
+    const url = rd.result;
+    adsImgData = url.split(",")[1] || "";
+    const p = $("adsImgPrev"); p.src = url; p.style.display = "block";
+    $("adsImgResult").innerHTML = "";
+  };
+  rd.readAsDataURL(f);
+});
+$("adsImgGo").addEventListener("click", async () => {
+  if (!adsImgData){ toastNote("อัปโหลดรูปก่อน","#f59e0b"); return; }
+  const b = $("adsImgGo"), o = b.textContent; b.disabled = true; b.textContent = "⏳ AI กำลังดูภาพ…";
+  const r = await postJSON("/api/ads/analyze-image", { image: adsImgData, media_type: adsImgMime, note: $("adsImgNote").value.trim() });
+  b.disabled = false; b.textContent = o;
+  if (r.error){ $("adsImgResult").innerHTML = `<div style="color:#f59e0b">${escapeHtml(r.error)}</div>`; return; }
+  const x = r.result || {};
+  const vc = { "ผ่าน":"#22c55e", "เสี่ยง":"#f59e0b", "ไม่ผ่าน":"#ef4444" }[x.verdict] || "#a5b4fc";
+  const gc = { "ต่ำ":"#22c55e", "กลาง":"#f59e0b", "สูง":"#ef4444" }[x.gambling_risk] || "#64748b";
+  const flags = (x.policy_flags||[]).map(f => `<li>${escapeHtml(f)}</li>`).join("");
+  const sugg = (x.suggestions||[]).map(f => `<li>${escapeHtml(f)}</li>`).join("");
+  $("adsImgResult").innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <span class="tag" style="background:${vc}22;color:${vc};font-weight:800">ผล: ${escapeHtml(x.verdict||"-")}</span>
+      ${x.pass_score!=null?`<span class="tag" style="background:#1e293b;color:#e2e8f0">โอกาสผ่าน ${x.pass_score}%</span>`:""}
+      <span class="tag" style="background:${gc}22;color:${gc}">ความเสี่ยงพนัน: ${escapeHtml(x.gambling_risk||"-")}</span>
+    </div>
+    ${x.feeling?`<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:10px 12px;margin-bottom:10px"><b style="color:#fff">😊 คนเห็นภาพนี้จะรู้สึก</b><div style="color:#cbd5e1;margin-top:4px;line-height:1.6">${escapeHtml(x.feeling)}</div></div>`:""}
+    ${flags?`<div style="margin-bottom:10px"><b style="color:#f59e0b">⚠️ จุดสุ่มเสี่ยงนโยบาย</b><ul style="color:#fca5a5;margin:6px 0 0;padding-left:20px;line-height:1.7">${flags}</ul></div>`:""}
+    ${sugg?`<div><b style="color:#22c55e">✅ คำแนะนำให้ผ่านรีวิว</b><ul style="color:#cbd5e1;margin:6px 0 0;padding-left:20px;line-height:1.7">${sugg}</ul></div>`:""}`;
 });
 $("adsMode").addEventListener("change", e => postJSON("/api/ads/settings", { mode: e.target.value }).then(() => toastNote("เปลี่ยนโหมดแล้ว", "#22c55e")));
 $("adsReview").addEventListener("click", async () => {

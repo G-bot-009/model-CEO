@@ -2355,6 +2355,56 @@ async def ads_dismiss(p: dict) -> dict:
     return {"ok": True}
 
 
+_ADS_IMG_SYS = (
+    "คุณเป็นผู้เชี่ยวชาญนโยบายโฆษณาของ Meta (Facebook/Instagram Advertising Policies) "
+    "และนักการตลาดสายภาพ หน้าที่คุณคือตรวจรูปครีเอทีฟ 'ก่อนยิงแอด' ว่ามีโอกาสผ่านรีวิวของ Meta ไหม "
+    "ดูความเสี่ยงเข้าข่ายเนื้อหาต้องห้าม เช่น การพนัน/คาสิโน/เดิมพัน, ยา/อาหารเสริมเกินจริง, "
+    "อาวุธ, เนื้อหาผู้ใหญ่, คำกล่าวอ้างเกินจริง, before/after, ภาพร่างกายเชิงลบ, เนื้อหาหลอกลวง ฯลฯ "
+    "และวิเคราะห์ว่าคนเห็นภาพนี้จะรู้สึกอย่างไร (อารมณ์/ความประทับใจแรก) "
+    "ตอบเป็นภาษาไทยทั้งหมด และตอบกลับเป็น JSON อย่างเดียว ห้ามมีข้อความอื่นนอก JSON "
+    'รูปแบบ: {"verdict":"ผ่าน|เสี่ยง|ไม่ผ่าน","pass_score":0-100,'
+    '"gambling_risk":"ต่ำ|กลาง|สูง","policy_flags":["ข้อที่สุ่มเสี่ยง..."],'
+    '"feeling":"คนเห็นภาพนี้จะรู้สึก...","suggestions":["ปรับแบบนี้เพื่อให้ผ่าน..."]}'
+)
+
+
+@app.post("/api/ads/analyze-image")
+async def ads_analyze_image(p: dict) -> dict:
+    """วิเคราะห์รูปครีเอทีฟก่อนยิงแอดด้วย Claude vision — เช็คความเสี่ยงนโยบาย Meta + อารมณ์ผู้ชม."""
+    data = (p.get("image") or "").strip()
+    media_type = (p.get("media_type") or "image/jpeg").strip()
+    note = (p.get("note") or "").strip()
+    if "," in data and data.startswith("data:"):      # เผื่อส่ง data URL มาเต็ม
+        head, data = data.split(",", 1)
+        if "image/" in head:
+            media_type = head.split(":", 1)[1].split(";", 1)[0]
+    if not data:
+        return {"error": "ยังไม่ได้แนบรูป — อัปโหลดรูปก่อน"}
+    prompt = "ตรวจรูปครีเอทีฟนี้ก่อนยิงแอด Facebook/Instagram"
+    if note:
+        prompt += f"\nบริบท/แคปชั่นที่จะใช้: {note}"
+    try:
+        resp = await _client.messages.create(
+            model=get_model(), max_tokens=1100, **thinking_kwargs(),
+            system=_ADS_IMG_SYS,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}},
+                {"type": "text", "text": prompt},
+            ]}])
+        txt = next((b.text for b in resp.content if b.type == "text"), "").strip()
+        if txt.startswith("```"):
+            txt = txt.split("```", 2)[1].lstrip("json").strip() if txt.count("```") >= 2 else txt.strip("`")
+        import json as _json
+        try:
+            result = _json.loads(txt)
+        except Exception:
+            s, e = txt.find("{"), txt.rfind("}")
+            result = _json.loads(txt[s:e + 1]) if s >= 0 and e > s else {"verdict": "เสี่ยง", "feeling": txt, "suggestions": []}
+        return {"ok": True, "result": result}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
 # ---- Public: click redirect + the public bio page (catch-all, keep last) ----
 @app.get("/l/{link_id}")
 async def bio_click(link_id: int, request: Request):
