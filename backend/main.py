@@ -2083,6 +2083,151 @@ async def projects_delete(pid: int) -> dict:
     return {"ok": True}
 
 
+# ============================== Bio Link Page ===============================
+_BIO_RESERVED = {"", "api", "oauth", "login", "logout", "ws", "l", "p", "health",
+                 "favicon.ico", "robots.txt", "static", "assets"}
+
+
+def _ip_hash(request: Request) -> str:
+    ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+          or (request.client.host if request.client else "") or "")
+    return hashlib.sha256((ip + "|goffice-bio").encode()).hexdigest()[:16]
+
+
+def _esc(s) -> str:
+    return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _norm_slug(s: str) -> str:
+    return (s or "").strip().strip("/").strip()
+
+
+@app.get("/api/bio/pages")
+async def bio_pages() -> dict:
+    pages = db.bio_list_pages()
+    for p in pages:
+        a = db.bio_analytics(p["id"], 90)
+        p["views"] = a["views"]; p["clicks"] = a["clicks"]
+        p["link_count"] = len(db.bio_list_links(p["id"]))
+    return {"pages": pages, "base": PUBLIC_BASE_URL}
+
+
+@app.post("/api/bio/page")
+async def bio_page_save(p: dict) -> dict:
+    slug = _norm_slug(p.get("slug") or "")
+    if not slug or slug.lower() in _BIO_RESERVED or "/" in slug:
+        return {"error": "slug ไม่ถูกต้อง (ห้ามว่าง/ซ้ำคำสงวน/มี /)"}
+    pid = p.get("id")
+    if db.bio_slug_taken(slug, int(pid) if pid else None):
+        return {"error": "slug นี้ถูกใช้แล้ว ลองตั้งใหม่"}
+    name = (p.get("display_name") or slug).strip()
+    avatar = (p.get("avatar_url") or "").strip()
+    bio = (p.get("bio") or "").strip()
+    theme = "dark" if p.get("theme") == "dark" else "light"
+    if pid:
+        db.bio_update_page(int(pid), slug, name, avatar, bio, theme)
+        return {"ok": True, "id": int(pid)}
+    nid = db.bio_create_page(slug, name, avatar, bio, theme)
+    return {"ok": True, "id": nid}
+
+
+@app.get("/api/bio/page/{pid}")
+async def bio_page_detail(pid: int, range: str = "90d") -> dict:
+    page = db.bio_get_page(pid)
+    if not page:
+        return {"error": "ไม่พบเพจ"}
+    days = {"7d": 7, "30d": 30, "90d": 90}.get(range, 90)
+    return {"page": page, "links": db.bio_list_links(pid), "analytics": db.bio_analytics(pid, days)}
+
+
+@app.post("/api/bio/page/delete")
+async def bio_page_delete(p: dict) -> dict:
+    db.bio_delete_page(int(p.get("id")))
+    return {"ok": True}
+
+
+@app.post("/api/bio/link")
+async def bio_link_save(p: dict) -> dict:
+    label = (p.get("label") or "").strip()
+    url = (p.get("url") or "").strip()
+    if not label or not url:
+        return {"error": "ใส่ชื่อปุ่มและ URL"}
+    if not (url.startswith("http://") or url.startswith("https://")):
+        url = "https://" + url
+    ord_ = int(p.get("ord") or 0)
+    active = 0 if p.get("is_active") is False else 1
+    lid = p.get("id")
+    if lid:
+        db.bio_update_link(int(lid), label, url, ord_, active)
+        return {"ok": True, "id": int(lid)}
+    nid = db.bio_add_link(int(p.get("page_id")), label, url, ord_, active)
+    return {"ok": True, "id": nid}
+
+
+@app.post("/api/bio/link/delete")
+async def bio_link_delete(p: dict) -> dict:
+    db.bio_delete_link(int(p.get("id")))
+    return {"ok": True}
+
+
+@app.get("/api/bio/analytics")
+async def bio_analytics_api(page_id: int, range: str = "90d") -> dict:
+    days = {"7d": 7, "30d": 30, "90d": 90}.get(range, 90)
+    return db.bio_analytics(page_id, days)
+
+
+# ---- Public: click redirect + the public bio page (catch-all, keep last) ----
+@app.get("/l/{link_id}")
+async def bio_click(link_id: int, request: Request):
+    link = db.bio_get_link(link_id)
+    if not link:
+        return RedirectResponse("/")
+    db.bio_record_click(link_id, link["page_id"], _ip_hash(request), request.headers.get("referer", ""))
+    return RedirectResponse(link["url"])
+
+
+def _render_bio(page: dict, links: list) -> str:
+    dark = page.get("theme") == "dark"
+    bg = "#0b1020" if dark else "#f4f1ea"
+    fg = "#e5e7eb" if dark else "#1f2937"
+    sub = "#94a3b8" if dark else "#6b7280"
+    card = "#161c2e" if dark else "#ffffff"
+    avatar = page.get("avatar_url") or ""
+    av = (f'<img src="{_esc(avatar)}" style="width:96px;height:96px;border-radius:50%;object-fit:cover;margin:0 auto 12px;display:block">'
+          if avatar else
+          f'<div style="width:96px;height:96px;border-radius:50%;margin:0 auto 12px;background:#6366f1;color:#fff;font-size:42px;display:flex;align-items:center;justify-content:center">{_esc((page.get("display_name") or "?")[:1])}</div>')
+    btns = "".join(
+        f'<a href="/l/{l["id"]}" style="display:block;background:{card};color:{fg};text-decoration:none;'
+        f'padding:16px;border-radius:14px;margin:10px 0;font-weight:700;text-align:center;'
+        f'box-shadow:0 2px 8px rgba(0,0,0,.08)">{_esc(l["label"])}</a>'
+        for l in links if l.get("is_active"))
+    bio_html = f'<p style="color:{sub};margin:4px 0 18px">{_esc(page.get("bio"))}</p>' if page.get("bio") else ""
+    return f"""<!doctype html><html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{_esc(page.get("display_name"))}</title></head>
+<body style="margin:0;background:{bg};font-family:-apple-system,Segoe UI,Roboto,'Noto Sans Thai',sans-serif;min-height:100vh">
+<div style="max-width:520px;margin:0 auto;padding:48px 20px">
+  {av}
+  <h1 style="color:{fg};text-align:center;margin:0 0 4px;font-size:22px">{_esc(page.get("display_name"))}</h1>
+  <div style="text-align:center">{bio_html}</div>
+  {btns or f'<p style="color:{sub};text-align:center">ยังไม่มีลิงก์</p>'}
+  <p style="text-align:center;color:{sub};font-size:12px;margin-top:28px">⚡ by G Office</p>
+</div></body></html>"""
+
+
+@app.get("/{slug}")
+async def bio_public(slug: str, request: Request):
+    s = _norm_slug(slug)
+    if s.lower() in _BIO_RESERVED:
+        return RedirectResponse("/")
+    page = db.bio_get_page_by_slug(s)
+    if not page:
+        return HTMLResponse("<!doctype html><meta charset='utf-8'><div style='font-family:sans-serif;text-align:center;padding:60px'>404 — ไม่พบหน้านี้</div>", status_code=404)
+    db.bio_record_view(page["id"], _ip_hash(request), request.headers.get("user-agent", ""))
+    return HTMLResponse(_render_bio(page, db.bio_list_links(page["id"], active_only=True)))
+
+
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()

@@ -180,6 +180,24 @@ def init() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER, summary TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS bio_pages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT UNIQUE, display_name TEXT, avatar_url TEXT,
+                bio TEXT, theme TEXT, created_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS bio_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id INTEGER, label TEXT, url TEXT, ord INTEGER,
+                is_active INTEGER DEFAULT 1, created_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS bio_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id INTEGER, visited_at TEXT, ip_hash TEXT, ua TEXT
+            );
+            CREATE TABLE IF NOT EXISTS bio_clicks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                link_id INTEGER, page_id INTEGER, clicked_at TEXT, ip_hash TEXT, referrer TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -1185,3 +1203,116 @@ def delete_project(pid) -> None:
 def set_stage_engine(stage_id, key_id) -> None:
     with _conn() as c:
         c.execute("UPDATE project_stages SET key_id=? WHERE id=?", (key_id, stage_id))
+
+
+# --- Bio Link Page ----------------------------------------------------------
+def bio_create_page(slug, display_name, avatar_url, bio="", theme="light") -> int:
+    with _conn() as c:
+        cur = c.execute("INSERT INTO bio_pages (slug, display_name, avatar_url, bio, theme, created_at) "
+                        "VALUES (?,?,?,?,?,?)", (slug, display_name, avatar_url, bio, theme, _now()))
+        return cur.lastrowid
+
+def bio_update_page(pid, slug, display_name, avatar_url, bio="", theme="light") -> None:
+    with _conn() as c:
+        c.execute("UPDATE bio_pages SET slug=?, display_name=?, avatar_url=?, bio=?, theme=? WHERE id=?",
+                  (slug, display_name, avatar_url, bio, theme, pid))
+
+def bio_list_pages() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM bio_pages ORDER BY id DESC").fetchall()
+    return [dict(r) for r in rows]
+
+def bio_get_page(pid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM bio_pages WHERE id=?", (pid,)).fetchone()
+    return dict(r) if r else None
+
+def bio_get_page_by_slug(slug) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM bio_pages WHERE slug=?", (slug,)).fetchone()
+    return dict(r) if r else None
+
+def bio_slug_taken(slug, exclude_id=None) -> bool:
+    with _conn() as c:
+        if exclude_id:
+            r = c.execute("SELECT 1 FROM bio_pages WHERE slug=? AND id<>?", (slug, exclude_id)).fetchone()
+        else:
+            r = c.execute("SELECT 1 FROM bio_pages WHERE slug=?", (slug,)).fetchone()
+    return bool(r)
+
+def bio_delete_page(pid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM bio_pages WHERE id=?", (pid,))
+        c.execute("DELETE FROM bio_links WHERE page_id=?", (pid,))
+        c.execute("DELETE FROM bio_views WHERE page_id=?", (pid,))
+        c.execute("DELETE FROM bio_clicks WHERE page_id=?", (pid,))
+
+def bio_add_link(page_id, label, url, ord=0, is_active=1) -> int:
+    with _conn() as c:
+        cur = c.execute("INSERT INTO bio_links (page_id, label, url, ord, is_active, created_at) "
+                        "VALUES (?,?,?,?,?,?)", (page_id, label, url, ord, is_active, _now()))
+        return cur.lastrowid
+
+def bio_update_link(lid, label, url, ord, is_active) -> None:
+    with _conn() as c:
+        c.execute("UPDATE bio_links SET label=?, url=?, ord=?, is_active=? WHERE id=?",
+                  (label, url, ord, is_active, lid))
+
+def bio_delete_link(lid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM bio_links WHERE id=?", (lid,))
+        c.execute("DELETE FROM bio_clicks WHERE link_id=?", (lid,))
+
+def bio_list_links(page_id, active_only=False) -> list[dict]:
+    q = "SELECT * FROM bio_links WHERE page_id=?"
+    if active_only:
+        q += " AND is_active=1"
+    q += " ORDER BY ord, id"
+    with _conn() as c:
+        rows = c.execute(q, (page_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+def bio_get_link(lid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM bio_links WHERE id=?", (lid,)).fetchone()
+    return dict(r) if r else None
+
+def bio_record_view(page_id, ip_hash, ua) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO bio_views (page_id, visited_at, ip_hash, ua) VALUES (?,?,?,?)",
+                  (page_id, _now(), ip_hash, (ua or "")[:200]))
+
+def bio_record_click(link_id, page_id, ip_hash, referrer) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO bio_clicks (link_id, page_id, clicked_at, ip_hash, referrer) VALUES (?,?,?,?,?)",
+                  (link_id, page_id, _now(), ip_hash, (referrer or "")[:300]))
+
+def _since(days: int) -> str:
+    return (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+
+def bio_analytics(page_id, days=90) -> dict:
+    since = _since(days)
+    with _conn() as c:
+        views = c.execute("SELECT COUNT(*) FROM bio_views WHERE page_id=? AND visited_at>=?",
+                          (page_id, since)).fetchone()[0]
+        uniq = c.execute("SELECT COUNT(DISTINCT ip_hash) FROM bio_views WHERE page_id=? AND visited_at>=?",
+                         (page_id, since)).fetchone()[0]
+        clicks = c.execute("SELECT COUNT(*) FROM bio_clicks WHERE page_id=? AND clicked_at>=?",
+                           (page_id, since)).fetchone()[0]
+        daily = c.execute(
+            "SELECT substr(clicked_at,1,10) d, COUNT(*) n FROM bio_clicks WHERE page_id=? AND clicked_at>=? "
+            "GROUP BY d ORDER BY d", (page_id, since)).fetchall()
+        daily_v = c.execute(
+            "SELECT substr(visited_at,1,10) d, COUNT(*) n FROM bio_views WHERE page_id=? AND visited_at>=? "
+            "GROUP BY d ORDER BY d", (page_id, since)).fetchall()
+        per_link = c.execute(
+            "SELECT l.id, l.label, l.url, COUNT(lc.id) clicks FROM bio_links l "
+            "LEFT JOIN bio_clicks lc ON l.id=lc.link_id AND lc.clicked_at>=? "
+            "WHERE l.page_id=? GROUP BY l.id ORDER BY clicks DESC", (since, page_id)).fetchall()
+    return {
+        "views": views, "unique": uniq, "clicks": clicks,
+        "ctr": round(clicks / views * 100, 1) if views else 0.0,
+        "daily_clicks": [dict(r) for r in daily],
+        "daily_views": [dict(r) for r in daily_v],
+        "per_link": [dict(r) for r in per_link],
+    }

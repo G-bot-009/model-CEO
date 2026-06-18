@@ -416,6 +416,7 @@
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
+      <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
     </nav>
@@ -988,6 +989,25 @@
           <div class="panel"><h3>📋 โปรเจกต์ของฉัน</h3><div id="prList" style="display:flex;flex-direction:column;gap:10px"></div></div>
         </div>
         <div id="prDetail" style="display:none"></div>
+      </section>
+
+      <!-- BIO LINK PAGE -->
+      <section class="view" id="view-bio">
+        <div id="biListWrap">
+          <div class="panel"><h3>🔗 สร้าง Bio Link Page</h3>
+            <p style="color:#94a3b8;font-size:13px;margin:4px 0 10px">หน้ารวมลิงก์แบบ Linktree — URL กำหนดเองได้ (ไทย/อีโมจิ) + นับสถิติคลิกจริง</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input id="biSlug" class="numfld" style="width:200px;margin:0" placeholder="slug เช่น ร้านของฉัน">
+              <input id="biName" class="numfld" style="width:200px;margin:0" placeholder="ชื่อที่แสดง">
+              <input id="biAvatar" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="URL รูปโปรไฟล์ (ออปชัน)">
+              <select id="biTheme" class="numfld" style="width:auto;margin:0"><option value="light">สว่าง</option><option value="dark">มืด</option></select>
+              <button class="qbtn" id="biCreate" style="font-weight:700">➕ สร้าง</button>
+            </div>
+            <input id="biBio" class="numfld" style="width:100%;margin:8px 0 0" placeholder="คำโปรย/แนะนำตัวสั้นๆ (ออปชัน)">
+          </div>
+          <div class="panel"><h3>📋 เพจของฉัน</h3><div id="biList" style="display:flex;flex-direction:column;gap:10px"></div></div>
+        </div>
+        <div id="biDetail" style="display:none"></div>
       </section>
 
       <!-- SETTINGS -->
@@ -2985,10 +3005,122 @@ async function prOpen(pid){
   });
 }
 
+/* ---------- Bio Link Page ---------- */
+async function loadBio(){
+  $("biDetail").style.display = "none"; $("biListWrap").style.display = "";
+  let d; try { d = await (await fetch("/api/bio/pages")).json(); } catch(e){ return; }
+  const origin = location.origin;
+  $("biList").innerHTML = (d.pages||[]).length ? d.pages.map(p => `
+    <div class="wf-row" style="justify-content:space-between;align-items:center;gap:10px">
+      <div style="min-width:0">
+        <div style="font-weight:800;color:#fff">${escapeHtml(p.display_name)} <span class="tag" style="background:#1e293b;color:#94a3b8">${p.link_count} ลิงก์</span></div>
+        <div style="font-size:12px;color:#a5b4fc;word-break:break-all">${origin}/${escapeHtml(p.slug)}</div>
+        <div style="font-size:12px;color:#6ee7b7">👁️ ${p.views} วิว · 🖱️ ${p.clicks} คลิก</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a class="qbtn" href="/${encodeURIComponent(p.slug)}" target="_blank" rel="noopener">↗ เปิด</a>
+        <button class="qbtn bi-open" data-id="${p.id}">จัดการ →</button>
+        <button class="qbtn bi-del" data-id="${p.id}" style="color:#f87171">🗑️</button>
+      </div>
+    </div>`).join("") : '<div style="color:#64748b">ยังไม่มีเพจ — ตั้ง slug + ชื่อ ด้านบนแล้วกดสร้าง</div>';
+  $("biList").querySelectorAll(".bi-open").forEach(x => x.onclick = () => biOpen(+x.dataset.id));
+  $("biList").querySelectorAll(".bi-del").forEach(x => x.onclick = async () => { if(!confirm("ลบเพจนี้ + สถิติทั้งหมด?"))return; await postJSON("/api/bio/page/delete",{id:+x.dataset.id}); loadBio(); });
+}
+async function biCreate(){
+  const r = await postJSON("/api/bio/page", { slug:$("biSlug").value, display_name:$("biName").value, avatar_url:$("biAvatar").value, bio:$("biBio").value, theme:$("biTheme").value });
+  if (r.error){ toastNote(r.error,"#f59e0b"); return; }
+  $("biSlug").value=""; $("biName").value=""; $("biAvatar").value=""; $("biBio").value="";
+  toastNote("สร้างเพจแล้ว ✅","#22c55e"); biOpen(r.id);
+}
+let biRange = "90d";
+async function biOpen(pid){
+  let d; try { d = await (await fetch(`/api/bio/page/${pid}?range=${biRange}`)).json(); } catch(e){ return; }
+  if (d.error) return;
+  $("biListWrap").style.display = "none"; $("biDetail").style.display = "";
+  const pg = d.page, a = d.analytics, origin = location.origin, url = origin + "/" + pg.slug;
+  const linksHtml = (d.links||[]).map(l => `
+    <div class="wf-row" style="justify-content:space-between;align-items:center;gap:8px">
+      <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+        <input type="checkbox" class="bi-active" data-id="${l.id}" ${l.is_active?'checked':''} style="width:16px;height:16px">
+        <div style="min-width:0"><div style="font-weight:700;color:#fff">${escapeHtml(l.label)}</div>
+          <div style="font-size:12px;color:#94a3b8;word-break:break-all">${escapeHtml(l.url)}</div></div>
+      </label>
+      <button class="qbtn bi-ledit" data-id="${l.id}" data-label="${escapeHtml(l.label)}" data-url="${escapeHtml(l.url)}">✏️</button>
+      <button class="qbtn bi-ldel" data-id="${l.id}" style="color:#f87171">🗑️</button>
+    </div>`).join("") || '<div style="color:#64748b">ยังไม่มีลิงก์</div>';
+  const maxc = Math.max(1, ...a.per_link.map(x=>x.clicks));
+  const perLink = a.per_link.map(x => `
+    <div style="margin:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px;color:#cbd5e1">
+      <span>${escapeHtml(x.label)}</span><span>${x.clicks} คลิก · CTR ${a.views?((x.clicks/a.views*100).toFixed(1)):0}%</span></div>
+      <div style="background:#1e293b;border-radius:6px;height:8px;margin-top:3px"><div style="width:${x.clicks/maxc*100}%;height:8px;background:#6366f1;border-radius:6px"></div></div></div>`).join("") || '<div style="color:#64748b">—</div>';
+  $("biDetail").innerHTML = `
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><h3 style="margin:0">${escapeHtml(pg.display_name)}</h3>
+          <a href="/${encodeURIComponent(pg.slug)}" target="_blank" rel="noopener" style="color:#a5b4fc;font-size:13px;word-break:break-all">${escapeHtml(url)}</a></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="qbtn" id="biBack">← กลับ</button>
+          <button class="qbtn" id="biCopy">📋 คัดลอกลิงก์</button>
+          <a class="qbtn" href="/${encodeURIComponent(pg.slug)}" target="_blank" rel="noopener" style="font-weight:700">↗ เปิดหน้าเพจ</a>
+        </div>
+      </div>
+    </div>
+    <div class="panel"><h3>✏️ ข้อมูลเพจ</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="biE_slug" class="numfld" style="width:180px;margin:0" value="${escapeHtml(pg.slug)}">
+        <input id="biE_name" class="numfld" style="width:180px;margin:0" value="${escapeHtml(pg.display_name)}">
+        <input id="biE_avatar" class="numfld" style="flex:1;min-width:180px;margin:0" value="${escapeHtml(pg.avatar_url||'')}" placeholder="URL รูป">
+        <select id="biE_theme" class="numfld" style="width:auto;margin:0"><option value="light" ${pg.theme!=='dark'?'selected':''}>สว่าง</option><option value="dark" ${pg.theme==='dark'?'selected':''}>มืด</option></select>
+        <button class="qbtn" id="biE_save" style="font-weight:700">💾 บันทึก</button>
+      </div>
+      <input id="biE_bio" class="numfld" style="width:100%;margin:8px 0 0" value="${escapeHtml(pg.bio||'')}" placeholder="คำโปรย">
+    </div>
+    <div class="panel"><h3>🔘 ปุ่มลิงก์</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <input id="biL_label" class="numfld" style="width:180px;margin:0" placeholder="ชื่อปุ่ม">
+        <input id="biL_url" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="URL ปลายทาง">
+        <button class="qbtn" id="biL_add" style="font-weight:700">➕ เพิ่มปุ่ม</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">${linksHtml}</div>
+    </div>
+    <div class="panel"><h3>📊 สถิติ
+      <select id="biRange" class="numfld" style="width:auto;margin:0 0 0 8px;display:inline-block">
+        <option value="7d" ${biRange==='7d'?'selected':''}>7 วัน</option>
+        <option value="30d" ${biRange==='30d'?'selected':''}>30 วัน</option>
+        <option value="90d" ${biRange==='90d'?'selected':''}>90 วัน</option></select></h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        ${[["วิว",a.views],["ผู้ชมไม่ซ้ำ",a.unique],["คลิกรวม",a.clicks],["CTR",a.ctr+"%"]].map(([l,v])=>`<div class="statcard"><div class="lab">${l}</div><div class="val" style="font-size:22px">${v}</div></div>`).join("")}
+      </div>
+      <div style="font-weight:700;color:#cbd5e1;margin-bottom:4px">คลิกแยกตามปุ่ม</div>
+      ${perLink}
+    </div>`;
+  $("biBack").onclick = loadBio;
+  $("biCopy").onclick = () => { navigator.clipboard?.writeText(url); toastNote("คัดลอกลิงก์แล้ว","#22c55e"); };
+  $("biRange").onchange = e => { biRange = e.target.value; biOpen(pid); };
+  $("biE_save").onclick = async () => {
+    const r = await postJSON("/api/bio/page", { id:pid, slug:$("biE_slug").value, display_name:$("biE_name").value, avatar_url:$("biE_avatar").value, bio:$("biE_bio").value, theme:$("biE_theme").value });
+    if (r.error){ toastNote(r.error,"#f59e0b"); return; } toastNote("บันทึกแล้ว","#22c55e"); biOpen(pid);
+  };
+  $("biL_add").onclick = async () => {
+    const r = await postJSON("/api/bio/link", { page_id:pid, label:$("biL_label").value, url:$("biL_url").value, ord:(d.links||[]).length });
+    if (r.error){ toastNote(r.error,"#f59e0b"); return; } biOpen(pid);
+  };
+  $("biDetail").querySelectorAll(".bi-active").forEach(x => x.onchange = async () => {
+    const l = (d.links||[]).find(z => z.id == x.dataset.id);
+    await postJSON("/api/bio/link", { id:+x.dataset.id, label:l.label, url:l.url, ord:l.ord, is_active:x.checked }); biOpen(pid);
+  });
+  $("biDetail").querySelectorAll(".bi-ldel").forEach(x => x.onclick = async () => { await postJSON("/api/bio/link/delete",{id:+x.dataset.id}); biOpen(pid); });
+  $("biDetail").querySelectorAll(".bi-ledit").forEach(x => x.onclick = async () => {
+    const label = prompt("ชื่อปุ่ม", x.dataset.label); if (label===null) return;
+    const url = prompt("URL", x.dataset.url); if (url===null) return;
+    await postJSON("/api/bio/link", { id:+x.dataset.id, label, url, ord:0, is_active:true }); biOpen(pid);
+  });
+}
+
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", bio:"Bio Link Page", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
@@ -2996,6 +3128,7 @@ function showView(v) {
   if (v === "automation") loadAutomation();
   if (v === "tradebot") loadTradeBots();
   if (v === "content") loadContentFactory();
+  if (v === "bio") loadBio();
   if (v === "projects") loadProjects();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
@@ -3864,6 +3997,7 @@ $("cfSaveRules").addEventListener("click", cfSaveRules);
 $("cfSaveKeys").addEventListener("click", cfSaveKeys);
 $("prCreate").addEventListener("click", prCreate);
 $("prTemplate").addEventListener("change", prTplPreview);
+$("biCreate").addEventListener("click", biCreate);
 (function handleMcpOAuthReturn(){
   const q = new URLSearchParams(location.search);
   const ok = q.get("mcp_connected"), err = q.get("mcp_error");
