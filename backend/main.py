@@ -2052,6 +2052,63 @@ async def imageai_delete(p: dict) -> dict:
     return {"ok": True}
 
 
+# ============================== WordPress writer ============================
+def _wp_cfg() -> dict:
+    row = db.get_connector("WordPress")
+    if not row or row.get("status") != "connected":
+        return {}
+    try:
+        return json.loads(row.get("config") or "{}")
+    except Exception:
+        return {}
+
+
+_WP_ARTICLE_PROMPT = (
+    "เขียนบทความ SEO ภาษาไทยที่อ่านลื่น น่าเชื่อถือ สำหรับเผยแพร่บนเว็บ WordPress "
+    "หัวข้อ/บริบท: {topic}\n\n"
+    "ตอบกลับเป็น JSON อย่างเดียว: {{\"title\":\"พาดหัวที่ดึงดูด\","
+    "\"html\":\"เนื้อหาเต็มเป็น HTML ใช้ <h2>,<h3>,<p>,<ul>,<li>,<strong> "
+    "ความยาว 500-900 คำ มีบทนำ หัวข้อย่อย และสรุปปิดท้าย\"}}"
+)
+
+
+@app.post("/api/wordpress/write")
+async def wordpress_write(p: dict) -> dict:
+    """Claude เขียนบทความเต็มแล้วโพสต์ขึ้น WordPress จริง (เลือกร่าง/เผยแพร่)."""
+    import httpx
+    cfg = _wp_cfg()
+    if not (cfg.get("url") and cfg.get("user") and cfg.get("pass")):
+        return {"error": "ยังไม่ได้เชื่อม WordPress — กรอก Site URL + ชื่อผู้ใช้ + Application Password ก่อน"}
+    topic = (p.get("topic") or "").strip()
+    if not topic:
+        return {"error": "ใส่หัวข้อ/เรื่องที่อยากให้เขียนก่อน"}
+    status = "publish" if p.get("publish") else "draft"
+    model = model_for_agent("content")
+    try:
+        raw = await _claude_text("content", model, _WP_ARTICLE_PROMPT.format(topic=topic), 3500)
+    except Exception as exc:
+        return {"error": "เขียนบทความไม่สำเร็จ: " + _friendly_err(exc)}
+    data = _parse_json(raw)
+    title = (data.get("title") or topic).strip()
+    html = (data.get("html") or raw).strip()
+    url = cfg["url"].rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(f"{url}/wp-json/wp/v2/posts",
+                             auth=(cfg["user"], cfg["pass"]),
+                             json={"title": title, "content": html, "status": status})
+    except Exception as exc:
+        return {"error": "ต่อ WordPress ไม่ได้: " + _friendly_err(exc)}
+    if r.status_code in (200, 201):
+        d = r.json()
+        db.add_decision("content", f"WordPress {status}: {title[:50]}")
+        return {"ok": True, "title": title, "status": status,
+                "link": d.get("link", ""), "edit": f"{url}/wp-admin/post.php?post={d.get('id')}&action=edit"}
+    if r.status_code in (401, 403):
+        return {"error": "สิทธิ์ไม่ผ่าน (401/403) — เช็กชื่อผู้ใช้ + Application Password"}
+    return {"error": f"WordPress ตอบ {r.status_code}: {r.text[:200]}"}
+
+
 # ============================== Projects ====================================
 def _stage_client(stage: dict):
     """Per-stage engine override (a chosen API key), else None (= per-agent default)."""
