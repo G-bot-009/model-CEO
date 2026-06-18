@@ -2578,37 +2578,37 @@ async function loadDirectory(){
     let agentPicker = "";
     if (c.connected && matched.length > 1){
       agentPicker = `<details class="dir-agents" data-id="${c.id}" style="margin-top:4px">
-        <summary style="cursor:pointer;color:#a5b4fc;font-size:13px;list-style:none">⚙️ เปิดใช้กับ ${onCount}/${matched.length} เอเจนต์ — เลือกเอเจนต์ ▾</summary>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;padding:8px;border:1px solid #1e293b;border-radius:10px">
-          ${matched.map(m => `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#cbd5e1">
+        <summary style="cursor:pointer;color:#6d28d9;font-weight:700;font-size:13px;list-style:none">⚙️ เปิดใช้กับ ${onCount}/${matched.length} เอเจนต์ — เลือกเอเจนต์ ▾</summary>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;padding:8px;border:1px solid #d6cdbb;border-radius:10px">
+          ${matched.map(m => `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#374151">
             <input type="checkbox" class="dir-agent-cb" data-id="${c.id}" data-aid="${m.id}" ${m.enabled?'checked':''} style="width:15px;height:15px;cursor:pointer">${m.name}</label>`).join("")}
         </div></details>`;
     } else if (c.connected && matched.length === 1){
-      agentPicker = `<div style="font-size:12px;color:#6ee7b7;margin-top:2px">✅ เปิดใช้อัตโนมัติกับ ${matched[0].name} แล้ว</div>`;
+      agentPicker = `<div style="font-size:12px;color:#047857;font-weight:700;margin-top:2px">✅ เปิดใช้อัตโนมัติกับ ${matched[0].name} แล้ว</div>`;
     }
-    return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:8px">
+    return `<div style="flex-direction:column;align-items:stretch;gap:8px;display:flex;border:1px solid #e2dccb;border-radius:12px;padding:12px;background:#fffdf8">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <div style="min-width:0">
-          <div style="font-weight:800;color:#fff">${c.emoji} ${c.name} ${c.connected?'<span class="tag" style="background:#064e3b;color:#6ee7b7">เชื่อมแล้ว</span>':''}</div>
-          <div style="font-size:12px;color:#94a3b8">${c.desc}</div>
-          <div style="font-size:11px;color:#64748b">ใช้ได้กับ: ${(c.agents||[]).join(", ") || "—"}</div>
+          <div style="font-weight:800;color:#1f2937;font-size:15px">${c.emoji} ${c.name} ${c.connected?'<span class="tag" style="background:#dcfce7;color:#047857">เชื่อมแล้ว</span>':''}</div>
+          <div style="font-size:12.5px;color:#475569;margin-top:2px">${c.desc}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px">ใช้ได้กับ: ${(c.agents||[]).join(", ") || "—"}</div>
         </div>
         ${c.connected
           ? `<div style="display:flex;gap:6px;flex-shrink:0">
                <button class="qbtn dir-test" data-id="${c.id}">🧪 ทดสอบ</button>
-               <button class="qbtn dir-disc" data-id="${c.id}" style="color:#f87171">ตัดการเชื่อม</button>
+               <button class="qbtn dir-disc" data-id="${c.id}" style="color:#dc2626">ตัดการเชื่อม</button>
              </div>`
           : ''}
       </div>
       ${agentPicker}
-      ${(!c.connected && c.oauth) ? `<a class="qbtn" href="/oauth/mcp/${c.id}/start" style="display:inline-flex;align-items:center;gap:6px;font-weight:800;background:#4f46e5;color:#fff;border-color:#4f46e5;align-self:flex-start">🔐 เชื่อมด้วย OAuth (คลิกเดียว — ไม่ต้องก๊อป token)</a>` : ''}
-      <div class="dir-form" style="display:${c.connected?'none':'flex'};gap:6px;flex-wrap:wrap;align-items:center">
-        ${c.oauth ? '<div style="width:100%;font-size:12px;color:#94a3b8">⚠️ ตัวนี้ต้องเชื่อมด้วย OAuth ด้านบน — วาง token เองไม่ได้</div>' : ''}
+      ${(!c.connected && c.oauth) ? `<a class="qbtn" href="/oauth/mcp/${c.id}/start" style="display:inline-flex;align-items:center;gap:6px;font-weight:800;background:#4f46e5;color:#fff;border-color:#4f46e5;align-self:flex-start">🔐 เชื่อมด้วย OAuth (คลิกเดียว — ไม่ต้องใส่ token)</a>` : ''}
+      ${(!c.connected && c.oauth) ? '<div style="font-size:12px;color:#b45309">ℹ️ ตัวนี้เชื่อมด้วย <b>OAuth</b> เท่านั้น — กดปุ่มม่วงด้านบนได้เลย ไม่ต้องหา token</div>' : ''}
+      ${(!c.connected && c.token_auth) ? `<div class="dir-form" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <input class="numfld dir-url" data-id="${c.id}" style="flex:1;min-width:220px;margin:0;padding:7px 9px" value="${c.url}" placeholder="MCP server URL">
         <input class="numfld dir-tok" data-id="${c.id}" type="password" style="width:180px;margin:0;padding:7px 9px" placeholder="token / secret_ref">
-        <button class="qbtn dir-conn" data-id="${c.id}" data-ta="${c.token_auth?1:0}" style="font-weight:700">🔗 เชื่อม API</button>
-        <a href="${c.get}" target="_blank" rel="noopener" style="font-size:12px;color:#a5b4fc">ขอ token ↗</a>
-      </div>
+        <button class="qbtn dir-conn" data-id="${c.id}" data-ta="1" style="font-weight:700">🔗 เชื่อม API</button>
+        <a href="${c.get}" target="_blank" rel="noopener" style="font-size:12px;color:#6d28d9;font-weight:700">ขอ token ↗</a>
+      </div>` : ''}
     </div>`;
   }).join("");
   $("dirList").querySelectorAll(".dir-agent-cb").forEach(cb => cb.onchange = async () => {
