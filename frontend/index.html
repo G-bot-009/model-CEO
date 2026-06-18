@@ -968,8 +968,7 @@
         </div>
         <div class="panel"><h3>🎨 คีย์โมเดลภายนอก (ภาพ/วิดีโอ/เสียงจริง — BYO key)</h3>
           <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">Claude ทำภาพถ่าย/วิดีโอจริงไม่ได้ — เลือกผู้ให้บริการ + โมเดล แล้วใส่คีย์ (เก็บในเครื่องคุณ)</p>
-          <div id="cfMediaRows" style="display:flex;flex-direction:column;gap:14px"></div>
-          <button class="save" id="cfSaveKeys" style="margin-top:12px">💾 บันทึกคีย์</button>
+          <div id="cfMediaRows" style="display:flex;flex-direction:column;gap:10px"></div>
         </div>
         <div class="panel"><h3>📋 บอร์ดคอนเทนต์ (คิว/ร่าง/โพสต์แล้ว)</h3><div id="cfBoard" style="display:flex;flex-direction:column;gap:12px"></div></div>
       </section>
@@ -2846,43 +2845,55 @@ async function cfSaveRules(){
   await postJSON("/api/content/rules",{rules}); toastNote("บันทึกกฎแล้ว ✅","#22c55e"); loadContentFactory();
 }
 const CF_MEDIA_LABEL = { image:["🖼️","ภาพ"], video:["🎬","วิดีโอ"], voice:["🔊","เสียง"] };
-let CF_PROVIDERS = {};
+let CF_PROVIDERS = {}, CF_MEDIA_SEL = {};
 async function loadMediaKeys(){
   let d; try { d = await (await fetch("/api/content/media-keys")).json(); } catch(e){ return; }
-  CF_PROVIDERS = d.providers || {};
-  const sel = d.selection || {};
+  CF_PROVIDERS = d.providers || {}; CF_MEDIA_SEL = d.selection || {};
   $("cfMediaRows").innerHTML = ["image","video","voice"].map(kind => {
-    const provs = CF_PROVIDERS[kind] || [], s = sel[kind] || {};
-    const cur = provs.find(p => p.id === s.provider) || provs[0] || {models:[]};
-    const provOpts = provs.map(p => `<option value="${p.id}" ${p.id===s.provider?'selected':''}>${p.name}</option>`).join("");
-    const modelOpts = (cur.models||[]).map(mm => `<option value="${mm}" ${mm===s.model?'selected':''}>${mm}</option>`).join("");
-    const getLink = cur.get ? `<a href="${cur.get}" target="_blank" rel="noopener" style="font-size:12px;color:#a5b4fc">ขอคีย์ ↗</a>` : "";
-    return `<div data-mk="${kind}" style="display:flex;flex-direction:column;gap:6px;border-bottom:1px solid #1e293b;padding-bottom:10px">
-      <div style="font-weight:700;color:#fff">${CF_MEDIA_LABEL[kind][0]} ${CF_MEDIA_LABEL[kind][1]} ${s.has?'<span class="tag" style="background:#064e3b;color:#6ee7b7">เชื่อมแล้ว</span>':''}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <select class="numfld mk-prov" style="width:auto;margin:0">${provOpts}</select>
-        <select class="numfld mk-model" style="width:auto;margin:0">${modelOpts}</select>
-        <input class="numfld mk-key" type="password" style="flex:1;min-width:200px;margin:0" placeholder="${s.has?'มีคีย์แล้ว — เว้นว่างถ้าไม่เปลี่ยน':'วาง API key'}">
-        ${getLink}
-      </div>
+    const s = CF_MEDIA_SEL[kind] || {}, provs = CF_PROVIDERS[kind] || [];
+    const cur = provs.find(p => p.id === s.provider) || provs[0] || {};
+    return `<div class="wf-row" style="justify-content:space-between;align-items:center;gap:10px">
+      <div><b style="color:#fff">${CF_MEDIA_LABEL[kind][0]} ${CF_MEDIA_LABEL[kind][1]}</b>
+        <div style="font-size:12px;color:#94a3b8">${escapeHtml(cur.name||'—')} · ${escapeHtml(s.model||'')} ${s.has?'<span style="color:#6ee7b7">· ✓ มีคีย์แล้ว</span>':'<span style="color:#f59e0b">· ยังไม่มีคีย์</span>'}</div></div>
+      <button class="qbtn cf-mkbtn" data-kind="${kind}" style="font-weight:700">🔑 ${s.has?'แก้/ลบคีย์':'ใส่คีย์'}</button>
     </div>`;
   }).join("");
-  // when provider changes, repopulate its models
-  $("cfMediaRows").querySelectorAll(".mk-prov").forEach(selEl => selEl.onchange = () => {
-    const row = selEl.closest("[data-mk]"), kind = row.dataset.mk;
-    const cur = (CF_PROVIDERS[kind]||[]).find(p => p.id === selEl.value) || {models:[]};
-    row.querySelector(".mk-model").innerHTML = (cur.models||[]).map(mm => `<option value="${mm}">${mm}</option>`).join("");
-    const link = row.querySelector("a"); if (link && cur.get) link.href = cur.get;
-  });
+  $("cfMediaRows").querySelectorAll(".cf-mkbtn").forEach(b => b.onclick = () => cfMediaPopup(b.dataset.kind));
 }
-async function cfSaveKeys(){
-  const body = {};
-  $("cfMediaRows").querySelectorAll("[data-mk]").forEach(row => {
-    body[row.dataset.mk] = { provider: row.querySelector(".mk-prov").value,
-      model: row.querySelector(".mk-model").value, key: row.querySelector(".mk-key").value.trim() };
-  });
-  await postJSON("/api/content/media-keys", body);
-  toastNote("บันทึกคีย์แล้ว ✅","#22c55e"); loadMediaKeys();
+function cfMediaPopup(kind){
+  const provs = CF_PROVIDERS[kind] || [], s = (CF_MEDIA_SEL || {})[kind] || {};
+  const cur = provs.find(p => p.id === s.provider) || provs[0] || {models:[]};
+  const provOpts = provs.map(p => `<option value="${p.id}" ${p.id===s.provider?'selected':''}>${p.name}</option>`).join("");
+  const modelOpts = (cur.models||[]).map(m => `<option value="${m}" ${m===s.model?'selected':''}>${m}</option>`).join("");
+  $("genTitle").textContent = "ใส่คีย์ " + CF_MEDIA_LABEL[kind][1];
+  $("genBody").innerHTML = `
+    <label>เลือกผู้ให้บริการ</label>
+    <select id="mkp_prov" class="numfld" style="width:100%">${provOpts}</select>
+    <label>โมเดล</label>
+    <select id="mkp_model" class="numfld" style="width:100%">${modelOpts}</select>
+    <a id="mkp_get" class="conn-doc" href="${cur.get||'#'}" target="_blank" rel="noopener">ขอคีย์ที่ ${escapeHtml(cur.name||'')} ↗</a>
+    <label>API key</label>
+    <input id="mkp_key" type="password" placeholder="${s.has?'มีคีย์แล้ว — วางใหม่เพื่อเปลี่ยน':'วาง API key ที่นี่'}">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="save" id="mkp_save" style="flex:1">✅ ยืนยันบันทึก</button>
+      ${s.has?`<button class="qbtn" id="mkp_del" style="flex:1;color:#b91c1c;background:#fee2e2;border-color:#fecaca;font-weight:700">🗑️ ลบคีย์</button>`:''}
+    </div>`;
+  $("mkp_prov").onchange = () => {
+    const c = provs.find(p => p.id === $("mkp_prov").value) || {models:[]};
+    $("mkp_model").innerHTML = (c.models||[]).map(m => `<option value="${m}">${m}</option>`).join("");
+    const g = $("mkp_get"); g.href = c.get || "#"; g.textContent = `ขอคีย์ที่ ${c.name||''} ↗`;
+  };
+  $("mkp_save").onclick = async () => {
+    const body = {}; body[kind] = { provider:$("mkp_prov").value, model:$("mkp_model").value, key:$("mkp_key").value.trim() };
+    await postJSON("/api/content/media-keys", body);
+    closeModal("genModal"); toastNote("บันทึกคีย์แล้ว ✅","#22c55e"); loadMediaKeys();
+  };
+  if (s.has) $("mkp_del").onclick = async () => {
+    if (!confirm("ลบคีย์นี้?")) return;
+    await postJSON("/api/content/media-key/clear", { kind });
+    closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadMediaKeys();
+  };
+  openModal("genModal");
 }
 async function cfRun(){
   const b=$("cfRun"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังผลิต…";
@@ -4110,7 +4121,6 @@ $("tbSave").addEventListener("click", tbSaveBot);
 $("tbAi").addEventListener("click", tbAiStrategy);
 $("cfRun").addEventListener("click", cfRun);
 $("cfSaveRules").addEventListener("click", cfSaveRules);
-$("cfSaveKeys").addEventListener("click", cfSaveKeys);
 $("prCreate").addEventListener("click", prCreate);
 $("prTemplate").addEventListener("change", prTplPreview);
 $("biCreate").addEventListener("click", biCreate);

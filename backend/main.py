@@ -1867,6 +1867,14 @@ async def content_media_keys_set(p: dict) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/content/media-key/clear")
+async def content_media_key_clear(p: dict) -> dict:
+    kind = p.get("kind")
+    if kind in ("image", "video", "voice"):
+        db.set_settings({f"media_{kind}_key": ""})
+    return {"ok": True}
+
+
 # ============================== Projects ====================================
 def _stage_client(stage: dict):
     """Per-stage engine override (a chosen API key), else None (= per-agent default)."""
