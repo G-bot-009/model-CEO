@@ -2868,9 +2868,12 @@ async function enableInbound(){
 }
 
 /* ---------- Social Connect (real OAuth, BYO app) ---------- */
-const SOC_ICON = { instagram:"📷", facebook:"📘", tiktok:"🎵", youtube:"▶️", x:"𝕏", linkedin:"💼", threads:"🧵", pinterest:"📌", google:"🔵" };
+const SOC_ICON = { instagram:"📷", facebook:"📘", tiktok:"🎵", youtube:"▶️", x:"𝕏", linkedin:"💼", threads:"🧵", pinterest:"📌", google:"🔵", lazada:"🛒", shopee:"🛍️" };
+let SOC_META = {};
 async function loadSocial(){
   let d; try { d = await (await fetch("/api/social")).json(); } catch(e){ return; }
+  SOC_META = {};
+  (d.platforms || []).forEach(p => SOC_META[p.id] = p);
   $("socialGrid").innerHTML = (d.platforms || []).map(p => `
     <div class="soc-card ${p.connected ? 'on' : ''}" data-soc="${p.id}">
       <div class="soc-ic">${SOC_ICON[p.id] || "🌐"}</div>
@@ -2883,6 +2886,29 @@ async function loadSocial(){
 function openSocialConnect(platform, connected){
   if (connected){
     if (confirm("ตัดการเชื่อม " + platform + "?")) postJSON("/api/social/disconnect", { platform }).then(loadSocial);
+    return;
+  }
+  const meta = SOC_META[platform] || {};
+  if (meta.signed){            // Lazada/Shopee — Seller Open Platform (App Key/Secret + ลายเซ็น)
+    $("genTitle").textContent = "เชื่อม " + (meta.label || platform);
+    $("genBody").innerHTML = `
+      <div class="conn-howto"><div class="conn-howto-h">Seller Open Platform (ทำครั้งเดียว)</div>
+        <p class="conn-note" style="margin-top:0">${escapeHtml(meta.note || "")}</p>
+        <ol class="conn-steps">
+          <li>สมัคร/สร้าง App ที่ <a href="${meta.doc}" target="_blank" rel="noopener">พอร์ทัลผู้ขาย ↗</a> แล้วรับ <b>App Key/Secret</b></li>
+          <li>วาง App Key + Secret ด้านล่าง แล้วบันทึก</li>
+        </ol></div>
+      <label>App Key</label><input id="soc_id" placeholder="app key / partner id">
+      <label>App Secret</label><input id="soc_sec" placeholder="app secret / partner key">
+      <p class="conn-note">⚠️ Lazada/Shopee เรียก API ด้วย <b>ลายเซ็น (sign)</b> ไม่ใช่ OAuth bearer ปกติ — ตอนนี้เก็บคีย์ไว้ก่อนได้ การซิงก์แชทจริงต้องต่อแบบลายเซ็น (ขั้นถัดไป) และต้องมีโดเมน HTTPS สำหรับ webhook</p>
+      <button class="save" id="soc_save">บันทึกคีย์</button>`;
+    $("soc_save").addEventListener("click", async () => {
+      const r = await postJSON("/api/social/creds", { platform, client_id: $("soc_id").value.trim(), client_secret: $("soc_sec").value.trim() });
+      if (r.error){ toastNote(r.error, "#ef4444"); return; }
+      closeModal("genModal"); loadSocial();
+      toastNote("เก็บคีย์ " + (meta.label || platform) + " แล้ว ✅", "#22c55e");
+    });
+    openModal("genModal");
     return;
   }
   const redirect = location.origin + "/oauth/" + platform + "/callback";

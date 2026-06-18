@@ -285,6 +285,8 @@ SOCIAL = {
     "threads":   {"label": "Threads", "auth": "https://threads.net/oauth/authorize", "token": "https://graph.threads.net/oauth/access_token", "scope": "threads_basic,threads_content_publish"},
     "pinterest": {"label": "Pinterest", "auth": "https://www.pinterest.com/oauth/", "token": "https://api.pinterest.com/v5/oauth/token", "scope": "pins:write,boards:read", "basic": True},
     "google":    {"label": "Google", "auth": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token", "scope": "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets", "extra": {"access_type": "offline", "prompt": "consent"}},
+    "lazada":    {"label": "Lazada", "auth": "https://auth.lazada.com/oauth/authorize", "token": "https://auth.lazada.com/rest/auth/token/create", "scope": "", "signed": True, "doc": "https://open.lazada.com/", "note": "Lazada Open Platform — สร้าง App แล้วรับ App Key/Secret (เรียก API แชท/ออเดอร์ด้วยลายเซ็น sign)"},
+    "shopee":    {"label": "Shopee", "auth": "https://partner.shopeemobile.com/api/v2/shop/auth_partner", "token": "https://partner.shopeemobile.com/api/v2/auth/token/get", "scope": "", "signed": True, "doc": "https://open.shopee.com/", "note": "Shopee Open Platform — ใช้ Partner ID/Key + ลายเซ็น HMAC เชื่อมร้านเพื่ออ่าน/ตอบแชท"},
 }
 _oauth_state: dict = {}   # state -> (platform, code_verifier)
 
@@ -297,7 +299,9 @@ def _redirect_uri(request: Request, platform: str) -> str:
 async def social_list(request: Request) -> dict:
     connected = db.list_social()
     return {
-        "platforms": [{"id": k, "label": v["label"], "connected": connected.get(k, False)} for k, v in SOCIAL.items()],
+        "platforms": [{"id": k, "label": v["label"], "connected": connected.get(k, False),
+                       "signed": bool(v.get("signed")), "note": v.get("note", ""), "doc": v.get("doc", "")}
+                      for k, v in SOCIAL.items()],
         "redirect_note": str(request.base_url).rstrip("/") + "/oauth/<platform>/callback",
     }
 
