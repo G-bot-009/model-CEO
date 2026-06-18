@@ -2080,6 +2080,14 @@ async def _run_agent(agent_id: str, goal: str, client=None) -> str:
     return next((b.text for b in resp.content if b.type == "text"), "")
 
 
+_PROJECT_STYLE = (
+    "\n\n---\nสำคัญมาก: ตอบเป็น**ภาษาไทยที่อ่านเข้าใจง่าย**สำหรับเจ้าของธุรกิจที่ไม่ใช่สายเทคนิค "
+    "เขียนเป็นคำอธิบายเหมือนคนคุยกัน ใช้หัวข้อสั้น ๆ และบูลเล็ต (-) "
+    "**ห้ามตอบเป็น JSON, โค้ด หรือ code block เด็ดขาด** "
+    "เน้นบอกว่า ‘ทำอะไร’ ‘ได้ผลอะไร’ และ ‘ขั้นต่อไปควรทำอะไร’ ให้กระชับ ชัดเจน นำไปใช้ได้จริง"
+)
+
+
 async def run_project_stage(stage: dict) -> bool:
     """Run a stage's agents in order. Stops at the first agent whose API fails,
     marks the stage 'failed' (red in the UI), and returns False. Returns True
@@ -2092,7 +2100,7 @@ async def run_project_stage(stage: dict) -> bool:
         name = ags[aid].name if aid in ags else aid
         emoji = ags[aid].emoji if aid in ags else "•"
         try:
-            out = await _run_agent(aid, stage["goal"], client)
+            out = await _run_agent(aid, stage["goal"] + _PROJECT_STYLE, client)
             parts.append(f"### {emoji} {name}\n{out}")
         except Exception as exc:
             parts.append(f"### {emoji} {name}\n⚠️ {_friendly_err(exc)}")

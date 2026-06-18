@@ -3339,6 +3339,28 @@ async function prRunAllProgress(pid){
     }
   }, 1800);
 }
+// markdown แบบเบา → HTML อ่านง่าย (หัวข้อ/บูลเล็ต/ตัวหนา) ไม่โชว์เป็นโค้ด
+function mdLite(src){
+  let s = String(src||"").replace(/```[a-zA-Z]*\n?/g, "").replace(/```/g, "");
+  s = escapeHtml(s);
+  const lines = s.split(/\r?\n/);
+  let html = "", inUl = false, inOl = false;
+  const closeLists = () => { if(inUl){html+="</ul>";inUl=false;} if(inOl){html+="</ol>";inOl=false;} };
+  const inline = t => t.replace(/\*\*(.+?)\*\*/g,"<b style='color:#fff'>$1</b>").replace(/`([^`]+)`/g,"<code style='background:#1e293b;padding:1px 5px;border-radius:4px'>$1</code>");
+  for (const raw of lines){
+    const l = raw.trim();
+    if (!l){ closeLists(); continue; }
+    if (/^---+$/.test(l)){ closeLists(); html+='<hr style="border:none;border-top:1px solid #1e293b;margin:10px 0">'; continue; }
+    const h = l.match(/^(#{1,6})\s+(.*)$/);
+    if (h){ closeLists(); const lv=Math.min(h[1].length,4); html+=`<div style="font-weight:800;color:#fff;margin:12px 0 5px;font-size:${17-lv}px">${inline(h[2])}</div>`; continue; }
+    if (/^[-*•]\s+/.test(l)){ if(!inUl){closeLists();html+='<ul style="margin:4px 0;padding-left:20px">';inUl=true;} html+=`<li style="margin:3px 0">${inline(l.replace(/^[-*•]\s+/,""))}</li>`; continue; }
+    const om = l.match(/^(\d+)[.)]\s+(.*)$/);
+    if (om){ if(!inOl){closeLists();html+='<ol style="margin:4px 0;padding-left:22px">';inOl=true;} html+=`<li style="margin:3px 0">${inline(om[2])}</li>`; continue; }
+    closeLists(); html+=`<div style="margin:4px 0">${inline(l)}</div>`;
+  }
+  closeLists();
+  return html;
+}
 async function prOpen(pid){
   let resp; try { resp = await (await fetch(`/api/projects/${pid}`)).json(); } catch(e){ return; }
   const d = resp.project; if (!d) return;
@@ -3360,7 +3382,7 @@ async function prOpen(pid){
         </div>
       </div>
       ${failed?'<div style="font-size:12px;color:#fca5a5;margin-top:6px">หยุดที่ขั้นนี้ — เอเจนต์เรียก API ไม่สำเร็จ (ยังไม่เชื่อม/คีย์มีปัญหา) เลือกเอนจิน/API อื่นด้านบนแล้วลองใหม่</div>':''}
-      ${s.result?`<div style="font-size:13px;color:#cbd5e1;white-space:pre-wrap;margin-top:8px;background:#0b1220;border-radius:8px;padding:10px;max-height:300px;overflow:auto">${escapeHtml(s.result)}</div>`:''}
+      ${s.result?`<div style="font-size:13.5px;color:#cbd5e1;margin-top:8px;background:#0b1220;border-radius:8px;padding:12px;max-height:360px;overflow:auto;line-height:1.65">${mdLite(s.result)}</div>`:''}
     </div>`;
   }).join("");
   const sums = resp.summaries || [];
@@ -3372,7 +3394,7 @@ async function prOpen(pid){
           ${sums.map((s,i)=>`<option value="${i}">🕒 ${s.created_at.replace('T',' ').slice(0,16)}${i===0?' (ล่าสุด)':''}</option>`).join("")}
         </select>
       </div>
-      <div id="prSumText" style="font-size:13px;color:#e2e8f0;white-space:pre-wrap;margin-top:10px"></div>
+      <div id="prSumText" style="font-size:13.5px;color:#e2e8f0;margin-top:10px;line-height:1.65"></div>
     </div>` : '';
   $("prDetail").innerHTML = `
     <div class="panel">
@@ -3389,7 +3411,7 @@ async function prOpen(pid){
     ${stageHtml}
     ${sumSection}`;
   if (sums.length){
-    const setSum = i => $("prSumText").innerHTML = escapeHtml(sums[i].summary || "");
+    const setSum = i => $("prSumText").innerHTML = mdLite(sums[i].summary || "");
     setSum(0);
     $("prSumSel").onchange = e => setSum(+e.target.value);
   }
