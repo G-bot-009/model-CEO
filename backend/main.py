@@ -30,6 +30,7 @@ from . import db
 from . import skills
 from . import mcp_catalog
 from . import mcp_oauth
+from . import trading
 from .agents import AGENTS, JARVIS, all_agents, compose_custom_system, SPECIALIST_FOOTER as _SPECIALIST_FOOTER
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
@@ -205,6 +206,8 @@ def _cache_key(agent: str, prompt: str) -> str:
 async def _startup() -> None:
     db.init()
     set_model(db.get_settings().get("model"))  # apply saved model choice
+    import asyncio
+    asyncio.create_task(_trading_loop())        # ticks active trading bots
 
 
 LOGIN_USER = os.getenv("LOGIN_USER", "admin")
@@ -1500,6 +1503,147 @@ async def run_jarvis(send, goal: str, client, session_id: int) -> None:
     db.add_decision("jarvis", goal[:80])
     await send({"type": "jarvis_done"})
     return text
+
+
+# ============================ Trading bots ==================================
+# Default mode is paper (no real money). Live requires opt-in + trade-enabled
+# keys stored in the matching connector. Safety: per-day target/loss kill-switch
+# + max position size live in the strategy config.
+_TRADE_CRED_CONNECTOR = {"binance": "Binance Futures", "bybit": "Bybit", "mt5": "MetaTrader 5 (Forex)"}
+
+
+def _trade_creds(exchange: str) -> dict:
+    """Read API creds for live trading from the matching connector config."""
+    row = db.get_connector(_TRADE_CRED_CONNECTOR.get(exchange, ""))
+    if not row or not row.get("config"):
+        return {}
+    try:
+        return json.loads(row["config"])
+    except Exception:
+        return {}
+
+
+def _tick_bot(bot: dict) -> None:
+    """Advance one bot by a single tick (used by the loop and manual tick)."""
+    ex, sym = bot["exchange"], bot["symbol"]
+    cfg, state = bot["config"], bot.get("state") or trading.new_state()
+    creds = _trade_creds(ex)
+    try:
+        price = trading.fetch_price(ex, sym, creds)
+    except Exception as exc:
+        db.add_trade_log(bot["id"], "error", f"อ่านราคาไม่ได้: {type(exc).__name__}", 0.0)
+        return
+    new_state, events = trading.step(cfg, state, price)
+    for e in events:
+        # in live mode, mirror entries/exits to the real exchange
+        if bot["mode"] == "live" and e["kind"] in ("open",) and creds:
+            try:
+                qty = (new_state.get("pos") or {}).get("qty") or 0
+                trading.place_market(ex, creds, sym, cfg.get("side", "long"), round(qty, 6))
+                e["text"] += " · ส่งออเดอร์จริงแล้ว"
+            except Exception as exc:
+                e["text"] += f" · ⚠️ ส่งออเดอร์จริงไม่สำเร็จ: {type(exc).__name__}"
+                new_state["halted"] = True
+        db.add_trade_log(bot["id"], e["kind"], e["text"], e.get("pnl", 0.0))
+    db.set_bot_state(bot["id"], new_state)
+
+
+async def _trading_loop() -> None:
+    import asyncio
+    while True:
+        await asyncio.sleep(15)
+        try:
+            for bot in db.list_bots():
+                if bot.get("status") == "running":
+                    await asyncio.to_thread(_tick_bot, bot)
+        except Exception:
+            pass
+
+
+@app.get("/api/trading/bots")
+async def trading_bots() -> dict:
+    return {"bots": db.list_bots(), "default_config": trading.DEFAULT_CONFIG}
+
+
+@app.post("/api/trading/bot")
+async def trading_bot_save(p: dict) -> dict:
+    name = (p.get("name") or "บอทเทรด").strip()
+    ex = (p.get("exchange") or "binance").lower()
+    sym = (p.get("symbol") or "BTCUSDT").upper().strip()
+    mode = "live" if p.get("mode") == "live" else "paper"
+    cfg = trading.normalize_config(p.get("config") or {})
+    bid = p.get("id")
+    if bid:
+        db.update_bot(int(bid), name, ex, sym, mode, cfg)
+        return {"ok": True, "id": int(bid)}
+    nid = db.create_bot(name, ex, sym, mode, cfg, trading.new_state())
+    return {"ok": True, "id": nid}
+
+
+@app.post("/api/trading/bot/start")
+async def trading_bot_start(p: dict) -> dict:
+    bot = db.get_bot(int(p.get("id")))
+    if not bot:
+        return {"error": "ไม่พบบอท"}
+    if bot["mode"] == "live" and not _trade_creds(bot["exchange"]):
+        return {"error": f"โหมด live ต้องเชื่อมคีย์ {_TRADE_CRED_CONNECTOR.get(bot['exchange'],'')} ก่อน (เปิดสิทธิ์เทรด)"}
+    db.set_bot_status(bot["id"], "running")
+    db.add_trade_log(bot["id"], "start", f"เริ่มบอท ({bot['mode']})", 0.0)
+    return {"ok": True}
+
+
+@app.post("/api/trading/bot/stop")
+async def trading_bot_stop(p: dict) -> dict:
+    db.set_bot_status(int(p.get("id")), "stopped")
+    db.add_trade_log(int(p.get("id")), "stop", "หยุดบอท", 0.0)
+    return {"ok": True}
+
+
+@app.post("/api/trading/bot/delete")
+async def trading_bot_delete(p: dict) -> dict:
+    db.delete_bot(int(p.get("id")))
+    return {"ok": True}
+
+
+@app.post("/api/trading/bot/tick")
+async def trading_bot_tick(p: dict) -> dict:
+    """Manual single tick (handy for paper testing without waiting for the loop)."""
+    bot = db.get_bot(int(p.get("id")))
+    if not bot:
+        return {"error": "ไม่พบบอท"}
+    import asyncio
+    await asyncio.to_thread(_tick_bot, bot)
+    return {"ok": True, "state": db.get_bot(bot["id"])["state"]}
+
+
+@app.get("/api/trading/bot/{bot_id}/log")
+async def trading_bot_log(bot_id: int) -> dict:
+    return {"log": db.list_trade_log(bot_id, 60)}
+
+
+@app.post("/api/trading/strategy/ai")
+async def trading_strategy_ai(p: dict) -> dict:
+    """Claude turns a Thai description into a strategy config (rules, not predictions)."""
+    desc = (p.get("desc") or "").strip()
+    if not desc:
+        return {"error": "ใส่คำอธิบายกลยุทธ์"}
+    prompt = (
+        "คุณเป็นผู้ช่วยตั้งค่าบอทเทรดแบบมีกฎ (ไม่ทำนายตลาด). จากคำอธิบายของผู้ใช้ "
+        "ให้ออกค่า JSON ตามสคีมานี้เท่านั้น (ตัวเลขสมเหตุผล ปลอดภัย):\n"
+        f"{json.dumps(trading.DEFAULT_CONFIG, ensure_ascii=False)}\n\n"
+        f"คำอธิบาย: {desc}\n\nตอบเป็น JSON อย่างเดียว."
+    )
+    try:
+        resp = await client_for_agent("trader").messages.create(
+            model=model_for_agent("trader"), max_tokens=600,
+            **thinking_kwargs(model_for_agent("trader")),
+            messages=[{"role": "user", "content": prompt}])
+        text = next((b.text for b in resp.content if b.type == "text"), "{}")
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        cfg = trading.normalize_config(json.loads(m.group(0)) if m else {})
+        return {"ok": True, "config": cfg}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
 
 
 @app.websocket("/ws")

@@ -413,6 +413,7 @@
       <div class="menu-item" data-view="connectors"><span class="ico">🔌</span><span class="label">Connectors</span></div>
       <div class="menu-item" data-view="inbox"><span class="ico">💬</span><span class="label">Social Inbox</span></div>
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
+      <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
@@ -906,6 +907,46 @@
         </div>
         <div class="panel"><h3>📦 Tools ที่ลงทะเบียน</h3><div id="tr_tools" style="display:flex; flex-direction:column; gap:10px"></div></div>
         <div class="panel"><h3>🏃 การรันล่าสุด (task_id ↔ callback)</h3><div id="tr_runs" style="display:flex; flex-direction:column; gap:8px"></div></div>
+      </section>
+
+      <!-- TRADING BOT -->
+      <section class="view" id="view-tradebot">
+        <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
+          <h3>🤖 บอทเทรด AI — ทำงานแบบมีวินัย 24 ชม.</h3>
+          <p style="color:#fbbf24;font-size:13px;margin:4px 0 0">⚠️ การเทรดมีความเสี่ยง อาจขาดทุนได้ — บอททำตามกฎที่ตั้งไว้ ไม่ได้ทำนายตลาดและไม่การันตีกำไร · ค่าเริ่มต้นเป็น <b>เดโม่ (paper, ไม่ใช้เงินจริง)</b> · โหมดจริงต้องเปิดเองและเชื่อมคีย์ที่เปิดสิทธิ์เทรด · นี่ไม่ใช่คำแนะนำการลงทุน</p>
+        </div>
+        <div class="panel"><h3>➕ สร้าง/ตั้งค่าบอท</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <input id="tbName" class="numfld" style="width:160px;margin:0" placeholder="ชื่อบอท เช่น BTC scalper">
+            <select id="tbExchange" class="numfld" style="width:auto;margin:0">
+              <option value="binance">Binance Futures (คริปโต)</option>
+              <option value="bybit">Bybit (คริปโต)</option>
+              <option value="mt5">MT5 / Forex (MetaApi)</option>
+            </select>
+            <input id="tbSymbol" class="numfld" style="width:120px;margin:0" placeholder="BTCUSDT" value="BTCUSDT">
+            <select id="tbMode" class="numfld" style="width:auto;margin:0">
+              <option value="paper">เดโม่ (paper)</option>
+              <option value="live">เงินจริง (live)</option>
+            </select>
+            <select id="tbSide" class="numfld" style="width:auto;margin:0">
+              <option value="long">Long</option><option value="short">Short</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input id="tbSize" class="numfld" style="width:110px;margin:0" placeholder="ขนาด $/ไม้" value="50">
+            <input id="tbTp" class="numfld" style="width:150px;margin:0" placeholder="TP 3 ไม้ % เช่น 0.5,1,1.5" value="0.5,1,1.5">
+            <input id="tbSl" class="numfld" style="width:90px;margin:0" placeholder="SL %" value="0.5">
+            <input id="tbBe" class="numfld" style="width:150px;margin:0" placeholder="เลื่อน SL→ทุน หลังไม้ที่" value="1">
+            <input id="tbTarget" class="numfld" style="width:130px;margin:0" placeholder="เป้ากำไร/วัน $" value="100">
+            <input id="tbLoss" class="numfld" style="width:130px;margin:0" placeholder="ลิมิตขาดทุน/วัน $" value="50">
+            <button class="qbtn" id="tbSave" style="font-weight:700">💾 บันทึกบอท</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+            <input id="tbAiDesc" class="numfld" style="flex:1;min-width:240px;margin:0" placeholder="ให้ AI ตั้งกฎให้: เช่น “สแกล์ปทอง M5 เป้า 1% ต่อวัน เสี่ยงต่ำ”">
+            <button class="qbtn" id="tbAi" style="font-weight:700">✨ ให้ AI ตั้งกฎ</button>
+          </div>
+        </div>
+        <div class="panel"><h3>📋 บอทของฉัน</h3><div id="tbList" style="display:flex;flex-direction:column;gap:12px"></div></div>
       </section>
 
       <!-- SETTINGS -->
@@ -2498,15 +2539,102 @@ function send(text) {
 }
 
 /* ---------- views / ui ---------- */
+/* ---------- Trading bots ---------- */
+let tbEditId = null;
+function tbCfg(){
+  return {
+    side: $("tbSide").value,
+    size_usd: parseFloat($("tbSize").value) || 50,
+    tp_legs_pct: ($("tbTp").value || "").split(",").map(x => parseFloat(x.trim())).filter(x => !isNaN(x)),
+    sl_pct: parseFloat($("tbSl").value) || 0.5,
+    move_sl_to_be_after_leg: parseInt($("tbBe").value) || 1,
+    daily_target_usd: parseFloat($("tbTarget").value) || 0,
+    daily_loss_limit_usd: parseFloat($("tbLoss").value) || 0,
+  };
+}
+function tbFillForm(b){
+  const c = b.config || {};
+  $("tbName").value = b.name || ""; $("tbExchange").value = b.exchange || "binance";
+  $("tbSymbol").value = b.symbol || "BTCUSDT"; $("tbMode").value = b.mode || "paper";
+  $("tbSide").value = c.side || "long"; $("tbSize").value = c.size_usd ?? 50;
+  $("tbTp").value = (c.tp_legs_pct || [0.5,1,1.5]).join(","); $("tbSl").value = c.sl_pct ?? 0.5;
+  $("tbBe").value = c.move_sl_to_be_after_leg ?? 1;
+  $("tbTarget").value = c.daily_target_usd ?? 100; $("tbLoss").value = c.daily_loss_limit_usd ?? 50;
+}
+async function tbSaveBot(){
+  const body = { id: tbEditId, name: $("tbName").value.trim(), exchange: $("tbExchange").value,
+    symbol: $("tbSymbol").value.trim().toUpperCase(), mode: $("tbMode").value, config: tbCfg() };
+  const r = await postJSON("/api/trading/bot", body);
+  if (r.error){ toastNote(r.error, "#f59e0b"); return; }
+  tbEditId = null; toastNote("บันทึกบอทแล้ว ✅", "#22c55e"); loadTradeBots();
+}
+async function tbAiStrategy(){
+  const desc = $("tbAiDesc").value.trim();
+  if (!desc){ toastNote("ใส่คำอธิบายกลยุทธ์ก่อน", "#f59e0b"); return; }
+  const btn = $("tbAi"), old = btn.textContent; btn.disabled = true; btn.textContent = "⏳ กำลังคิด…";
+  try {
+    const r = await postJSON("/api/trading/strategy/ai", { desc });
+    if (r.error){ toastNote(r.error, "#f59e0b"); }
+    else { tbFillForm({ config: r.config }); toastNote("AI ตั้งกฎให้แล้ว — ตรวจแล้วกดบันทึก", "#22c55e"); }
+  } catch(e){ toastNote("ขอกฎจาก AI ไม่สำเร็จ", "#f59e0b"); }
+  btn.disabled = false; btn.textContent = old;
+}
+async function loadTradeBots(){
+  let d; try { d = await (await fetch("/api/trading/bots")).json(); } catch(e){ return; }
+  const box = $("tbList");
+  if (!(d.bots || []).length){ box.innerHTML = '<div style="color:#64748b">ยังไม่มีบอท — ตั้งค่าด้านบนแล้วกดบันทึก</div>'; return; }
+  box.innerHTML = d.bots.map(b => {
+    const st = b.state || {}, pos = st.pos;
+    const pnl = (st.daily_pnl || 0);
+    const pnlc = pnl >= 0 ? "#22c55e" : "#f87171";
+    const live = b.mode === "live";
+    const running = b.status === "running";
+    return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:8px" data-bot="${b.id}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:800;color:#fff">${b.id===tbEditId?'✏️ ':''}${escapeHtml(b.name)}
+            <span class="tag" style="background:${live?'#7f1d1d':'#1e293b'};color:${live?'#fca5a5':'#94a3b8'}">${live?'LIVE 💰':'PAPER'}</span>
+            <span class="tag" style="background:#1e293b;color:${running?'#6ee7b7':'#94a3b8'}">${running?'▶ กำลังรัน':'■ หยุด'}</span>
+          </div>
+          <div style="font-size:12px;color:#94a3b8">${b.exchange} · ${b.symbol} · ${b.config.side} · $${b.config.size_usd}/ไม้ · TP ${(b.config.tp_legs_pct||[]).join('/')}% · SL ${b.config.sl_pct}%</div>
+          <div style="font-size:12px;color:${pnlc}">PnL วันนี้: ${pnl>=0?'+':''}${pnl.toFixed(2)} ${st.halted?'· ⏸️ หยุดถึงพรุ่งนี้':''} ${pos?`· ถือ ${b.config.side} @ ${pos.entry.toFixed(4)} (SL ${pos.sl.toFixed(4)})`:'· ไม่มีโพสิชัน'}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${running?`<button class="qbtn tb-stop" data-id="${b.id}">■ หยุด</button>`
+                   :`<button class="qbtn tb-start" data-id="${b.id}" style="font-weight:700">▶ เริ่ม</button>`}
+          <button class="qbtn tb-tick" data-id="${b.id}" title="เดินบอท 1 จังหวะ (ทดสอบ)">⏭️ tick</button>
+          <button class="qbtn tb-edit" data-id="${b.id}">✏️ แก้</button>
+          <button class="qbtn tb-log" data-id="${b.id}">📜 log</button>
+          <button class="qbtn tb-del" data-id="${b.id}" style="color:#f87171">🗑️</button>
+        </div>
+      </div>
+      <div class="tb-logbox" id="tbLog${b.id}" style="display:none;font-size:12px;color:#cbd5e1;background:#0b1220;border-radius:8px;padding:8px;max-height:200px;overflow:auto"></div>
+    </div>`;
+  }).join("");
+  const bots = {}; d.bots.forEach(b => bots[b.id] = b);
+  box.querySelectorAll(".tb-start").forEach(x => x.onclick = async () => { const r = await postJSON("/api/trading/bot/start",{id:+x.dataset.id}); if(r.error){toastNote(r.error,"#f59e0b");return;} toastNote("เริ่มบอทแล้ว","#22c55e"); loadTradeBots(); });
+  box.querySelectorAll(".tb-stop").forEach(x => x.onclick = async () => { await postJSON("/api/trading/bot/stop",{id:+x.dataset.id}); loadTradeBots(); });
+  box.querySelectorAll(".tb-del").forEach(x => x.onclick = async () => { if(!confirm("ลบบอทนี้?"))return; await postJSON("/api/trading/bot/delete",{id:+x.dataset.id}); loadTradeBots(); });
+  box.querySelectorAll(".tb-tick").forEach(x => x.onclick = async () => { const r = await postJSON("/api/trading/bot/tick",{id:+x.dataset.id}); if(r.error){toastNote(r.error,"#f59e0b");return;} loadTradeBots(); });
+  box.querySelectorAll(".tb-edit").forEach(x => x.onclick = () => { tbEditId = +x.dataset.id; tbFillForm(bots[x.dataset.id]); toastNote("แก้ไขอยู่ — กดบันทึกเพื่ออัปเดต","#a855f7"); window.scrollTo({top:0,behavior:'smooth'}); loadTradeBots(); });
+  box.querySelectorAll(".tb-log").forEach(x => x.onclick = async () => {
+    const el = $("tbLog"+x.dataset.id); if (el.style.display==="block"){ el.style.display="none"; return; }
+    const r = await (await fetch(`/api/trading/bot/${x.dataset.id}/log`)).json();
+    el.innerHTML = (r.log||[]).map(l => `<div>${l.ts.replace('T',' ').slice(5,16)} · ${escapeHtml(l.text)} ${l.pnl?`<b style="color:${l.pnl>=0?'#22c55e':'#f87171'}">${l.pnl>=0?'+':''}${l.pnl.toFixed(2)}</b>`:''}</div>`).join("") || "ยังไม่มี log";
+    el.style.display = "block";
+  });
+}
+
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
   if (v === "inbox") loadInbox();
   if (v === "automation") loadAutomation();
+  if (v === "tradebot") loadTradeBots();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
   if (v === "n8n") loadN8n();
@@ -3367,6 +3495,8 @@ $("adImgGen").addEventListener("click", () => genImage());
 $("adImgPrompt").addEventListener("keydown", e => { if (e.key === "Enter") genImage(); });
 $("adMcpAdd").addEventListener("click", addAgentMcp);
 $("openDirectory").addEventListener("click", openDirectory);
+$("tbSave").addEventListener("click", tbSaveBot);
+$("tbAi").addEventListener("click", tbAiStrategy);
 (function handleMcpOAuthReturn(){
   const q = new URLSearchParams(location.search);
   const ok = q.get("mcp_connected"), err = q.get("mcp_error");

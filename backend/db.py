@@ -149,6 +149,15 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
                 conn_id TEXT PRIMARY KEY, client_id TEXT, client_secret TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS trade_bots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT, exchange TEXT, symbol TEXT, mode TEXT, status TEXT,
+                config TEXT, state TEXT, created_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS trade_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bot_id INTEGER, ts TEXT, kind TEXT, text TEXT, pnl REAL
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -912,3 +921,65 @@ def get_history(session_id: int) -> dict:
 def delete_task(task_id: int) -> None:
     with _conn() as c:
         c.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+
+
+# --- Trading bots -----------------------------------------------------------
+import json as _json
+
+def create_bot(name, exchange, symbol, mode, config: dict, state: dict) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO trade_bots (name, exchange, symbol, mode, status, config, state, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (name, exchange, symbol, mode, "stopped", _json.dumps(config), _json.dumps(state), _now()))
+        return cur.lastrowid
+
+def update_bot(bot_id, name, exchange, symbol, mode, config: dict) -> None:
+    with _conn() as c:
+        c.execute("UPDATE trade_bots SET name=?, exchange=?, symbol=?, mode=?, config=? WHERE id=?",
+                  (name, exchange, symbol, mode, _json.dumps(config), bot_id))
+
+def list_bots() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT id, name, exchange, symbol, mode, status, config, state FROM trade_bots ORDER BY id").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["config"] = _json.loads(d.get("config") or "{}")
+        d["state"] = _json.loads(d.get("state") or "{}")
+        out.append(d)
+    return out
+
+def get_bot(bot_id) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT id, name, exchange, symbol, mode, status, config, state FROM trade_bots WHERE id=?", (bot_id,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    d["config"] = _json.loads(d.get("config") or "{}")
+    d["state"] = _json.loads(d.get("state") or "{}")
+    return d
+
+def set_bot_status(bot_id, status: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE trade_bots SET status=? WHERE id=?", (status, bot_id))
+
+def set_bot_state(bot_id, state: dict) -> None:
+    with _conn() as c:
+        c.execute("UPDATE trade_bots SET state=? WHERE id=?", (_json.dumps(state), bot_id))
+
+def delete_bot(bot_id) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM trade_bots WHERE id=?", (bot_id,))
+        c.execute("DELETE FROM trade_log WHERE bot_id=?", (bot_id,))
+
+def add_trade_log(bot_id, kind, text, pnl=0.0) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO trade_log (bot_id, ts, kind, text, pnl) VALUES (?,?,?,?,?)",
+                  (bot_id, _now(), kind, text, pnl))
+
+def list_trade_log(bot_id, limit=50) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT ts, kind, text, pnl FROM trade_log WHERE bot_id=? ORDER BY id DESC LIMIT ?",
+                         (bot_id, limit)).fetchall()
+    return [dict(r) for r in rows]
