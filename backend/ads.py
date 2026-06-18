@@ -98,6 +98,110 @@ def meta_set_budget(token: str, campaign_id: str, daily_budget_thb: float) -> di
     return _post(f"{GRAPH}/{campaign_id}", {"daily_budget": cents, "access_token": token})
 
 
+# ---------------------------------------------------------------------------
+# Google Ads (REST API v17). Needs: developer_token, customer_id, and OAuth
+# (either a raw access_token, or refresh_token + client_id + client_secret to
+# auto-refresh). login_customer_id is optional (for manager/MCC accounts).
+# ---------------------------------------------------------------------------
+GADS = "https://googleads.googleapis.com/v17"
+GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+
+
+def _digits(s: str) -> str:
+    return "".join(ch for ch in str(s or "") if ch.isdigit())
+
+
+def _post_json(url: str, body: dict, headers: dict, timeout: int = 25) -> dict:
+    data = json.dumps(body).encode()
+    h = {"User-Agent": _UA, "Content-Type": "application/json", "Accept": "application/json"}
+    h.update(headers)
+    req = urllib.request.Request(url, data=data, headers=h, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+
+def _google_access_token(cfg: dict) -> str:
+    tok = (cfg.get("access_token") or "").strip()
+    if tok:
+        return tok
+    rt = (cfg.get("refresh_token") or "").strip()
+    cid = (cfg.get("client_id") or "").strip()
+    sec = (cfg.get("client_secret") or "").strip()
+    if not (rt and cid and sec):
+        raise RuntimeError("Google Ads ยังขาด OAuth — ใส่ access token หรือ (refresh token + client id + client secret)")
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token", "refresh_token": rt,
+        "client_id": cid, "client_secret": sec}).encode()
+    req = urllib.request.Request(GOOGLE_TOKEN, data=body, headers={"User-Agent": _UA}, method="POST")
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        out = json.loads(resp.read().decode())
+    at = out.get("access_token")
+    if not at:
+        raise RuntimeError("รีเฟรช Google access token ไม่สำเร็จ")
+    return at
+
+
+def _google_headers(cfg: dict, token: str) -> dict:
+    h = {"Authorization": f"Bearer {token}",
+         "developer-token": (cfg.get("developer_token") or "").strip()}
+    login = _digits(cfg.get("login_customer_id") or "")
+    if login:
+        h["login-customer-id"] = login
+    return h
+
+
 def google_campaigns(cfg: dict) -> list:
-    """Google Ads needs a developer token + customer id + OAuth. Honest stub."""
-    raise RuntimeError("Google Ads ยังต้องตั้งค่าเพิ่ม (developer token + customer id) — เชื่อมไว้ก่อน เร็วๆ นี้รองรับดึงข้อมูลอัตโนมัติ")
+    """Real Google Ads fetch via GAQL searchStream → same shape as meta_campaigns."""
+    cid = _digits(cfg.get("customer_id"))
+    if not cfg.get("developer_token") or not cid:
+        raise RuntimeError("ยังไม่ได้ตั้งค่า Google Ads (developer token + customer id)")
+    token = _google_access_token(cfg)
+    query = ("SELECT campaign.id, campaign.name, campaign.status, "
+             "campaign_budget.amount_micros, campaign_budget.resource_name, "
+             "metrics.cost_micros, metrics.impressions, metrics.clicks, "
+             "metrics.conversions, metrics.conversions_value "
+             "FROM campaign WHERE segments.date DURING LAST_7_DAYS")
+    res = _post_json(f"{GADS}/customers/{cid}/googleAds:searchStream",
+                     {"query": query}, _google_headers(cfg, token))
+    batches = res if isinstance(res, list) else [res]
+    out = []
+    for batch in batches:
+        for row in (batch.get("results") or []):
+            c = row.get("campaign", {})
+            b = row.get("campaignBudget", {})
+            m = row.get("metrics", {})
+            spend = int(m.get("costMicros", 0) or 0) / 1e6
+            conv_val = float(m.get("conversionsValue", 0) or 0)
+            out.append({
+                "id": str(c.get("id", "")), "name": c.get("name", ""),
+                "status": c.get("status", ""),
+                "daily_budget": int(b.get("amountMicros", 0) or 0) / 1e6,
+                "budget_resource": b.get("resourceName", ""),
+                "spend": spend,
+                "impressions": int(m.get("impressions", 0) or 0),
+                "clicks": int(m.get("clicks", 0) or 0),
+                "conversions": float(m.get("conversions", 0) or 0),
+                "roas": (conv_val / spend) if spend else 0.0,
+            })
+    return out
+
+
+def google_pause(cfg: dict, campaign_id: str) -> dict:
+    cid = _digits(cfg.get("customer_id"))
+    token = _google_access_token(cfg)
+    op = {"operations": [{"update": {
+        "resourceName": f"customers/{cid}/campaigns/{_digits(campaign_id)}",
+        "status": "PAUSED"}, "updateMask": "status"}]}
+    return _post_json(f"{GADS}/customers/{cid}/campaigns:mutate", op, _google_headers(cfg, token))
+
+
+def google_set_budget(cfg: dict, budget_resource: str, daily_budget_thb: float) -> dict:
+    if not budget_resource:
+        raise RuntimeError("ไม่พบ budget resource ของแคมเปญนี้")
+    cid = _digits(cfg.get("customer_id"))
+    token = _google_access_token(cfg)
+    micros = int(round(float(daily_budget_thb) * 1e6))
+    op = {"operations": [{"update": {
+        "resourceName": budget_resource, "amountMicros": micros},
+        "updateMask": "amount_micros"}]}
+    return _post_json(f"{GADS}/customers/{cid}/campaignBudgets:mutate", op, _google_headers(cfg, token))

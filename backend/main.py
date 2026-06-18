@@ -1330,6 +1330,39 @@ async def mcp_disconnect(p: dict) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/mcp/test")
+async def mcp_test(p: dict) -> dict:
+    """Ping a connected MCP server with a real `initialize` handshake to confirm it works."""
+    import httpx
+    cid = (p.get("conn_id") or "").strip()
+    conn = db.get_mcp_connection(cid)
+    if not conn:
+        return {"ok": False, "error": "ยังไม่ได้เชื่อม connector นี้"}
+    url = (conn.get("url") or "").strip()
+    if not url:
+        return {"ok": False, "error": "ไม่มี URL ของ MCP server"}
+    tok = _resolve_secret(_live_mcp_token(conn)) or _live_mcp_token(conn)
+    headers = {"Content-Type": "application/json",
+               "Accept": "application/json, text/event-stream"}
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+               "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                          "clientInfo": {"name": "G Office", "version": "1.0"}}}
+    try:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as cx:
+            r = await cx.post(url, json=payload, headers=headers)
+    except Exception as exc:
+        return {"ok": False, "error": "ต่อ MCP server ไม่ได้: " + _friendly_err(exc)}
+    if r.status_code in (200, 202):
+        return {"ok": True, "message": "เชื่อมต่อสำเร็จ ✅ MCP server ตอบกลับปกติ"}
+    if r.status_code in (401, 403):
+        return {"ok": False, "error": f"โทเค็นหมดอายุ/ไม่มีสิทธิ์ (HTTP {r.status_code}) — เชื่อม OAuth หรือวาง token ใหม่"}
+    if r.status_code == 404:
+        return {"ok": False, "error": "ไม่พบ endpoint (HTTP 404) — เช็ก URL ของ MCP server"}
+    return {"ok": False, "error": f"server ตอบ HTTP {r.status_code}"}
+
+
 # --- One-click OAuth for a connector (no manual token paste) -----------------
 _MCP_OAUTH_PENDING: dict = {}          # state -> {conn_id, verifier, token_endpoint, client_id, client_secret, redirect_uri}
 
@@ -2244,6 +2277,14 @@ async def run_ads_review() -> list:
         for r in rows:
             r["_platform"] = "meta"; r["_acc_id"] = acc["id"]; r["_acc_label"] = acc["label"]
             campaigns.append(r)
+    gcfg = _ads_cfg("Google Ads")
+    if gcfg.get("developer_token") and gcfg.get("customer_id"):
+        try:
+            for r in await asyncio.to_thread(ads.google_campaigns, gcfg):
+                r["_platform"] = "google"; r["_acc_id"] = None; r["_acc_label"] = "Google Ads"
+                campaigns.append(r)
+        except Exception as exc:
+            errors.append(f"Google Ads: {type(exc).__name__}")
     if not campaigns:
         raise RuntimeError("ยังไม่มีข้อมูลแคมเปญ — เพิ่มบัญชี Facebook (token + Ad Account ID) ก่อน"
                            + (f" · ปัญหา: {', '.join(errors)}" if errors else ""))
@@ -2278,13 +2319,24 @@ def _apply_reco(reco: dict) -> str:
         if reco["action"] == "scale":
             ads.meta_set_budget(meta["token"], reco["campaign_id"], reco["suggested_budget"]); return f"เพิ่มงบเป็น {reco['suggested_budget']}/วัน"
         return "คงไว้ (ไม่เปลี่ยน)"
+    if reco["platform"] == "google":
+        gcfg = _ads_cfg("Google Ads")
+        if not (gcfg.get("developer_token") and gcfg.get("customer_id")):
+            raise RuntimeError("ยังไม่ได้ตั้งค่า Google Ads")
+        if reco["action"] == "pause":
+            ads.google_pause(gcfg, reco["campaign_id"]); return "หยุดแคมเปญ Google แล้ว"
+        if reco["action"] == "scale":
+            res = (reco.get("metrics") or {}).get("budget_resource", "")
+            ads.google_set_budget(gcfg, res, reco["suggested_budget"]); return f"เพิ่มงบเป็น {reco['suggested_budget']}/วัน"
+        return "คงไว้ (ไม่เปลี่ยน)"
     raise RuntimeError("แพลตฟอร์มนี้ยังใช้กับการสั่งจริงไม่ได้")
 
 
 @app.get("/api/ads/status")
 async def ads_status() -> dict:
+    _g = _ads_cfg("Google Ads")
     return {"meta": len(_ads_meta_accounts()) > 0, "meta_count": len(_ads_meta_accounts()),
-            "google": bool(_ads_cfg("Google Ads")),
+            "google": bool(_g.get("developer_token") and _g.get("customer_id")),
             "mode": _ads_mode()}
 
 

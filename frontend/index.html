@@ -2489,7 +2489,10 @@ async function loadDirectory(){
           <div style="font-size:11px;color:#64748b">ใช้ได้กับ: ${(c.agents||[]).join(", ") || "—"}</div>
         </div>
         ${c.connected
-          ? `<button class="qbtn dir-disc" data-id="${c.id}" style="color:#f87171">ตัดการเชื่อม</button>`
+          ? `<div style="display:flex;gap:6px;flex-shrink:0">
+               <button class="qbtn dir-test" data-id="${c.id}">🧪 ทดสอบ</button>
+               <button class="qbtn dir-disc" data-id="${c.id}" style="color:#f87171">ตัดการเชื่อม</button>
+             </div>`
           : ''}
       </div>
       ${agentPicker}
@@ -2527,6 +2530,12 @@ async function loadDirectory(){
     if (r.error){ toastNote(r.error, "#f59e0b"); return; }
     toastNote("🔗 เชื่อม API แล้ว — เปิดใช้ให้เอเจนต์ที่ตรงอัตโนมัติแล้ว", "#22c55e");
     loadDirectory(); loadAgentConnectors();
+  });
+  $("dirList").querySelectorAll(".dir-test").forEach(b => b.onclick = async () => {
+    const o = b.textContent; b.disabled = true; b.textContent = "⏳ กำลังทดสอบ…";
+    const r = await postJSON("/api/mcp/test", { conn_id: b.dataset.id });
+    b.disabled = false; b.textContent = o;
+    toastNote(r.ok ? r.message : ("❌ " + (r.error || "ทดสอบไม่ผ่าน")), r.ok ? "#22c55e" : "#f59e0b");
   });
   $("dirList").querySelectorAll(".dir-disc").forEach(b => b.onclick = async () => {
     await postJSON("/api/mcp/disconnect", { conn_id: b.dataset.id });
@@ -3466,7 +3475,19 @@ const CONN_GUIDE = {
             "หา Ad Account ID ใน Ads Manager — คือตัวเลขหลัง act_ แล้ววางทั้งสองค่าด้านล่าง"],
     fields: [{key:"token", label:"Meta access token (ads_management / ads_read)", placeholder:"จาก Meta — Graph API / System User token"},
              {key:"ad_account_id", label:"Ad Account ID", placeholder:"เช่น 1234567890 (ตัวเลข)"}] },
-  "Google Ads": { field: "Developer token / OAuth", doc: "https://ads.google.com/aw/apicenter", docLabel: "เปิด Google Ads API Center", desc: "ดู/จัดการแคมเปญ Google Ads (ต้องใช้ OAuth — เก็บไว้ก่อน)" },
+  "Google Ads": { doc: "https://ads.google.com/aw/apicenter", docLabel: "เปิด Google Ads API Center",
+    desc: "ดู/จัดการแคมเปญ Google Ads จริง (ดึงผล + หยุด/เพิ่มงบ)",
+    steps: ["ขอ Developer token ที่ Google Ads API Center (ตอนทดสอบใช้ระดับ Test/Basic ได้)",
+            "Customer ID = เลข 10 หลักมุมขวาบนของบัญชี Google Ads (ตัด - ออก)",
+            "OAuth: ทำที่ Google Cloud Console สร้าง OAuth client แล้วขอ refresh token (หรือวาง access token สั้นๆ เพื่อทดสอบ)",
+            "ถ้าใช้บัญชีศูนย์รวม (MCC) ใส่ Login customer ID ของ MCC ด้วย (ไม่บังคับ)"],
+    fields: [{key:"developer_token", label:"Developer token", placeholder:"จาก Google Ads API Center"},
+             {key:"customer_id", label:"Customer ID (10 หลัก)", placeholder:"เช่น 1234567890"},
+             {key:"login_customer_id", label:"Login customer ID (MCC, ไม่บังคับ)", placeholder:"เว้นว่างได้"},
+             {key:"access_token", label:"OAuth access token (ทดสอบสั้นๆ)", placeholder:"วาง access token (หรือใช้ refresh ด้านล่าง)"},
+             {key:"refresh_token", label:"OAuth refresh token (ใช้จริง)", placeholder:"refresh token"},
+             {key:"client_id", label:"OAuth client ID", placeholder:"จาก Google Cloud Console"},
+             {key:"client_secret", label:"OAuth client secret", placeholder:"จาก Google Cloud Console"}] },
   "Email": { doc: "https://support.google.com/mail/answer/185833", docLabel: "วิธีสร้าง App Password (Gmail)",
     desc: "ส่งอีเมลจริงผ่าน SMTP ของคุณ (Gmail แนะนำ App Password)",
     steps: ["Gmail: เปิด 2-Step Verification แล้วสร้าง App Password",
