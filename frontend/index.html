@@ -2811,8 +2811,9 @@ async function loadContentFactory(){
   const box = $("cfBoard");
   box.innerHTML = (d.posts||[]).length ? d.posts.map(p => {
     const [bg,fg,lab] = CF_ST[p.status] || ["#1e293b","#94a3b8",p.status];
-    const media = p.media_kind==="svg" ? `<div style="max-width:160px">${p.media_ref}</div>`
-      : p.media_kind==="image" ? `<img src="${p.media_ref}" style="max-width:160px;border-radius:8px">` : "";
+    const svgFixed = (p.media_ref||"").replace(/<svg /i, '<svg style="width:100%;height:auto;display:block" ');
+    const media = p.media_kind==="svg" ? `<div style="flex:0 0 auto;width:140px;max-width:35%;overflow:hidden;border-radius:8px">${svgFixed}</div>`
+      : p.media_kind==="image" ? `<img src="${p.media_ref}" style="flex:0 0 auto;width:140px;max-width:35%;border-radius:8px;object-fit:cover">` : "";
     return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px" data-cp="${p.id}">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="min-width:0;flex:1">
