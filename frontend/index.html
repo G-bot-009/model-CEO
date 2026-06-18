@@ -414,6 +414,7 @@
       <div class="menu-item" data-view="inbox"><span class="ico">💬</span><span class="label">Social Inbox</span></div>
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
+      <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
@@ -947,6 +948,31 @@
           </div>
         </div>
         <div class="panel"><h3>📋 บอทของฉัน</h3><div id="tbList" style="display:flex;flex-direction:column;gap:12px"></div></div>
+      </section>
+
+      <!-- CONTENT FACTORY -->
+      <section class="view" id="view-content">
+        <div class="panel"><h3>🏭 โรงงานคอนเทนต์อัตโนมัติ</h3>
+          <p style="color:#94a3b8;font-size:13px;margin:4px 0 0">ทีม AI ส่องเทรนด์ → CEO ตัดสินใจ → เขียนแคปชั่น+ทำภาพ → วางคิว → Publisher โพสต์ตามกฎที่ตั้งไว้ · ข้อความ/ตัดสินใจใช้ Claude · ภาพจริงต้องใส่คีย์ Gemini (ไม่งั้นเป็น SVG)</p>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button class="qbtn" id="cfRun" style="font-weight:700">▶ รันรอบเดี๋ยวนี้</button>
+            <span id="cfToday" style="color:#94a3b8;align-self:center;font-size:13px"></span>
+          </div>
+        </div>
+        <div class="panel"><h3>⚙️ กฎที่ปรับได้ (แก้แล้วมีผลทันที)</h3>
+          <div id="cfRules" style="display:flex;flex-direction:column;gap:10px"></div>
+          <button class="save" id="cfSaveRules" style="margin-top:12px">💾 บันทึกกฎ</button>
+        </div>
+        <div class="panel"><h3>🎨 คีย์โมเดลภายนอก (ภาพ/วิดีโอ/เสียงจริง — BYO key)</h3>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">Claude ทำภาพถ่าย/วิดีโอจริงไม่ได้ — ใส่คีย์เจ้าพวกนี้เพื่อให้ได้ภาพ/วิดีโอ/เสียงจริง (เก็บในเครื่องคุณ)</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="width:160px">🖼️ Gemini (ภาพ) <span id="cfkG" style="font-size:11px"></span></span><input id="cfKeyGemini" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="Gemini API key (จาก aistudio.google.com)"></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="width:160px">🎬 MiniMax (วิดีโอ) <span id="cfkM" style="font-size:11px"></span></span><input id="cfKeyMinimax" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="MiniMax API key"></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="width:160px">🔊 TTS (เสียง) <span id="cfkT" style="font-size:11px"></span></span><input id="cfKeyTts" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="Gemini TTS key"></div>
+          </div>
+          <button class="save" id="cfSaveKeys" style="margin-top:12px">💾 บันทึกคีย์</button>
+        </div>
+        <div class="panel"><h3>📋 บอร์ดคอนเทนต์ (คิว/ร่าง/โพสต์แล้ว)</h3><div id="cfBoard" style="display:flex;flex-direction:column;gap:12px"></div></div>
       </section>
 
       <!-- SETTINGS -->
@@ -2658,16 +2684,92 @@ async function loadTradeBots(){
     if (el){ el.style.display = "block"; mountTV("tbChart"+b.id, tvSymbol(b.exchange, b.symbol)); } } });
 }
 
+/* ---------- Content factory ---------- */
+const CF_RULES_DEF = [
+  ["team_on","ทีมทำงานเอง","ปิด = ทีมยังร่างงานแต่ไม่โพสต์เอง",[["true","เปิด"],["false","ปิด"]]],
+  ["post_mode","โหมดการโพสต์","ร่าง = รออนุมัติก่อน · โพสต์เลย = อัตโนมัติ",[["draft","ร่างรออนุมัติ"],["auto","โพสต์เลย (อัตโนมัติ)"]]],
+  ["brain","สมอง AI","Flash = ถูก/เร็ว · Pro = ฉลาด ใช้ Token มากกว่า",[["flash","Flash"],["pro","Pro"]]],
+  ["posts_per_day","โพสต์รวมต่อวัน","จำกัดโพสต์ทั้งหมด/วัน (0 = ให้ AI ตัดสิน)","num"],
+  ["media_per_day","รูป+ข้อความต่อวัน","0 = ปิดโพสต์รูป/ข้อความอัตโนมัติ","num"],
+  ["videos_per_day","วิดีโอต่อวัน","จำนวนวิดีโอโปรโมท/วัน","num"],
+  ["window","ช่วงเวลาโพสต์","พีค = เวลาคนเล่นเยอะ · AI จัด = ตัดสินเอง",[["peak","ช่วงพีค"],["ai","AI จัด"]]],
+  ["min_gap_hours","เว้นระยะระหว่างโพสต์ (ชม.)","กันโพสต์ติดกัน","num"],
+];
+const CF_ST = { draft:["#1e293b","#fbbf24","ร่าง"], queued:["#1e3a8a","#93c5fd","เข้าคิว"], posted:["#064e3b","#6ee7b7","โพสต์แล้ว"], blocked:["#7f1d1d","#fca5a5","ถูกกรอง"] };
+async function loadContentFactory(){
+  let d; try { d = await (await fetch("/api/content/board")).json(); } catch(e){ return; }
+  const r = d.rules || {};
+  $("cfRules").innerHTML = CF_RULES_DEF.map(([k,label,hint,opt]) => {
+    let ctrl;
+    if (opt === "num") ctrl = `<input class="numfld cf-r" data-k="${k}" style="width:90px;margin:0" value="${r[k]}">`;
+    else ctrl = `<select class="numfld cf-r" data-k="${k}" style="width:auto;margin:0">${opt.map(([v,t])=>`<option value="${v}" ${String(r[k])===v?'selected':''}>${t}</option>`).join("")}</select>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><div style="font-weight:700;color:#fff">${label}</div><div style="font-size:12px;color:#64748b">${hint}</div></div>${ctrl}</div>`;
+  }).join("");
+  $("cfToday").textContent = `วันนี้ผลิตไปแล้ว ${d.today||0} ชิ้น`;
+  const mc = d.media_connected || {};
+  $("cfkG").textContent = mc.gemini ? "✓ เชื่อมแล้ว" : ""; $("cfkG").style.color = "#6ee7b7";
+  $("cfkM").textContent = mc.minimax ? "✓ เชื่อมแล้ว" : ""; $("cfkM").style.color = "#6ee7b7";
+  $("cfkT").textContent = mc.tts ? "✓ เชื่อมแล้ว" : ""; $("cfkT").style.color = "#6ee7b7";
+  const box = $("cfBoard");
+  box.innerHTML = (d.posts||[]).length ? d.posts.map(p => {
+    const [bg,fg,lab] = CF_ST[p.status] || ["#1e293b","#94a3b8",p.status];
+    const media = p.media_kind==="svg" ? `<div style="max-width:160px">${p.media_ref}</div>`
+      : p.media_kind==="image" ? `<img src="${p.media_ref}" style="max-width:160px;border-radius:8px">` : "";
+    return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px" data-cp="${p.id}">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="min-width:0;flex:1">
+          <div><span class="tag" style="background:${bg};color:${fg}">${lab}</span> <b style="color:#fff">${escapeHtml(p.topic||"")}</b></div>
+          <div style="font-size:13px;color:#cbd5e1;white-space:pre-wrap;margin-top:4px">${escapeHtml(p.caption||"")}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px">${p.created_at?.replace('T',' ').slice(5,16)||""} · ช่อง: ${(p.platforms||[]).join(", ")||"—"} ${p.result?'· '+escapeHtml(p.result):''}</div>
+        </div>
+        ${media}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${p.status==="draft"?`<button class="qbtn cf-approve" data-id="${p.id}">✅ อนุมัติเข้าคิว</button>`:''}
+        ${(p.status==="draft"||p.status==="queued")?`<button class="qbtn cf-pub" data-id="${p.id}" style="font-weight:700">📤 โพสต์เลย</button>`:''}
+        <button class="qbtn cf-del" data-id="${p.id}" style="color:#f87171">🗑️</button>
+      </div>
+    </div>`;
+  }).join("") : '<div style="color:#64748b">ยังไม่มีคอนเทนต์ — กด “รันรอบเดี๋ยวนี้” หรือรอทีมผลิตตามกฎ</div>';
+  box.querySelectorAll(".cf-approve").forEach(x=>x.onclick=async()=>{await postJSON("/api/content/post/approve",{id:+x.dataset.id});loadContentFactory();});
+  box.querySelectorAll(".cf-pub").forEach(x=>x.onclick=async()=>{const r=await postJSON("/api/content/post/publish",{id:+x.dataset.id});toastNote(r.summary||"โพสต์แล้ว","#22c55e");loadContentFactory();});
+  box.querySelectorAll(".cf-del").forEach(x=>x.onclick=async()=>{await postJSON("/api/content/post/delete",{id:+x.dataset.id});loadContentFactory();});
+}
+async function cfSaveRules(){
+  const rules = {};
+  document.querySelectorAll("#cfRules .cf-r").forEach(el => {
+    let v = el.value;
+    if (el.dataset.k==="team_on") v = (v==="true");
+    else if (["posts_per_day","media_per_day","videos_per_day"].includes(el.dataset.k)) v = parseInt(v)||0;
+    else if (el.dataset.k==="min_gap_hours") v = parseFloat(v)||0;
+    rules[el.dataset.k] = v;
+  });
+  await postJSON("/api/content/rules",{rules}); toastNote("บันทึกกฎแล้ว ✅","#22c55e"); loadContentFactory();
+}
+async function cfSaveKeys(){
+  await postJSON("/api/content/media-keys",{gemini:$("cfKeyGemini").value.trim(),minimax:$("cfKeyMinimax").value.trim(),tts:$("cfKeyTts").value.trim()});
+  $("cfKeyGemini").value="";$("cfKeyMinimax").value="";$("cfKeyTts").value="";
+  toastNote("บันทึกคีย์แล้ว ✅","#22c55e"); loadContentFactory();
+}
+async function cfRun(){
+  const b=$("cfRun"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังผลิต…";
+  const r=await postJSON("/api/content/run",{});
+  if(r.error)toastNote(r.error,"#f59e0b"); else toastNote("ผลิตคอนเทนต์ 1 ชิ้นแล้ว ✅","#22c55e");
+  b.disabled=false;b.textContent=o;loadContentFactory();
+}
+
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
   if (v === "inbox") loadInbox();
   if (v === "automation") loadAutomation();
   if (v === "tradebot") loadTradeBots();
+  if (v === "content") loadContentFactory();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
   if (v === "n8n") loadN8n();
@@ -3530,6 +3632,9 @@ $("adMcpAdd").addEventListener("click", addAgentMcp);
 $("openDirectory").addEventListener("click", openDirectory);
 $("tbSave").addEventListener("click", tbSaveBot);
 $("tbAi").addEventListener("click", tbAiStrategy);
+$("cfRun").addEventListener("click", cfRun);
+$("cfSaveRules").addEventListener("click", cfSaveRules);
+$("cfSaveKeys").addEventListener("click", cfSaveKeys);
 (function handleMcpOAuthReturn(){
   const q = new URLSearchParams(location.search);
   const ok = q.get("mcp_connected"), err = q.get("mcp_error");

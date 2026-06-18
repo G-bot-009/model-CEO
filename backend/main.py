@@ -31,6 +31,8 @@ from . import skills
 from . import mcp_catalog
 from . import mcp_oauth
 from . import trading
+from . import content_factory
+from . import media
 from .agents import AGENTS, JARVIS, all_agents, compose_custom_system, SPECIALIST_FOOTER as _SPECIALIST_FOOTER
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
@@ -208,6 +210,7 @@ async def _startup() -> None:
     set_model(db.get_settings().get("model"))  # apply saved model choice
     import asyncio
     asyncio.create_task(_trading_loop())        # ticks active trading bots
+    asyncio.create_task(_content_loop())        # autonomous content factory
 
 
 LOGIN_USER = os.getenv("LOGIN_USER", "admin")
@@ -1644,6 +1647,195 @@ async def trading_strategy_ai(p: dict) -> dict:
         return {"ok": True, "config": cfg}
     except Exception as exc:
         return {"error": _friendly_err(exc)}
+
+
+# ======================= Autonomous content factory =========================
+_SENDABLE = {"Slack", "Discord", "Telegram", "LINE OA", "Webhook → Make/Zapier"}
+
+
+def _media_keys() -> dict:
+    s = db.get_settings()
+    return {"gemini": s.get("media_gemini", ""), "minimax": s.get("media_minimax", ""),
+            "tts": s.get("media_tts", "")}
+
+
+def _content_brief() -> str:
+    s = db.get_settings()
+    return (s.get("content_brief") or s.get("company_name") or
+            "ธุรกิจของผู้ใช้ — โทนเป็นกันเอง น่าเชื่อถือ").strip()
+
+
+def _parse_json(text: str) -> dict:
+    m = re.search(r"\{.*\}", text or "", re.DOTALL)
+    try:
+        return json.loads(m.group(0)) if m else {}
+    except Exception:
+        return {}
+
+
+async def _claude_text(agent_id: str, model: str, prompt: str, max_tokens: int = 900) -> str:
+    resp = await client_for_agent(agent_id).messages.create(
+        model=model, max_tokens=max_tokens, **thinking_kwargs(model),
+        messages=[{"role": "user", "content": prompt}])
+    return next((b.text for b in resp.content if b.type == "text"), "")
+
+
+async def run_content_cycle(rules: dict) -> dict:
+    """One factory cycle: scout→decide→write→art→queue. Returns the planned post."""
+    rules = content_factory.normalize_rules(rules)
+    model = content_factory.brain_model(rules)
+    raw = await _claude_text("content", model, content_factory.CYCLE_PROMPT.format(brief=_content_brief()))
+    data = _parse_json(raw)
+    caption = (data.get("caption") or "").strip()
+    if not caption:
+        raise RuntimeError("โมเดลไม่คืนแคปชั่น")
+    topic = (data.get("topic") or "").strip()
+    img_prompt = (data.get("image_prompt") or topic or caption[:80]).strip()
+
+    # safety gate
+    safe = True
+    try:
+        sd = _parse_json(await _claude_text("content", model, content_factory.SAFETY_PROMPT.format(caption=caption), 200))
+        safe = bool(sd.get("safe", True))
+        safe_reason = sd.get("reason", "")
+    except Exception:
+        safe_reason = ""
+
+    # art direction: real image via Gemini (BYO key) else fall back to SVG
+    media_kind, media_ref = "none", ""
+    keys = _media_keys()
+    if rules["media_per_day"] != 0:
+        if keys["gemini"]:
+            try:
+                im = await __import__("asyncio").to_thread(media.gemini_image, img_prompt, keys["gemini"])
+                media_kind, media_ref = "image", f"data:{im['mime']};base64,{im['b64']}"
+            except Exception:
+                media_kind = "none"
+        if media_kind == "none":
+            try:
+                w, h = IMG_SIZES.get("1:1", (600, 600))
+                svg = _extract_svg(await _claude_text("designer", model,
+                        f"Create a single self-contained <svg width='{w}' height='{h}'> illustration for: {img_prompt}. Return only the SVG.", 4000))
+                if svg:
+                    media_kind, media_ref = "svg", svg
+            except Exception:
+                pass
+
+    platforms = [n for n, st in db.list_connectors().items() if st == "connected" and n in _SENDABLE]
+    if not safe:
+        status = "blocked"
+    elif rules["post_mode"] == "auto":
+        status = "queued"
+    else:
+        status = "draft"
+    pid = db.create_planned("social", topic, caption, media_kind, media_ref, platforms, status, db._now())
+    if not safe:
+        db.set_planned_status(pid, "blocked", result=f"ไม่ผ่านการกรอง: {safe_reason}")
+    db.add_decision("content_factory", f"{status}: {topic[:50]}")
+    return db.get_planned(pid)
+
+
+async def publish_planned(post: dict) -> dict:
+    """Push a queued post to every connected sendable channel + a safety re-check."""
+    import asyncio
+    caption = post.get("caption") or ""
+    results = []
+    for name in (post.get("platforms") or []):
+        row = db.get_connector(name)
+        if not row or row.get("status") != "connected":
+            continue
+        try:
+            r = await _send_to_connector(name, row.get("config") or "", caption)
+            results.append(f"{name}: {'✓' if r.get('ok') else '✗'}")
+        except Exception as exc:
+            results.append(f"{name}: ✗ {type(exc).__name__}")
+    summary = " · ".join(results) or "ไม่มีช่องที่เชื่อม"
+    db.set_planned_status(post["id"], "posted", posted_at=db._now(), result=summary)
+    return {"ok": True, "summary": summary}
+
+
+async def _content_loop() -> None:
+    import asyncio
+    while True:
+        await asyncio.sleep(60)
+        try:
+            rules = content_factory.normalize_rules(db.get_content_rules())
+            ok, _ = content_factory.should_produce(rules, db.count_planned_today(), db.last_planned_iso())
+            if ok:
+                await run_content_cycle(rules)
+            for post in db.due_planned():       # publish anything queued + due
+                await publish_planned(post)
+        except Exception:
+            pass
+
+
+@app.get("/api/content/rules")
+async def content_rules_get() -> dict:
+    return {"rules": content_factory.normalize_rules(db.get_content_rules()),
+            "defaults": content_factory.DEFAULT_RULES}
+
+
+@app.post("/api/content/rules")
+async def content_rules_set(p: dict) -> dict:
+    rules = content_factory.normalize_rules(p.get("rules") or p)
+    db.set_content_rules(rules)
+    return {"ok": True, "rules": rules}
+
+
+@app.get("/api/content/board")
+async def content_board() -> dict:
+    rules = content_factory.normalize_rules(db.get_content_rules())
+    return {"posts": db.list_planned(60), "today": db.count_planned_today(),
+            "rules": rules, "media_connected": {k: bool(v) for k, v in _media_keys().items()}}
+
+
+@app.post("/api/content/run")
+async def content_run(p: dict) -> dict:
+    try:
+        post = await run_content_cycle(db.get_content_rules())
+        return {"ok": True, "post": post}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.post("/api/content/post/approve")
+async def content_approve(p: dict) -> dict:
+    db.set_planned_status(int(p.get("id")), "queued")
+    return {"ok": True}
+
+
+@app.post("/api/content/post/publish")
+async def content_publish(p: dict) -> dict:
+    post = db.get_planned(int(p.get("id")))
+    if not post:
+        return {"error": "ไม่พบโพสต์"}
+    return await publish_planned(post)
+
+
+@app.post("/api/content/post/delete")
+async def content_delete(p: dict) -> dict:
+    db.delete_planned(int(p.get("id")))
+    return {"ok": True}
+
+
+@app.get("/api/content/media-keys")
+async def content_media_keys() -> dict:
+    k = _media_keys()
+    mask = lambda v: (v[:4] + "…") if v else ""
+    return {"gemini": mask(k["gemini"]), "minimax": mask(k["minimax"]), "tts": mask(k["tts"]),
+            "has": {x: bool(k[x]) for x in k}}
+
+
+@app.post("/api/content/media-keys")
+async def content_media_keys_set(p: dict) -> dict:
+    upd = {}
+    for prov, key in (("gemini", "media_gemini"), ("minimax", "media_minimax"), ("tts", "media_tts")):
+        v = p.get(prov)
+        if v is not None and v.strip():
+            upd[key] = v.strip()
+    if upd:
+        db.set_settings(upd)
+    return {"ok": True}
 
 
 @app.websocket("/ws")

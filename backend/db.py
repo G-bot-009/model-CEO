@@ -158,6 +158,12 @@ def init() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 bot_id INTEGER, ts TEXT, kind TEXT, text TEXT, pnl REAL
             );
+            CREATE TABLE IF NOT EXISTS planned_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT, topic TEXT, caption TEXT, media_kind TEXT, media_ref TEXT,
+                platforms TEXT, status TEXT, scheduled_at TEXT, created_at TEXT,
+                posted_at TEXT, result TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -983,3 +989,93 @@ def list_trade_log(bot_id, limit=50) -> list[dict]:
         rows = c.execute("SELECT ts, kind, text, pnl FROM trade_log WHERE bot_id=? ORDER BY id DESC LIMIT ?",
                          (bot_id, limit)).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- Content factory --------------------------------------------------------
+def get_content_rules() -> dict:
+    v = get_settings().get("content_rules")
+    if not v:
+        return {}
+    try:
+        return _json.loads(v)
+    except Exception:
+        return {}
+
+def set_content_rules(rules: dict) -> None:
+    set_settings({"content_rules": _json.dumps(rules)})
+
+def create_planned(kind, topic, caption, media_kind, media_ref, platforms, status, scheduled_at) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO planned_posts (kind, topic, caption, media_kind, media_ref, platforms, status, "
+            "scheduled_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (kind, topic, caption, media_kind, media_ref, _json.dumps(platforms or []), status, scheduled_at, _now()))
+        return cur.lastrowid
+
+def list_planned(limit=60) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM planned_posts ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["platforms"] = _json.loads(d.get("platforms") or "[]")
+        except Exception:
+            d["platforms"] = []
+        out.append(d)
+    return out
+
+def get_planned(pid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM planned_posts WHERE id=?", (pid,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    try:
+        d["platforms"] = _json.loads(d.get("platforms") or "[]")
+    except Exception:
+        d["platforms"] = []
+    return d
+
+def set_planned_status(pid, status, posted_at=None, result=None) -> None:
+    with _conn() as c:
+        c.execute("UPDATE planned_posts SET status=?, posted_at=COALESCE(?, posted_at), result=COALESCE(?, result) WHERE id=?",
+                  (status, posted_at, result, pid))
+
+def delete_planned(pid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM planned_posts WHERE id=?", (pid,))
+
+def count_planned_today() -> int:
+    today = _now()[:10]
+    with _conn() as c:
+        r = c.execute("SELECT COUNT(*) FROM planned_posts WHERE substr(created_at,1,10)=?", (today,)).fetchone()
+    return r[0] if r else 0
+
+def count_planned_today_kind(media_kind: str) -> int:
+    today = _now()[:10]
+    with _conn() as c:
+        r = c.execute("SELECT COUNT(*) FROM planned_posts WHERE substr(created_at,1,10)=? AND media_kind=?",
+                      (today, media_kind)).fetchone()
+    return r[0] if r else 0
+
+def last_planned_iso() -> "Optional[str]":
+    with _conn() as c:
+        r = c.execute("SELECT created_at FROM planned_posts ORDER BY id DESC LIMIT 1").fetchone()
+    return r[0] if r else None
+
+def due_planned() -> list[dict]:
+    """Queued posts whose scheduled time has arrived."""
+    now = _now()
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM planned_posts WHERE status='queued' AND (scheduled_at IS NULL OR scheduled_at<=?)",
+                         (now,)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["platforms"] = _json.loads(d.get("platforms") or "[]")
+        except Exception:
+            d["platforms"] = []
+        out.append(d)
+    return out
