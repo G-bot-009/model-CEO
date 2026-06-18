@@ -2635,6 +2635,8 @@ function openLightbox(svg, title){
   $("lbBody").innerHTML = svg;
   const s = $("lbBody").querySelector("svg");
   if (s){ s.removeAttribute("width"); s.removeAttribute("height"); s.style.width = "100%"; s.style.height = "auto"; s.style.display = "block"; }
+  const im = $("lbBody").querySelector("img");
+  if (im){ im.style.width = "100%"; im.style.height = "auto"; im.style.display = "block"; im.style.objectFit = "contain"; }
   $("imgLightbox").hidden = false;
 }
 function imgCard(svg, prompt, size){
@@ -2835,8 +2837,9 @@ async function loadContentFactory(){
   box.innerHTML = (d.posts||[]).length ? d.posts.map(p => {
     const [bg,fg,lab] = CF_ST[p.status] || ["#1e293b","#94a3b8",p.status];
     const svgFixed = (p.media_ref||"").replace(/<svg /i, '<svg style="width:100%;height:auto;display:block" ');
-    const media = p.media_kind==="svg" ? `<div style="flex:0 0 auto;width:140px;max-width:35%;overflow:hidden;border-radius:8px">${svgFixed}</div>`
-      : p.media_kind==="image" ? `<img src="${p.media_ref}" style="flex:0 0 auto;width:140px;max-width:35%;border-radius:8px;object-fit:cover">` : "";
+    const inner = p.media_kind==="svg" ? svgFixed
+      : p.media_kind==="image" ? `<img src="${p.media_ref}" style="width:100%;border-radius:6px;display:block">` : "";
+    const media = inner ? `<div class="cf-media" title="คลิกเพื่อดูภาพใหญ่" style="flex:0 0 auto;width:140px;max-width:35%;overflow:hidden;border-radius:8px;cursor:zoom-in">${inner}</div>` : "";
     return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px" data-cp="${p.id}">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="min-width:0;flex:1">
@@ -2853,6 +2856,7 @@ async function loadContentFactory(){
       </div>
     </div>`;
   }).join("") : '<div style="color:#64748b">ยังไม่มีคอนเทนต์ — กด “รันรอบเดี๋ยวนี้” หรือรอทีมผลิตตามกฎ</div>';
+  box.querySelectorAll(".cf-media").forEach(x=>x.onclick=()=>openLightbox(x.innerHTML, "ตัวอย่างคอนเทนต์"));
   box.querySelectorAll(".cf-approve").forEach(x=>x.onclick=async()=>{await postJSON("/api/content/post/approve",{id:+x.dataset.id});loadContentFactory();});
   box.querySelectorAll(".cf-pub").forEach(x=>x.onclick=async()=>{const r=await postJSON("/api/content/post/publish",{id:+x.dataset.id});toastNote(r.summary||"โพสต์แล้ว","#22c55e");loadContentFactory();});
   box.querySelectorAll(".cf-del").forEach(x=>x.onclick=async()=>{await postJSON("/api/content/post/delete",{id:+x.dataset.id});loadContentFactory();});
