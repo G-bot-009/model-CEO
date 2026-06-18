@@ -1834,10 +1834,12 @@ async function loadAgents() {
       </div>
       <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
         <span style="flex:1;font-size:12px;color:${color(a.id)};font-weight:700">✍️ คลิกเพื่อสั่งงาน</span>
+        <button class="qbtn" data-tools="${a.id}" title="เครื่องมือ/MCP + รายละเอียด">🔌 เครื่องมือ</button>
         <button class="qbtn" data-pause="${a.id}">⏸️ พัก</button>
         ${a.custom ? `<button class="qbtn" data-del="${a.id}" title="ลบเอเจนต์นี้">🗑️</button>` : ""}
       </div>`;
     card.addEventListener("click", () => openAgentCmd(a.id));
+    card.querySelector("[data-tools]").addEventListener("click", (e) => { e.stopPropagation(); openAgentDetail(a.id); });
     card.querySelector("[data-pause]").addEventListener("click", (e) => { e.stopPropagation(); togglePause(a.id); });
     const delBtn = card.querySelector("[data-del]");
     if (delBtn) delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteAgent(a.id, a.name); });
