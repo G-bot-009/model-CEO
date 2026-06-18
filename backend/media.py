@@ -81,11 +81,17 @@ def generate_image(provider: str, model: str, key: str, prompt: str) -> dict:
         raise RuntimeError("ยังไม่ได้ใส่คีย์รูปภาพ")
     p = (provider or "gemini").lower()
     if p == "openai":
-        d = _post_json("https://api.openai.com/v1/images/generations",
-                       {"model": model or "gpt-image-1", "prompt": prompt, "size": "1024x1024",
-                        "n": 1, "response_format": "b64_json"},
+        m = model or "gpt-image-1"
+        body = {"model": m, "prompt": prompt, "size": "1024x1024", "n": 1}
+        if m.startswith("dall-e"):          # gpt-image-1 ไม่รับ response_format (คืน b64 อยู่แล้ว)
+            body["response_format"] = "b64_json"
+        d = _post_json("https://api.openai.com/v1/images/generations", body,
                        headers={"Authorization": f"Bearer {key}"})
-        return {"mime": "image/png", "b64": d["data"][0]["b64_json"]}
+        item = (d.get("data") or [{}])[0]
+        b64 = item.get("b64_json") or ""
+        if not b64:
+            raise RuntimeError("OpenAI ไม่ส่งภาพกลับมา: " + str(d)[:140])
+        return {"mime": "image/png", "b64": b64}
     if p == "stability":
         m = (model or "core")
         url = "https://api.stability.ai/v2beta/stable-image/generate/" + ("sd3" if m.startswith("sd3") else "core")

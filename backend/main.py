@@ -1761,30 +1761,41 @@ async def run_content_cycle(rules: dict) -> dict:
     except Exception:
         safe_reason = ""
 
-    # art direction: real image via the chosen provider (BYO key) else SVG
-    media_kind, media_ref = "none", ""
+    # art direction: real image via the chosen provider (BYO key) else SVG fallback.
+    # media_wanted = ผู้ใช้ตั้งให้มีรูป; media_err = สาเหตุถ้าสร้างไม่สำเร็จ (ห้ามแสดงว่าสำเร็จถ้ารูปพัง)
+    media_kind, media_ref, media_err = "none", "", ""
+    media_wanted = rules["media_per_day"] != 0
     img = _media_cfg("image")
-    if rules["media_per_day"] != 0:
+    if media_wanted:
         if img["key"]:
             try:
                 im = await __import__("asyncio").to_thread(
                     media.generate_image, img["provider"], img["model"], img["key"], img_prompt)
-                media_kind, media_ref = "image", f"data:{im['mime']};base64,{im['b64']}"
-            except Exception:
+                b64 = (im.get("b64") or "").strip()
+                if len(b64) < 100:                      # คืนมาว่าง/ไม่สมบูรณ์
+                    raise RuntimeError("ภาพที่ได้ว่างเปล่า")
+                media_kind, media_ref = "image", f"data:{im['mime']};base64,{b64}"
+            except Exception as exc:
+                media_err = f"สร้างรูปด้วย {img['provider']} ไม่สำเร็จ: {_friendly_err(exc)}"
                 media_kind = "none"
-        if media_kind == "none":
+        if media_kind == "none":                        # SVG สำรอง
             try:
                 w, h = IMG_SIZES.get("1:1", (600, 600))
                 svg = _extract_svg(await _claude_text("designer", model,
                         f"Create a single self-contained <svg width='{w}' height='{h}'> illustration for: {img_prompt}. Return only the SVG.", 4000))
-                if svg:
-                    media_kind, media_ref = "svg", svg
-            except Exception:
-                pass
+                if svg and "<svg" in svg.lower() and len(svg) > 120:
+                    media_kind, media_ref, media_err = "svg", svg, ""
+                else:
+                    media_err = media_err or "สร้างภาพสำรอง (SVG) ไม่สำเร็จ"
+            except Exception as exc:
+                media_err = media_err or f"สร้างภาพสำรองไม่สำเร็จ: {_friendly_err(exc)}"
 
     platforms = [n for n, st in db.list_connectors().items() if st == "connected" and n in _SENDABLE]
+    incomplete = media_wanted and media_kind == "none"      # อยากได้รูปแต่ไม่มีรูปใช้ได้
     if not safe:
         status = "blocked"
+    elif incomplete:
+        status = "draft"                                    # ไม่ auto-queue งานที่รูปพัง
     elif rules["post_mode"] == "auto":
         status = "queued"
     else:
@@ -1792,8 +1803,13 @@ async def run_content_cycle(rules: dict) -> dict:
     pid = db.create_planned("social", topic, caption, media_kind, media_ref, platforms, status, db._now())
     if not safe:
         db.set_planned_status(pid, "blocked", result=f"ไม่ผ่านการกรอง: {safe_reason}")
+    elif incomplete:
+        db.set_planned_status(pid, "draft", result=f"⚠️ รูปไม่สมบูรณ์ — {media_err or 'สร้างรูปไม่สำเร็จ'} (ยังไม่ควรโพสต์)")
     db.add_decision("content_factory", f"{status}: {topic[:50]}")
-    return db.get_planned(pid)
+    post = db.get_planned(pid)
+    if isinstance(post, dict):
+        post["media_error"] = bool(incomplete)
+    return post
 
 
 async def publish_planned(post: dict) -> dict:

@@ -2836,10 +2836,14 @@ async function loadContentFactory(){
   const box = $("cfBoard");
   box.innerHTML = (d.posts||[]).length ? d.posts.map(p => {
     const [bg,fg,lab] = CF_ST[p.status] || ["#1e293b","#94a3b8",p.status];
+    const mediaBad = (p.result||"").indexOf("รูปไม่สมบูรณ์") >= 0;
+    const hasRef = !!(p.media_ref||"").trim();
     const svgFixed = (p.media_ref||"").replace(/<svg /i, '<svg style="width:100%;height:auto;display:block" ');
-    const inner = p.media_kind==="svg" ? svgFixed
-      : p.media_kind==="image" ? `<img src="${p.media_ref}" style="width:100%;border-radius:6px;display:block">` : "";
-    const media = inner ? `<div class="cf-media" title="คลิกเพื่อดูภาพใหญ่" style="flex:0 0 auto;width:140px;max-width:35%;overflow:hidden;border-radius:8px;cursor:zoom-in">${inner}</div>` : "";
+    const inner = (p.media_kind==="svg" && hasRef) ? svgFixed
+      : (p.media_kind==="image" && hasRef) ? `<img src="${p.media_ref}" style="width:100%;border-radius:6px;display:block">` : "";
+    const media = inner
+      ? `<div class="cf-media" title="คลิกเพื่อดูภาพใหญ่" style="flex:0 0 auto;width:140px;max-width:35%;overflow:hidden;border-radius:8px;cursor:zoom-in">${inner}</div>`
+      : (mediaBad ? `<div style="flex:0 0 auto;width:140px;max-width:35%;min-height:90px;border:1px dashed #ef4444;border-radius:8px;display:flex;align-items:center;justify-content:center;text-align:center;color:#fca5a5;font-size:12px;padding:8px">⚠️ รูปสร้างไม่สำเร็จ</div>` : "");
     return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px" data-cp="${p.id}">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="min-width:0;flex:1">
@@ -2851,14 +2855,16 @@ async function loadContentFactory(){
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         ${p.status==="draft"?`<button class="qbtn cf-approve" data-id="${p.id}">✅ อนุมัติเข้าคิว</button>`:''}
-        ${(p.status==="draft"||p.status==="queued")?`<button class="qbtn cf-pub" data-id="${p.id}" style="font-weight:700">📤 โพสต์เลย</button>`:''}
+        ${(p.status==="draft"||p.status==="queued")?`<button class="qbtn cf-pub" data-id="${p.id}" data-bad="${mediaBad?1:0}" style="font-weight:700">📤 โพสต์เลย</button>`:''}
         <button class="qbtn cf-del" data-id="${p.id}" style="color:#f87171">🗑️</button>
       </div>
     </div>`;
   }).join("") : '<div style="color:#64748b">ยังไม่มีคอนเทนต์ — กด “รันรอบเดี๋ยวนี้” หรือรอทีมผลิตตามกฎ</div>';
   box.querySelectorAll(".cf-media").forEach(x=>x.onclick=()=>openLightbox(x.innerHTML, "ตัวอย่างคอนเทนต์"));
   box.querySelectorAll(".cf-approve").forEach(x=>x.onclick=async()=>{await postJSON("/api/content/post/approve",{id:+x.dataset.id});loadContentFactory();});
-  box.querySelectorAll(".cf-pub").forEach(x=>x.onclick=async()=>{const r=await postJSON("/api/content/post/publish",{id:+x.dataset.id});toastNote(r.summary||"โพสต์แล้ว","#22c55e");loadContentFactory();});
+  box.querySelectorAll(".cf-pub").forEach(x=>x.onclick=async()=>{
+    if(x.dataset.bad==="1" && !confirm("โพสต์นี้รูปสร้างไม่สำเร็จ — โพสต์โดยไม่มีรูปจริงหรือไม่?")) return;
+    const r=await postJSON("/api/content/post/publish",{id:+x.dataset.id});toastNote(r.summary||"โพสต์แล้ว","#22c55e");loadContentFactory();});
   box.querySelectorAll(".cf-del").forEach(x=>x.onclick=async()=>{await postJSON("/api/content/post/delete",{id:+x.dataset.id});loadContentFactory();});
 }
 async function cfSaveRules(){
@@ -2926,7 +2932,9 @@ function cfMediaPopup(kind){
 async function cfRun(){
   const b=$("cfRun"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังผลิต…";
   const r=await postJSON("/api/content/run",{});
-  if(r.error)toastNote(r.error,"#f59e0b"); else toastNote("ผลิตคอนเทนต์ 1 ชิ้นแล้ว ✅","#22c55e");
+  if(r.error) toastNote(r.error,"#f59e0b");
+  else if(r.post && r.post.media_error) toastNote("⚠️ เขียนแคปชั่นได้ แต่สร้างรูปไม่สำเร็จ — บันทึกเป็นร่าง (ยังไม่ควรโพสต์)","#f59e0b");
+  else toastNote("ผลิตคอนเทนต์ 1 ชิ้นแล้ว ✅","#22c55e");
   b.disabled=false;b.textContent=o;loadContentFactory();
 }
 
