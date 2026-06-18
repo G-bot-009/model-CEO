@@ -964,12 +964,8 @@
           <button class="save" id="cfSaveRules" style="margin-top:12px">💾 บันทึกกฎ</button>
         </div>
         <div class="panel"><h3>🎨 คีย์โมเดลภายนอก (ภาพ/วิดีโอ/เสียงจริง — BYO key)</h3>
-          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">Claude ทำภาพถ่าย/วิดีโอจริงไม่ได้ — ใส่คีย์เจ้าพวกนี้เพื่อให้ได้ภาพ/วิดีโอ/เสียงจริง (เก็บในเครื่องคุณ)</p>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="width:160px">🖼️ Gemini (ภาพ) <span id="cfkG" style="font-size:11px"></span></span><input id="cfKeyGemini" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="Gemini API key (จาก aistudio.google.com)"></div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="width:160px">🎬 MiniMax (วิดีโอ) <span id="cfkM" style="font-size:11px"></span></span><input id="cfKeyMinimax" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="MiniMax API key"></div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="width:160px">🔊 TTS (เสียง) <span id="cfkT" style="font-size:11px"></span></span><input id="cfKeyTts" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="Gemini TTS key"></div>
-          </div>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">Claude ทำภาพถ่าย/วิดีโอจริงไม่ได้ — เลือกผู้ให้บริการ + โมเดล แล้วใส่คีย์ (เก็บในเครื่องคุณ)</p>
+          <div id="cfMediaRows" style="display:flex;flex-direction:column;gap:14px"></div>
           <button class="save" id="cfSaveKeys" style="margin-top:12px">💾 บันทึกคีย์</button>
         </div>
         <div class="panel"><h3>📋 บอร์ดคอนเทนต์ (คิว/ร่าง/โพสต์แล้ว)</h3><div id="cfBoard" style="display:flex;flex-direction:column;gap:12px"></div></div>
@@ -2707,10 +2703,7 @@ async function loadContentFactory(){
       <div><div style="font-weight:700;color:#fff">${label}</div><div style="font-size:12px;color:#64748b">${hint}</div></div>${ctrl}</div>`;
   }).join("");
   $("cfToday").textContent = `วันนี้ผลิตไปแล้ว ${d.today||0} ชิ้น`;
-  const mc = d.media_connected || {};
-  $("cfkG").textContent = mc.gemini ? "✓ เชื่อมแล้ว" : ""; $("cfkG").style.color = "#6ee7b7";
-  $("cfkM").textContent = mc.minimax ? "✓ เชื่อมแล้ว" : ""; $("cfkM").style.color = "#6ee7b7";
-  $("cfkT").textContent = mc.tts ? "✓ เชื่อมแล้ว" : ""; $("cfkT").style.color = "#6ee7b7";
+  loadMediaKeys();
   const box = $("cfBoard");
   box.innerHTML = (d.posts||[]).length ? d.posts.map(p => {
     const [bg,fg,lab] = CF_ST[p.status] || ["#1e293b","#94a3b8",p.status];
@@ -2747,10 +2740,44 @@ async function cfSaveRules(){
   });
   await postJSON("/api/content/rules",{rules}); toastNote("บันทึกกฎแล้ว ✅","#22c55e"); loadContentFactory();
 }
+const CF_MEDIA_LABEL = { image:["🖼️","ภาพ"], video:["🎬","วิดีโอ"], voice:["🔊","เสียง"] };
+let CF_PROVIDERS = {};
+async function loadMediaKeys(){
+  let d; try { d = await (await fetch("/api/content/media-keys")).json(); } catch(e){ return; }
+  CF_PROVIDERS = d.providers || {};
+  const sel = d.selection || {};
+  $("cfMediaRows").innerHTML = ["image","video","voice"].map(kind => {
+    const provs = CF_PROVIDERS[kind] || [], s = sel[kind] || {};
+    const cur = provs.find(p => p.id === s.provider) || provs[0] || {models:[]};
+    const provOpts = provs.map(p => `<option value="${p.id}" ${p.id===s.provider?'selected':''}>${p.name}</option>`).join("");
+    const modelOpts = (cur.models||[]).map(mm => `<option value="${mm}" ${mm===s.model?'selected':''}>${mm}</option>`).join("");
+    const getLink = cur.get ? `<a href="${cur.get}" target="_blank" rel="noopener" style="font-size:12px;color:#a5b4fc">ขอคีย์ ↗</a>` : "";
+    return `<div data-mk="${kind}" style="display:flex;flex-direction:column;gap:6px;border-bottom:1px solid #1e293b;padding-bottom:10px">
+      <div style="font-weight:700;color:#fff">${CF_MEDIA_LABEL[kind][0]} ${CF_MEDIA_LABEL[kind][1]} ${s.has?'<span class="tag" style="background:#064e3b;color:#6ee7b7">เชื่อมแล้ว</span>':''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select class="numfld mk-prov" style="width:auto;margin:0">${provOpts}</select>
+        <select class="numfld mk-model" style="width:auto;margin:0">${modelOpts}</select>
+        <input class="numfld mk-key" type="password" style="flex:1;min-width:200px;margin:0" placeholder="${s.has?'มีคีย์แล้ว — เว้นว่างถ้าไม่เปลี่ยน':'วาง API key'}">
+        ${getLink}
+      </div>
+    </div>`;
+  }).join("");
+  // when provider changes, repopulate its models
+  $("cfMediaRows").querySelectorAll(".mk-prov").forEach(selEl => selEl.onchange = () => {
+    const row = selEl.closest("[data-mk]"), kind = row.dataset.mk;
+    const cur = (CF_PROVIDERS[kind]||[]).find(p => p.id === selEl.value) || {models:[]};
+    row.querySelector(".mk-model").innerHTML = (cur.models||[]).map(mm => `<option value="${mm}">${mm}</option>`).join("");
+    const link = row.querySelector("a"); if (link && cur.get) link.href = cur.get;
+  });
+}
 async function cfSaveKeys(){
-  await postJSON("/api/content/media-keys",{gemini:$("cfKeyGemini").value.trim(),minimax:$("cfKeyMinimax").value.trim(),tts:$("cfKeyTts").value.trim()});
-  $("cfKeyGemini").value="";$("cfKeyMinimax").value="";$("cfKeyTts").value="";
-  toastNote("บันทึกคีย์แล้ว ✅","#22c55e"); loadContentFactory();
+  const body = {};
+  $("cfMediaRows").querySelectorAll("[data-mk]").forEach(row => {
+    body[row.dataset.mk] = { provider: row.querySelector(".mk-prov").value,
+      model: row.querySelector(".mk-model").value, key: row.querySelector(".mk-key").value.trim() };
+  });
+  await postJSON("/api/content/media-keys", body);
+  toastNote("บันทึกคีย์แล้ว ✅","#22c55e"); loadMediaKeys();
 }
 async function cfRun(){
   const b=$("cfRun"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังผลิต…";

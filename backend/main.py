@@ -1653,10 +1653,18 @@ async def trading_strategy_ai(p: dict) -> dict:
 _SENDABLE = {"Slack", "Discord", "Telegram", "LINE OA", "Webhook → Make/Zapier"}
 
 
-def _media_keys() -> dict:
+def _media_cfg(kind: str) -> dict:
+    """Selected provider/model/key for a media type (image|video|voice)."""
     s = db.get_settings()
-    return {"gemini": s.get("media_gemini", ""), "minimax": s.get("media_minimax", ""),
-            "tts": s.get("media_tts", "")}
+    default_prov = media.PROVIDERS[kind][0]["id"]
+    prov = s.get(f"media_{kind}_provider") or default_prov
+    model = s.get(f"media_{kind}_model") or ""
+    if not model:
+        for p in media.PROVIDERS[kind]:
+            if p["id"] == prov and p["models"]:
+                model = p["models"][0]
+                break
+    return {"provider": prov, "model": model, "key": s.get(f"media_{kind}_key", "")}
 
 
 def _content_brief() -> str:
@@ -1701,13 +1709,14 @@ async def run_content_cycle(rules: dict) -> dict:
     except Exception:
         safe_reason = ""
 
-    # art direction: real image via Gemini (BYO key) else fall back to SVG
+    # art direction: real image via the chosen provider (BYO key) else SVG
     media_kind, media_ref = "none", ""
-    keys = _media_keys()
+    img = _media_cfg("image")
     if rules["media_per_day"] != 0:
-        if keys["gemini"]:
+        if img["key"]:
             try:
-                im = await __import__("asyncio").to_thread(media.gemini_image, img_prompt, keys["gemini"])
+                im = await __import__("asyncio").to_thread(
+                    media.generate_image, img["provider"], img["model"], img["key"], img_prompt)
                 media_kind, media_ref = "image", f"data:{im['mime']};base64,{im['b64']}"
             except Exception:
                 media_kind = "none"
@@ -1786,7 +1795,8 @@ async def content_rules_set(p: dict) -> dict:
 async def content_board() -> dict:
     rules = content_factory.normalize_rules(db.get_content_rules())
     return {"posts": db.list_planned(60), "today": db.count_planned_today(),
-            "rules": rules, "media_connected": {k: bool(v) for k, v in _media_keys().items()}}
+            "rules": rules,
+            "media_connected": {k: bool(_media_cfg(k)["key"]) for k in ("image", "video", "voice")}}
 
 
 @app.post("/api/content/run")
@@ -1820,19 +1830,25 @@ async def content_delete(p: dict) -> dict:
 
 @app.get("/api/content/media-keys")
 async def content_media_keys() -> dict:
-    k = _media_keys()
-    mask = lambda v: (v[:4] + "…") if v else ""
-    return {"gemini": mask(k["gemini"]), "minimax": mask(k["minimax"]), "tts": mask(k["tts"]),
-            "has": {x: bool(k[x]) for x in k}}
+    sel = {}
+    for kind in ("image", "video", "voice"):
+        c = _media_cfg(kind)
+        sel[kind] = {"provider": c["provider"], "model": c["model"],
+                     "key": (c["key"][:4] + "…") if c["key"] else "", "has": bool(c["key"])}
+    return {"providers": media.PROVIDERS, "selection": sel}
 
 
 @app.post("/api/content/media-keys")
 async def content_media_keys_set(p: dict) -> dict:
     upd = {}
-    for prov, key in (("gemini", "media_gemini"), ("minimax", "media_minimax"), ("tts", "media_tts")):
-        v = p.get(prov)
-        if v is not None and v.strip():
-            upd[key] = v.strip()
+    for kind in ("image", "video", "voice"):
+        block = p.get(kind) or {}
+        if block.get("provider"):
+            upd[f"media_{kind}_provider"] = block["provider"].strip()
+        if block.get("model") is not None:
+            upd[f"media_{kind}_model"] = (block.get("model") or "").strip()
+        if block.get("key"):                # only overwrite the key when a new one is given
+            upd[f"media_{kind}_key"] = block["key"].strip()
     if upd:
         db.set_settings(upd)
     return {"ok": True}
