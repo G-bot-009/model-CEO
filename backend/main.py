@@ -1856,42 +1856,68 @@ async def content_media_keys_set(p: dict) -> dict:
 
 
 # ============================== Projects ====================================
-async def _run_agent(agent_id: str, goal: str) -> str:
-    """Run a single agent on a goal with its own system prompt; return text."""
+def _stage_client(stage: dict):
+    """Per-stage engine override (a chosen API key), else None (= per-agent default)."""
+    kid = stage.get("key_id")
+    if kid:
+        try:
+            row = db.get_api_key(int(kid))
+            if row:
+                return _build_client(row.get("base_url"), row.get("secret"))
+        except Exception:
+            pass
+    return None
+
+
+async def _run_agent(agent_id: str, goal: str, client=None) -> str:
+    """Run a single agent on a goal with its own system prompt; return text.
+    Raises on API failure so the caller can stop the pipeline."""
     ag = all_agents().get(agent_id)
     if not ag:
-        return f"(ไม่พบเอเจนต์ {agent_id})"
+        raise RuntimeError(f"ไม่พบเอเจนต์ {agent_id}")
     model = model_for_agent(agent_id)
-    resp = await client_for_agent(agent_id).messages.create(
+    cl = client or client_for_agent(agent_id)
+    resp = await cl.messages.create(
         model=model, max_tokens=2500, system=ag.system,
         **thinking_kwargs(model), messages=[{"role": "user", "content": goal}])
     return next((b.text for b in resp.content if b.type == "text"), "")
 
 
-async def run_project_stage(stage: dict) -> str:
-    """Run every agent assigned to a stage; store + return the combined result."""
+async def run_project_stage(stage: dict) -> bool:
+    """Run a stage's agents in order. Stops at the first agent whose API fails,
+    marks the stage 'failed' (red in the UI), and returns False. Returns True
+    only when every agent finished cleanly."""
     db.set_stage_result(stage["id"], "running", stage.get("result") or "")
-    parts = []
+    client = _stage_client(stage)
     ags = all_agents()
+    parts, ok = [], True
     for aid in (stage.get("agents") or []):
         name = ags[aid].name if aid in ags else aid
+        emoji = ags[aid].emoji if aid in ags else "•"
         try:
-            out = await _run_agent(aid, stage["goal"])
+            out = await _run_agent(aid, stage["goal"], client)
+            parts.append(f"### {emoji} {name}\n{out}")
         except Exception as exc:
-            out = f"⚠️ {_friendly_err(exc)}"
-        parts.append(f"### {ags.get(aid).emoji if aid in ags else '•'} {name}\n{out}")
-    combined = "\n\n".join(parts)
-    db.set_stage_result(stage["id"], "done", combined)
-    return combined
+            parts.append(f"### {emoji} {name}\n⚠️ {_friendly_err(exc)}")
+            ok = False
+            break                      # halt at the failing agent — do not skip ahead
+    db.set_stage_result(stage["id"], "done" if ok else "failed", "\n\n".join(parts))
+    return ok
 
 
 async def _run_project_all(pid: int) -> None:
     proj = db.get_project(pid)
     if not proj:
         return
+    db.set_project_status(pid, "running")
     for st in proj["stages"]:
-        if st.get("status") != "done":
-            await run_project_stage(st)
+        if st.get("status") == "done":
+            continue
+        ok = await run_project_stage(st)
+        if not ok:                     # a stage failed → stop the whole run here
+            db.set_project_status(pid, "blocked")
+            return
+    db.set_project_status(pid, "done")
 
 
 @app.get("/api/projects/templates")
@@ -1935,17 +1961,23 @@ async def projects_detail(pid: int) -> dict:
     ags = all_agents()
     for st in proj["stages"]:
         st["agent_names"] = [(ags[a].emoji + " " + ags[a].name) if a in ags else a for a in st.get("agents", [])]
-    return {"project": proj}
+        st["has_visual"] = any(a in ("designer", "content") for a in st.get("agents", []))
+    engines = [{"id": 0, "label": "ค่าเริ่มต้น (env / คีย์ของเอเจนต์)"}] + \
+              [{"id": k["id"], "label": k["label"]} for k in db.list_api_keys()]
+    return {"project": proj, "engines": engines}
 
 
 @app.post("/api/projects/stage/run")
 async def projects_run_stage(p: dict) -> dict:
-    stage = db.get_stage(int(p.get("stage_id")))
+    sid = int(p.get("stage_id"))
+    if "key_id" in p:                      # switch the API/engine for this stage first
+        db.set_stage_engine(sid, int(p.get("key_id") or 0) or None)
+    stage = db.get_stage(sid)
     if not stage:
         return {"error": "ไม่พบสเตจ"}
     try:
-        await run_project_stage(stage)
-        return {"ok": True, "stage": db.get_stage(stage["id"])}
+        ok = await run_project_stage(stage)
+        return {"ok": ok, "failed": not ok, "stage": db.get_stage(sid)}
     except Exception as exc:
         return {"error": _friendly_err(exc)}
 

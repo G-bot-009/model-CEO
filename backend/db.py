@@ -172,7 +172,7 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS project_stages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER, idx INTEGER, name TEXT, agents TEXT,
-                goal TEXT, status TEXT, result TEXT, updated_at TEXT
+                goal TEXT, status TEXT, result TEXT, updated_at TEXT, key_id INTEGER
             );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,6 +198,10 @@ def init() -> None:
         mcols = {r[1] for r in c.execute("PRAGMA table_info(agent_mcp)").fetchall()}
         if "conn_id" not in mcols:
             c.execute("ALTER TABLE agent_mcp ADD COLUMN conn_id TEXT")
+        # per-stage API/engine override
+        pscols = {r[1] for r in c.execute("PRAGMA table_info(project_stages)").fetchall()}
+        if "key_id" not in pscols:
+            c.execute("ALTER TABLE project_stages ADD COLUMN key_id INTEGER")
         # OAuth fields on directory connections (refresh, expiry, client creds)
         ccols = {r[1] for r in c.execute("PRAGMA table_info(mcp_connections)").fetchall()}
         for col in ("refresh_token", "token_url", "client_id", "client_secret"):
@@ -1162,3 +1166,8 @@ def delete_project(pid) -> None:
     with _conn() as c:
         c.execute("DELETE FROM projects WHERE id=?", (pid,))
         c.execute("DELETE FROM project_stages WHERE project_id=?", (pid,))
+
+
+def set_stage_engine(stage_id, key_id) -> None:
+    with _conn() as c:
+        c.execute("UPDATE project_stages SET key_id=? WHERE id=?", (key_id, stage_id))

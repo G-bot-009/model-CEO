@@ -2815,7 +2815,8 @@ async function cfRun(){
 
 /* ---------- Projects ---------- */
 let PR_TEMPLATES = [];
-const PR_ST = { pending:["#1e293b","#94a3b8","รอรัน"], running:["#78350f","#fbbf24","กำลังรัน"], done:["#064e3b","#6ee7b7","เสร็จ"] };
+const PR_ST = { pending:["#1e293b","#94a3b8","รอรัน"], running:["#78350f","#fbbf24","กำลังรัน"], done:["#064e3b","#6ee7b7","เสร็จ"], failed:["#7f1d1d","#fca5a5","⚠️ API มีปัญหา"] };
+let PR_ENGINES = [];
 async function loadProjects(){
   $("prDetail").style.display = "none"; $("prListWrap").style.display = "";
   if (!PR_TEMPLATES.length){
@@ -2873,17 +2874,26 @@ async function prConfirmCreate(){
   prOpen(r.id);
 }
 async function prOpen(pid){
-  let d; try { d = (await (await fetch(`/api/projects/${pid}`)).json()).project; } catch(e){ return; }
-  if (!d) return;
+  let resp; try { resp = await (await fetch(`/api/projects/${pid}`)).json(); } catch(e){ return; }
+  const d = resp.project; if (!d) return;
+  PR_ENGINES = resp.engines || [{id:0,label:"ค่าเริ่มต้น"}];
   $("prListWrap").style.display = "none"; $("prDetail").style.display = "";
   const stageHtml = d.stages.map(s => {
     const [bg,fg,lab] = PR_ST[s.status] || ["#1e293b","#94a3b8",s.status];
-    return `<div class="panel" style="margin-bottom:10px">
+    const failed = s.status === "failed";
+    const engOpts = PR_ENGINES.map(e => `<option value="${e.id}" ${String(s.key_id||0)===String(e.id)?'selected':''}>🔌 ${escapeHtml(e.label)}</option>`).join("");
+    const showEng = failed || PR_ENGINES.length > 1;
+    return `<div class="panel" style="margin-bottom:10px;${failed?'border:1px solid #ef444488':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div><b style="color:#fff">${escapeHtml(s.name)}</b> <span class="tag" style="background:${bg};color:${fg}">${lab}</span>
-          <div style="font-size:12px;color:#94a3b8">ผู้รับผิดชอบ: ${(s.agent_names||[]).join(", ")}</div></div>
-        <button class="qbtn pr-stage" data-sid="${s.id}" data-pid="${pid}" style="font-weight:700">${s.status==='done'?'รันซ้ำ':'▶ รันขั้นนี้'}</button>
+          <div style="font-size:12px;color:#94a3b8">ผู้รับผิดชอบ: ${(s.agent_names||[]).join(", ")}</div>
+          ${s.has_visual?'<div style="font-size:11px;color:#64748b">🖼️ ต้องการภาพจริง? ตั้งผู้ให้บริการภาพ (Gemini) ใน “โรงงานคอนเทนต์” — Claude ทำได้แค่สเปก/SVG</div>':''}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          ${showEng?`<select class="numfld pr-eng" data-sid="${s.id}" style="width:auto;margin:0;${failed?'border-color:#ef4444':''}">${engOpts}</select>`:''}
+          <button class="qbtn pr-stage" data-sid="${s.id}" data-pid="${pid}" style="font-weight:700;${failed?'background:#ef4444;color:#fff':''}">${failed?'🔁 ลองใหม่ด้วยเอนจินนี้':(s.status==='done'?'รันซ้ำ':'▶ รันขั้นนี้')}</button>
+        </div>
       </div>
+      ${failed?'<div style="font-size:12px;color:#fca5a5;margin-top:6px">หยุดที่ขั้นนี้ — เอเจนต์เรียก API ไม่สำเร็จ (ยังไม่เชื่อม/คีย์มีปัญหา) เลือกเอนจิน/API อื่นด้านบนแล้วลองใหม่</div>':''}
       ${s.result?`<div style="font-size:13px;color:#cbd5e1;white-space:pre-wrap;margin-top:8px;background:#0b1220;border-radius:8px;padding:10px;max-height:300px;overflow:auto">${escapeHtml(s.result)}</div>`:''}
     </div>`;
   }).join("");
@@ -2903,12 +2913,18 @@ async function prOpen(pid){
     ${stageHtml}`;
   $("prBack").onclick = loadProjects;
   $("prRefresh").onclick = () => prOpen(pid);
-  $("prRunAll").onclick = async () => { await postJSON(`/api/projects/${pid}/run-all`,{}); toastNote("เริ่มรันทั้งหมดเบื้องหลัง — กด 🔄 เพื่อดูความคืบหน้า","#a855f7"); };
+  $("prRunAll").onclick = async () => { await postJSON(`/api/projects/${pid}/run-all`,{}); toastNote("เริ่มรันทั้งหมดเบื้องหลัง — จะหยุดที่ขั้นที่ API มีปัญหา · กด 🔄 ดูความคืบหน้า","#a855f7"); };
   $("prSum").onclick = async () => { const b=$("prSum"),o=b.textContent;b.disabled=true;b.textContent="⏳ สรุป…"; const r=await postJSON(`/api/projects/${pid}/summary`,{}); if(r.error)toastNote(r.error,"#f59e0b"); b.disabled=false;b.textContent=o; prOpen(pid); };
   $("prDetail").querySelectorAll(".pr-stage").forEach(x => x.onclick = async () => {
     const o=x.textContent; x.disabled=true; x.textContent="⏳ กำลังรัน…";
-    const r=await postJSON("/api/projects/stage/run",{stage_id:+x.dataset.sid});
-    if(r.error)toastNote(r.error,"#f59e0b"); prOpen(pid);
+    const eng = $("prDetail").querySelector(`.pr-eng[data-sid="${x.dataset.sid}"]`);
+    const body = { stage_id:+x.dataset.sid };
+    if (eng) body.key_id = +eng.value;
+    const r=await postJSON("/api/projects/stage/run", body);
+    if(r.error) toastNote(r.error,"#f59e0b");
+    else if(r.failed) toastNote("ขั้นนี้ API มีปัญหา — เลือกเอนจินอื่นแล้วลองใหม่","#ef4444");
+    else toastNote("ขั้นนี้เสร็จแล้ว ✅","#22c55e");
+    prOpen(pid);
   });
 }
 
