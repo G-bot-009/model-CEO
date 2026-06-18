@@ -1033,7 +1033,18 @@
         <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
           <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ AI วิเคราะห์จากตัวเลข ไม่การันตีผล · โหมด "ร่าง" จะแค่แนะนำให้คุณกดอนุมัติเอง · โหมด "อัตโนมัติ" จะหยุด/ปรับงบจริงในบัญชีโฆษณา · การเชื่อม Meta ต้องมี token+Ad Account ID, Google ต้องมี developer token (เชื่อมไว้ก่อนได้)</p>
         </div>
-        <div class="panel"><h3>🤖 คำแนะนำจาก AI</h3><div id="adsRecos" style="display:flex;flex-direction:column;gap:10px"></div></div>
+        <div class="panel"><h3>📘 บัญชี Facebook (เชื่อมได้สูงสุด 10) <span id="adsAcctCount" style="font-size:13px;color:#94a3b8"></span></h3>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">เชื่อมหลายบัญชีเพื่อยิง/ตรวจหลายแอดพร้อมกัน — AI ตรวจแยกทีละบัญชี</p>
+          <div id="adsAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input id="adsAccLabel" class="numfld" style="width:150px;margin:0" placeholder="ชื่อบัญชี เช่น ร้าน A">
+            <input id="adsAccToken" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="Meta access token (ads_management)">
+            <input id="adsAccId" class="numfld" style="width:160px;margin:0" placeholder="Ad Account ID (ตัวเลข)">
+            <button class="qbtn" id="adsAccAdd" style="font-weight:700">➕ เพิ่มบัญชี</button>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:6px">token + Ad Account ID เอาจาก Meta Graph API / Ads Manager (เลขหลัง act_)</div>
+        </div>
+        <div class="panel"><h3>🤖 คำแนะนำจาก AI (แยกตามบัญชี)</h3><div id="adsRecos" style="display:flex;flex-direction:column;gap:10px"></div></div>
       </section>
 
       <!-- SETTINGS -->
@@ -3039,8 +3050,19 @@ const ADS_ACT = {
 };
 async function loadAds(){
   let st; try { st = await (await fetch("/api/ads/status")).json(); } catch(e){ return; }
-  $("adsStatus").textContent = `${st.meta?'✓ Meta เชื่อมแล้ว':'• Meta ยังไม่เชื่อม'} · ${st.google?'✓ Google':'• Google ยังไม่เชื่อม'}`;
+  $("adsStatus").textContent = `${st.meta?('✓ Facebook '+st.meta_count+' บัญชี'):'• Facebook ยังไม่เชื่อม'} · ${st.google?'✓ Google':'• Google ยังไม่เชื่อม'}`;
   $("adsMode").value = st.mode || "review";
+  // Facebook accounts (up to 10)
+  let ac; try { ac = await (await fetch("/api/ads/accounts")).json(); } catch(e){ ac = {accounts:[],max:10}; }
+  $("adsAcctCount").textContent = `(${ac.accounts.length}/${ac.max})`;
+  $("adsAccList").innerHTML = ac.accounts.length ? ac.accounts.map(a => `
+    <div class="wf-row" style="justify-content:space-between;align-items:center;gap:10px">
+      <div><b style="color:#fff">📘 ${escapeHtml(a.label)}</b>
+        <span style="font-size:12px;color:#94a3b8">act_${escapeHtml(a.ad_account_id)} · ${escapeHtml(a.token)}</span></div>
+      <button class="qbtn ads-acc-del" data-id="${a.id}" style="color:#f87171">🗑️</button>
+    </div>`).join("") : '<div style="color:#64748b">ยังไม่มีบัญชี — เพิ่มด้านล่าง</div>';
+  $("adsAccList").querySelectorAll(".ads-acc-del").forEach(x => x.onclick = async () => { await postJSON("/api/ads/account/delete",{id:+x.dataset.id}); loadAds(); });
+  if (ac.accounts.length >= ac.max) $("adsAccAdd").disabled = true; else $("adsAccAdd").disabled = false;
   let d; try { d = await (await fetch("/api/ads/recommendations")).json(); } catch(e){ d = {recommendations:[]}; }
   const box = $("adsRecos");
   box.innerHTML = (d.recommendations||[]).length ? d.recommendations.map(r => {
@@ -3049,7 +3071,7 @@ async function loadAds(){
     const pending = r.status === "pending";
     return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px;border-left:4px solid ${col}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div><b style="color:#fff">${ic} ${escapeHtml(r.name)}</b>
+        <div>${r.account_label?`<span class="tag" style="background:#312e81;color:#c7d2fe">📘 ${escapeHtml(r.account_label)}</span> `:''}<b style="color:#fff">${ic} ${escapeHtml(r.name)}</b>
           <span class="tag" style="background:${col}33;color:${col}">${lab}</span>
           ${r.status!=='pending'?`<span class="tag" style="background:#1e293b;color:#94a3b8">${r.status==='applied'?'ทำแล้ว':'ข้ามแล้ว'}</span>`:''}</div>
         <div style="display:flex;gap:6px">
@@ -4062,8 +4084,14 @@ $("cfSaveKeys").addEventListener("click", cfSaveKeys);
 $("prCreate").addEventListener("click", prCreate);
 $("prTemplate").addEventListener("change", prTplPreview);
 $("biCreate").addEventListener("click", biCreate);
-$("adsConnFb").addEventListener("click", () => openConnect("Meta Ads", loadAds));
+$("adsConnFb").addEventListener("click", () => { $("adsAccLabel").scrollIntoView({behavior:"smooth"}); $("adsAccLabel").focus(); });
 $("adsConnGg").addEventListener("click", () => openConnect("Google Ads", loadAds));
+$("adsAccAdd").addEventListener("click", async () => {
+  const r = await postJSON("/api/ads/account", { label:$("adsAccLabel").value.trim(), token:$("adsAccToken").value.trim(), ad_account_id:$("adsAccId").value.trim() });
+  if (r.error){ toastNote(r.error,"#f59e0b"); return; }
+  $("adsAccLabel").value=""; $("adsAccToken").value=""; $("adsAccId").value="";
+  toastNote("เพิ่มบัญชี Facebook แล้ว ✅","#22c55e"); loadAds();
+});
 $("adsMode").addEventListener("change", e => postJSON("/api/ads/settings", { mode: e.target.value }).then(() => toastNote("เปลี่ยนโหมดแล้ว", "#22c55e")));
 $("adsReview").addEventListener("click", async () => {
   const b = $("adsReview"), o = b.textContent; b.disabled = true; b.textContent = "⏳ AI กำลังตรวจ…";

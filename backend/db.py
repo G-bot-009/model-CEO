@@ -202,7 +202,11 @@ def init() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 platform TEXT, campaign_id TEXT, name TEXT, metrics TEXT,
                 action TEXT, reason TEXT, suggested_budget REAL,
-                status TEXT, created_at TEXT
+                status TEXT, created_at TEXT, account_id INTEGER, account_label TEXT
+            );
+            CREATE TABLE IF NOT EXISTS ads_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform TEXT, label TEXT, token TEXT, ad_account_id TEXT, created_at TEXT
             );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,6 +236,12 @@ def init() -> None:
         pscols = {r[1] for r in c.execute("PRAGMA table_info(project_stages)").fetchall()}
         if "key_id" not in pscols:
             c.execute("ALTER TABLE project_stages ADD COLUMN key_id INTEGER")
+        # multi-account ads recommendations
+        arcols = {r[1] for r in c.execute("PRAGMA table_info(ads_reco)").fetchall()}
+        if "account_id" not in arcols:
+            c.execute("ALTER TABLE ads_reco ADD COLUMN account_id INTEGER")
+        if "account_label" not in arcols:
+            c.execute("ALTER TABLE ads_reco ADD COLUMN account_label TEXT")
         # OAuth fields on directory connections (refresh, expiry, client creds)
         ccols = {r[1] for r in c.execute("PRAGMA table_info(mcp_connections)").fetchall()}
         for col in ("refresh_token", "token_url", "client_id", "client_secret"):
@@ -1329,13 +1339,44 @@ def ads_clear_pending() -> None:
     with _conn() as c:
         c.execute("DELETE FROM ads_reco WHERE status='pending'")
 
-def ads_add_reco(platform, campaign_id, name, metrics: dict, action, reason, suggested_budget) -> int:
+def ads_add_reco(platform, campaign_id, name, metrics: dict, action, reason, suggested_budget,
+                 account_id=None, account_label="") -> int:
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO ads_reco (platform, campaign_id, name, metrics, action, reason, suggested_budget, status, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (platform, campaign_id, name, _json.dumps(metrics or {}), action, reason, suggested_budget, "pending", _now()))
+            "INSERT INTO ads_reco (platform, campaign_id, name, metrics, action, reason, suggested_budget, "
+            "status, created_at, account_id, account_label) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (platform, campaign_id, name, _json.dumps(metrics or {}), action, reason, suggested_budget,
+             "pending", _now(), account_id, account_label))
         return cur.lastrowid
+
+
+# Multiple ad accounts (e.g. up to 10 Facebook accounts)
+def ads_add_account(platform, label, token, ad_account_id) -> int:
+    with _conn() as c:
+        cur = c.execute("INSERT INTO ads_accounts (platform, label, token, ad_account_id, created_at) "
+                        "VALUES (?,?,?,?,?)", (platform, label, token, ad_account_id, _now()))
+        return cur.lastrowid
+
+def ads_list_accounts(platform=None) -> list[dict]:
+    with _conn() as c:
+        if platform:
+            rows = c.execute("SELECT * FROM ads_accounts WHERE platform=? ORDER BY id", (platform,)).fetchall()
+        else:
+            rows = c.execute("SELECT * FROM ads_accounts ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+def ads_get_account(aid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM ads_accounts WHERE id=?", (aid,)).fetchone()
+    return dict(r) if r else None
+
+def ads_count_accounts(platform) -> int:
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) FROM ads_accounts WHERE platform=?", (platform,)).fetchone()[0]
+
+def ads_delete_account(aid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM ads_accounts WHERE id=?", (aid,))
 
 def ads_list_reco(limit=60) -> list[dict]:
     with _conn() as c:

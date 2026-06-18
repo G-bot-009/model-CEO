@@ -2193,6 +2193,18 @@ def _ads_mode() -> str:
     return "auto" if db.get_settings().get("ads_mode") == "auto" else "review"
 
 
+def _ads_meta_accounts() -> list:
+    """Connected Meta ad accounts (up to 10). Falls back to the single legacy
+    'Meta Ads' connector if no multi-accounts have been added yet."""
+    accts = db.ads_list_accounts("meta")
+    if accts:
+        return accts
+    cfg = _ads_cfg("Meta Ads")
+    if cfg.get("token"):
+        return [{"id": None, "label": "บัญชีหลัก", "token": cfg["token"], "ad_account_id": cfg.get("ad_account_id", "")}]
+    return []
+
+
 _ADS_PROMPT = (
     "คุณคือผู้จัดการโฆษณา วิเคราะห์ผลแคมเปญแล้วแนะนำการตัดสินใจรายแคมเปญ "
     "(ไม่การันตีผล ใช้ดุลพินิจจากตัวเลข).\n"
@@ -2205,35 +2217,48 @@ _ADS_PROMPT = (
 
 
 async def run_ads_review() -> list:
-    """Pull campaign metrics (Meta), let Claude recommend, store as pending recos."""
-    campaigns = []
-    meta = _ads_cfg("Meta Ads")
-    if meta.get("token"):
-        rows = await __import__("asyncio").to_thread(ads.meta_campaigns, meta["token"], meta.get("ad_account_id", ""))
+    """Pull campaign metrics from every connected Meta account (up to 10),
+    let Claude recommend per campaign, store as pending recos tagged by account."""
+    import asyncio
+    campaigns, errors = [], []
+    for acc in _ads_meta_accounts():
+        try:
+            rows = await asyncio.to_thread(ads.meta_campaigns, acc["token"], acc.get("ad_account_id", ""))
+        except Exception as exc:
+            errors.append(f"{acc['label']}: {type(exc).__name__}")
+            continue
         for r in rows:
-            r["_platform"] = "meta"
-        campaigns += rows
+            r["_platform"] = "meta"; r["_acc_id"] = acc["id"]; r["_acc_label"] = acc["label"]
+            campaigns.append(r)
     if not campaigns:
-        raise RuntimeError("ยังไม่มีข้อมูลแคมเปญ — เชื่อม Meta Ads (token + Ad Account ID) ก่อน")
+        raise RuntimeError("ยังไม่มีข้อมูลแคมเปญ — เพิ่มบัญชี Facebook (token + Ad Account ID) ก่อน"
+                           + (f" · ปัญหา: {', '.join(errors)}" if errors else ""))
     model = model_for_agent("analyst")
-    raw = await _claude_text("analyst", model, _ADS_PROMPT.format(
-        data=json.dumps([{k: v for k, v in c.items() if k != "_platform"} for c in campaigns], ensure_ascii=False)), 1500)
-    plan = _parse_json(raw)
-    recos = {r.get("campaign_id"): r for r in plan.get("recos", [])}
+    data = [dict(account=c["_acc_label"], **{k: v for k, v in c.items() if not k.startswith("_")}) for c in campaigns]
+    raw = await _claude_text("analyst", model, _ADS_PROMPT.format(data=json.dumps(data, ensure_ascii=False)), 2000)
+    recos = {r.get("campaign_id"): r for r in _parse_json(raw).get("recos", [])}
     db.ads_clear_pending()
     for c in campaigns:
         rc = recos.get(c["id"], {})
         action = rc.get("action") if rc.get("action") in ("pause", "scale", "keep") else "keep"
-        db.ads_add_reco(c["_platform"], c["id"], c["name"], c, action,
-                        rc.get("reason", ""), float(rc.get("suggested_budget") or c.get("daily_budget") or 0))
+        clean = {k: v for k, v in c.items() if not k.startswith("_")}
+        db.ads_add_reco("meta", c["id"], c["name"], clean, action,
+                        rc.get("reason", ""), float(rc.get("suggested_budget") or c.get("daily_budget") or 0),
+                        account_id=c["_acc_id"], account_label=c["_acc_label"])
     return db.ads_list_reco()
 
 
 def _apply_reco(reco: dict) -> str:
     if reco["platform"] == "meta":
-        meta = _ads_cfg("Meta Ads")
+        token = ""
+        if reco.get("account_id"):
+            acc = db.ads_get_account(reco["account_id"])
+            token = acc["token"] if acc else ""
+        if not token:
+            token = _ads_cfg("Meta Ads").get("token", "")
+        meta = {"token": token}
         if not meta.get("token"):
-            raise RuntimeError("ไม่พบ token ของ Meta Ads")
+            raise RuntimeError("ไม่พบ token ของบัญชี Facebook นี้")
         if reco["action"] == "pause":
             ads.meta_pause(meta["token"], reco["campaign_id"]); return "หยุดแคมเปญแล้ว"
         if reco["action"] == "scale":
@@ -2244,9 +2269,38 @@ def _apply_reco(reco: dict) -> str:
 
 @app.get("/api/ads/status")
 async def ads_status() -> dict:
-    return {"meta": bool(_ads_cfg("Meta Ads").get("token")),
+    return {"meta": len(_ads_meta_accounts()) > 0, "meta_count": len(_ads_meta_accounts()),
             "google": bool(_ads_cfg("Google Ads")),
             "mode": _ads_mode()}
+
+
+@app.get("/api/ads/accounts")
+async def ads_accounts() -> dict:
+    out = []
+    for a in db.ads_list_accounts("meta"):
+        t = a.get("token") or ""
+        out.append({"id": a["id"], "label": a["label"], "ad_account_id": a["ad_account_id"],
+                    "token": (t[:6] + "…") if t else ""})
+    return {"accounts": out, "max": 10}
+
+
+@app.post("/api/ads/account")
+async def ads_account_add(p: dict) -> dict:
+    if db.ads_count_accounts("meta") >= 10:
+        return {"error": "เชื่อม Facebook ได้สูงสุด 10 บัญชี"}
+    token = (p.get("token") or "").strip()
+    acct = (p.get("ad_account_id") or "").strip()
+    if not token or not acct:
+        return {"error": "ใส่ Access token และ Ad Account ID"}
+    label = (p.get("label") or ("บัญชี " + str(db.ads_count_accounts("meta") + 1))).strip()
+    nid = db.ads_add_account("meta", label, token, acct)
+    return {"ok": True, "id": nid}
+
+
+@app.post("/api/ads/account/delete")
+async def ads_account_delete(p: dict) -> dict:
+    db.ads_delete_account(int(p.get("id")))
+    return {"ok": True}
 
 
 @app.post("/api/ads/settings")
