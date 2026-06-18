@@ -75,3 +75,15 @@ enable **Websockets support**, request a Let's Encrypt cert on the SSL tab.
 ```bash
 git pull && docker compose up -d --build
 ```
+
+## Auto-deploy (push → live within ~1 min, no open ports)
+
+Run the deploy script on a 1-minute cron. When a new commit lands on the
+tracked branch, it pulls and rebuilds automatically.
+
+```bash
+cd /root/goffice
+chmod +x deploy/autodeploy.sh
+( crontab -l 2>/dev/null; echo "* * * * * /root/goffice/deploy/autodeploy.sh >> /var/log/goffice-deploy.log 2>&1" ) | crontab -
+```
+Check it works: `tail -f /var/log/goffice-deploy.log` (a deploy line appears within a minute of each push). Remove with `crontab -e` (delete the line).
