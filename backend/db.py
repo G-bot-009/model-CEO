@@ -216,6 +216,11 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS agent_api_map (
                 agent_id TEXT PRIMARY KEY, key_id INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS music_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prompt TEXT, provider TEXT, model TEXT,
+                mime TEXT, audio_ref TEXT, created_at TEXT
+            );
             """
         )
         # migrate older DBs that predate the skills columns
@@ -1406,3 +1411,21 @@ def ads_get_reco(rid) -> "Optional[dict]":
 def ads_set_reco_status(rid, status) -> None:
     with _conn() as c:
         c.execute("UPDATE ads_reco SET status=? WHERE id=?", (status, rid))
+
+
+# --- Music AI tracks --------------------------------------------------------
+def music_add(prompt, provider, model, mime, audio_ref) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO music_tracks (prompt, provider, model, mime, audio_ref, created_at) "
+            "VALUES (?,?,?,?,?,?)", (prompt, provider, model, mime, audio_ref, _now()))
+        return cur.lastrowid
+
+def music_list(limit=40) -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM music_tracks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+
+def music_delete(tid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM music_tracks WHERE id=?", (tid,))

@@ -39,6 +39,11 @@ PROVIDERS = {
         {"id": "openai",     "name": "OpenAI TTS",         "models": ["gpt-4o-mini-tts", "tts-1"],                     "get": "https://platform.openai.com/api-keys"},
         {"id": "elevenlabs", "name": "ElevenLabs",         "models": ["eleven_multilingual_v2"],                       "get": "https://elevenlabs.io/app/settings/api-keys"},
     ],
+    "music": [
+        {"id": "elevenlabs", "name": "ElevenLabs (Sound/Music)", "models": ["eleven_text_to_sound_v2"],                "get": "https://elevenlabs.io/app/settings/api-keys"},
+        {"id": "stability",  "name": "Stability Stable Audio",   "models": ["stable-audio-2"],                          "get": "https://platform.stability.ai/account/keys"},
+        {"id": "replicate",  "name": "Replicate (MusicGen)",     "models": ["meta/musicgen"],                           "get": "https://replicate.com/account/api-tokens"},
+    ],
 }
 
 
@@ -160,3 +165,57 @@ def generate_voice(provider: str, model: str, key: str, text: str, voice: str = 
         if inline and inline.get("data"):
             return {"mime": inline.get("mimeType") or "audio/wav", "b64": inline["data"]}
     raise RuntimeError("TTS ไม่ส่งเสียงกลับมา")
+
+
+def _get_json(url, headers=None, timeout=30) -> dict:
+    h = {"Accept": "application/json", "User-Agent": _UA}
+    if headers:
+        h.update(headers)
+    req = urllib.request.Request(url, headers=h)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+
+def _get_bytes(url, timeout=60) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def generate_music(provider: str, model: str, key: str, prompt: str, duration: int = 20) -> dict:
+    """Generate music/sound from a text prompt. Return {mime, b64}. Thai error on failure."""
+    if not key:
+        raise RuntimeError("ยังไม่ได้ใส่คีย์ Music AI")
+    p = (provider or "elevenlabs").lower()
+    dur = max(5, min(int(duration or 20), 120))
+    if p == "elevenlabs":
+        raw = _post_raw("https://api.elevenlabs.io/v1/sound-generation",
+                        {"text": prompt, "duration_seconds": min(dur, 22)},
+                        headers={"xi-api-key": key, "Accept": "audio/mpeg"})
+        return {"mime": "audio/mpeg", "b64": base64.b64encode(raw).decode()}
+    if p == "stability":
+        raw = _post_multipart("https://api.stability.ai/v2beta/audio/stable-audio-2/text-to-audio",
+                              {"prompt": prompt, "duration": str(dur), "output_format": "mp3"},
+                              headers={"Authorization": f"Bearer {key}", "Accept": "audio/*"})
+        return {"mime": "audio/mpeg", "b64": base64.b64encode(raw).decode()}
+    if p == "replicate":
+        import time as _t
+        d = _post_json("https://api.replicate.com/v1/models/meta/musicgen/predictions",
+                       {"input": {"prompt": prompt, "duration": dur}},
+                       headers={"Authorization": f"Token {key}", "Prefer": "wait"})
+        status = d.get("status")
+        get_url = (d.get("urls") or {}).get("get")
+        for _ in range(30):
+            if status in ("succeeded", "failed", "canceled") or not get_url:
+                break
+            _t.sleep(2)
+            d = _get_json(get_url, headers={"Authorization": f"Token {key}"})
+            status = d.get("status")
+        if status != "succeeded":
+            raise RuntimeError("Replicate สร้างเพลงไม่สำเร็จ: " + str(d.get("error") or status))
+        out = d.get("output")
+        audio_url = out[0] if isinstance(out, list) and out else out
+        if not audio_url:
+            raise RuntimeError("Replicate ไม่คืนไฟล์เสียง")
+        return {"mime": "audio/wav", "b64": base64.b64encode(_get_bytes(audio_url)).decode()}
+    raise RuntimeError("ไม่รู้จัก provider เพลงนี้")

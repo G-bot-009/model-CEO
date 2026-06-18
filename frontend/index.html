@@ -416,6 +416,7 @@
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
+      <div class="menu-item" data-view="music"><span class="ico">🎵</span><span class="label">Music AI</span></div>
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
       <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
@@ -971,6 +972,37 @@
           <div id="cfMediaRows" style="display:flex;flex-direction:column;gap:10px"></div>
         </div>
         <div class="panel"><h3>📋 บอร์ดคอนเทนต์ (คิว/ร่าง/โพสต์แล้ว)</h3><div id="cfBoard" style="display:flex;flex-direction:column;gap:12px"></div></div>
+      </section>
+
+      <!-- MUSIC AI -->
+      <section class="view" id="view-music">
+        <h2 style="color:#fff;margin:0 0 6px">🎵 Music AI</h2>
+        <p style="color:#94a3b8;font-size:13px;margin:0 0 14px">สร้างเพลง/ดนตรี/เสียงประกอบจากคำอธิบาย — Claude ทำเสียงเพลงเองไม่ได้ ต้องต่อ API ภายนอก (ElevenLabs / Stability / Replicate) ด้วยคีย์ของคุณ</p>
+
+        <div class="panel"><h3>🎚️ ผู้ให้บริการ + คีย์
+            <span style="flex:1"></span>
+            <span id="muProvLabel" style="font-size:12px;color:#94a3b8"></span></h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="muProvider" class="numfld" style="width:auto;margin:0"></select>
+            <select id="muModel" class="numfld" style="width:auto;margin:0"></select>
+            <button class="qbtn" id="muKeyBtn" style="font-weight:700">🔑 ใส่/แก้คีย์</button>
+            <span id="muKeyState" style="font-size:12px"></span>
+          </div>
+        </div>
+
+        <div class="panel"><h3>🎼 สร้างเพลงใหม่</h3>
+          <textarea id="muPrompt" class="numfld" style="width:100%;min-height:70px;margin:0 0 8px" placeholder="อธิบายเพลงที่อยากได้ เช่น 'เพลงโลไฟชิลๆ เปียโน+บีตเบาๆ สำหรับคลิปคาเฟ่' หรือ 'ดนตรีลูกทุ่งสนุก จังหวะเร็ว'"></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <label style="font-size:13px;color:#cbd5e1">ความยาว (วินาที)</label>
+            <input id="muDuration" class="numfld" style="width:90px;margin:0" value="20">
+            <button class="send" id="muGo" style="padding:10px 20px">🎶 สร้างเพลง</button>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:8px">หมายเหตุ: ElevenLabs จำกัด ~22 วินาที/ครั้ง · เพลงยาวใช้ Stability/Replicate · สร้างจริงต้องมีคีย์ + เครดิตของผู้ให้บริการ</div>
+        </div>
+
+        <div class="panel"><h3>🎧 เพลงที่สร้างไว้</h3>
+          <div id="muList" style="display:flex;flex-direction:column;gap:12px"></div>
+        </div>
       </section>
 
       <!-- PROJECTS -->
@@ -2952,6 +2984,69 @@ async function cfRun(){
   b.disabled=false;b.textContent=o;loadContentFactory();
 }
 
+/* ---------- Music AI ---------- */
+let MU_PROVIDERS = [];
+async function loadMusic(){
+  let d; try { d = await (await fetch("/api/music/board")).json(); } catch(e){ return; }
+  MU_PROVIDERS = d.providers || [];
+  const sel = d.selection || {};
+  $("muProvider").innerHTML = MU_PROVIDERS.map(p => `<option value="${p.id}" ${p.id===sel.provider?'selected':''}>${escapeHtml(p.name)}</option>`).join("");
+  muFillModels(sel.model);
+  $("muKeyState").textContent = sel.has ? "✅ มีคีย์แล้ว" : "⚠️ ยังไม่มีคีย์";
+  $("muKeyState").style.color = sel.has ? "#22c55e" : "#f59e0b";
+  const list = $("muList");
+  list.innerHTML = (d.tracks||[]).length ? d.tracks.map(t => `
+    <div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="min-width:0;flex:1">
+          <div style="color:#fff;font-weight:700">${escapeHtml(t.prompt||"")}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px">${escapeHtml(t.provider||"")} · ${escapeHtml(t.model||"")} · ${(t.created_at||'').replace('T',' ').slice(5,16)}</div>
+        </div>
+        <button class="qbtn mu-del" data-id="${t.id}" style="color:#f87171;flex-shrink:0">🗑️</button>
+      </div>
+      <audio controls preload="none" src="${t.audio_ref}" style="width:100%"></audio>
+      <a class="qbtn" href="${t.audio_ref}" download="goffice-music-${t.id}.mp3" style="align-self:flex-start;font-size:12px">⬇️ ดาวน์โหลด</a>
+    </div>`).join("") : '<div style="color:#64748b">ยังไม่มีเพลง — พิมพ์คำอธิบายแล้วกด “สร้างเพลง”</div>';
+  list.querySelectorAll(".mu-del").forEach(x => x.onclick = async () => { await postJSON("/api/music/delete",{id:+x.dataset.id}); loadMusic(); });
+}
+function muFillModels(selModel){
+  const p = MU_PROVIDERS.find(x => x.id === $("muProvider").value) || MU_PROVIDERS[0];
+  $("muModel").innerHTML = (p? p.models:[]).map(m => `<option value="${m}" ${m===selModel?'selected':''}>${escapeHtml(m)}</option>`).join("");
+  const cur = MU_PROVIDERS.find(x => x.id === $("muProvider").value);
+  $("muProvLabel").textContent = cur ? ("คีย์ขอที่ " + cur.name) : "";
+}
+$("muProvider").addEventListener("change", () => { muFillModels(); postJSON("/api/music/key",{provider:$("muProvider").value, model:$("muModel").value}); });
+$("muModel").addEventListener("change", () => postJSON("/api/music/key",{provider:$("muProvider").value, model:$("muModel").value}));
+$("muKeyBtn").addEventListener("click", () => {
+  const cur = MU_PROVIDERS.find(x => x.id === $("muProvider").value) || {};
+  $("genTitle").textContent = "คีย์ Music AI — " + (cur.name||"");
+  $("genBody").innerHTML = `
+    <p class="conn-note">วางคีย์ของ ${escapeHtml(cur.name||"")} (เก็บไว้ในเซิร์ฟเวอร์ของคุณ)</p>
+    <a class="conn-doc" href="${cur.get||'#'}" target="_blank" rel="noopener">ขอคีย์ที่นี่ ↗</a>
+    <label>API key</label><input id="mu_key" type="password" placeholder="วาง API key">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="save" id="mu_save" style="flex:1">บันทึกคีย์</button>
+      <button class="qbtn" id="mu_clear" style="flex:1;color:#f87171">ลบคีย์</button>
+    </div>`;
+  $("mu_save").onclick = async () => {
+    const key = $("mu_key").value.trim();
+    if (!key){ toastNote("วางคีย์ก่อน","#f59e0b"); return; }
+    await postJSON("/api/music/key", { provider:$("muProvider").value, model:$("muModel").value, key });
+    closeModal("genModal"); toastNote("บันทึกคีย์ Music AI แล้ว ✅","#22c55e"); loadMusic();
+  };
+  $("mu_clear").onclick = async () => { await postJSON("/api/music/key/clear",{}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadMusic(); };
+  openModal("genModal");
+});
+$("muGo").addEventListener("click", async () => {
+  const prompt = $("muPrompt").value.trim();
+  if (!prompt){ toastNote("ใส่คำอธิบายเพลงก่อน","#f59e0b"); return; }
+  const b=$("muGo"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังสร้างเพลง…";
+  const r=await postJSON("/api/music/generate",{prompt, duration:$("muDuration").value});
+  b.disabled=false;b.textContent=o;
+  if(r.error) toastNote("❌ "+r.error,"#ef4444");
+  else { toastNote("สร้างเพลงสำเร็จ 🎶","#22c55e"); $("muPrompt").value=""; loadMusic(); }
+});
+
 /* ---------- Projects ---------- */
 let PR_TEMPLATES = [];
 const PR_ST = { pending:["#1e293b","#94a3b8","รอรัน"], running:["#78350f","#fbbf24","กำลังรัน"], done:["#064e3b","#6ee7b7","เสร็จ"], failed:["#7f1d1d","#fca5a5","⚠️ API มีปัญหา"] };
@@ -3316,7 +3411,7 @@ async function biOpen(pid){
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", music:"Music AI", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
@@ -3324,6 +3419,7 @@ function showView(v) {
   if (v === "automation") loadAutomation();
   if (v === "tradebot") loadTradeBots();
   if (v === "content") loadContentFactory();
+  if (v === "music") loadMusic();
   if (v === "bio") loadBio();
   if (v === "ads") loadAds();
   if (v === "projects") loadProjects();

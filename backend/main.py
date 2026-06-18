@@ -1930,6 +1930,69 @@ async def content_media_key_clear(p: dict) -> dict:
     return {"ok": True}
 
 
+# ============================== Music AI ====================================
+@app.get("/api/music/board")
+async def music_board() -> dict:
+    c = _media_cfg("music")
+    return {
+        "providers": media.PROVIDERS["music"],
+        "selection": {"provider": c["provider"], "model": c["model"],
+                      "key": (c["key"][:4] + "…") if c["key"] else "", "has": bool(c["key"])},
+        "tracks": db.music_list(),
+    }
+
+
+@app.post("/api/music/key")
+async def music_key_set(p: dict) -> dict:
+    upd = {}
+    if p.get("provider"):
+        upd["media_music_provider"] = p["provider"].strip()
+    if p.get("model") is not None:
+        upd["media_music_model"] = (p.get("model") or "").strip()
+    if p.get("key"):
+        upd["media_music_key"] = p["key"].strip()
+    if upd:
+        db.set_settings(upd)
+    return {"ok": True}
+
+
+@app.post("/api/music/key/clear")
+async def music_key_clear(p: dict) -> dict:
+    db.set_settings({"media_music_key": ""})
+    return {"ok": True}
+
+
+@app.post("/api/music/generate")
+async def music_generate(p: dict) -> dict:
+    prompt = (p.get("prompt") or "").strip()
+    if not prompt:
+        return {"error": "ใส่คำอธิบายเพลง/อารมณ์ก่อน (เช่น 'ดนตรีลูกทุ่งสนุก จังหวะเร็ว')"}
+    cfg = _media_cfg("music")
+    if not cfg["key"]:
+        return {"error": "ยังไม่ได้ใส่คีย์ Music AI — กด 🔑 ใส่คีย์ ก่อน"}
+    try:
+        dur = int(p.get("duration") or 20)
+    except (TypeError, ValueError):
+        dur = 20
+    try:
+        m = await __import__("asyncio").to_thread(
+            media.generate_music, cfg["provider"], cfg["model"], cfg["key"], prompt, dur)
+        b64 = (m.get("b64") or "").strip()
+        if len(b64) < 100:
+            return {"error": "ไฟล์เสียงที่ได้ว่างเปล่า — ลองใหม่หรือเปลี่ยน provider"}
+        ref = f"data:{m['mime']};base64,{b64}"
+        tid = db.music_add(prompt, cfg["provider"], cfg["model"], m["mime"], ref)
+        return {"ok": True, "track": next((t for t in db.music_list() if t["id"] == tid), None)}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.post("/api/music/delete")
+async def music_delete(p: dict) -> dict:
+    db.music_delete(int(p.get("id")))
+    return {"ok": True}
+
+
 # ============================== Projects ====================================
 def _stage_client(stage: dict):
     """Per-stage engine override (a chosen API key), else None (= per-agent default)."""
