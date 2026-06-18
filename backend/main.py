@@ -33,6 +33,7 @@ from . import mcp_oauth
 from . import trading
 from . import content_factory
 from . import media
+from . import projects as projects_mod
 from .agents import AGENTS, JARVIS, all_agents, compose_custom_system, SPECIALIST_FOOTER as _SPECIALIST_FOOTER
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
@@ -1851,6 +1852,124 @@ async def content_media_keys_set(p: dict) -> dict:
             upd[f"media_{kind}_key"] = block["key"].strip()
     if upd:
         db.set_settings(upd)
+    return {"ok": True}
+
+
+# ============================== Projects ====================================
+async def _run_agent(agent_id: str, goal: str) -> str:
+    """Run a single agent on a goal with its own system prompt; return text."""
+    ag = all_agents().get(agent_id)
+    if not ag:
+        return f"(ไม่พบเอเจนต์ {agent_id})"
+    model = model_for_agent(agent_id)
+    resp = await client_for_agent(agent_id).messages.create(
+        model=model, max_tokens=2500, system=ag.system,
+        **thinking_kwargs(model), messages=[{"role": "user", "content": goal}])
+    return next((b.text for b in resp.content if b.type == "text"), "")
+
+
+async def run_project_stage(stage: dict) -> str:
+    """Run every agent assigned to a stage; store + return the combined result."""
+    db.set_stage_result(stage["id"], "running", stage.get("result") or "")
+    parts = []
+    ags = all_agents()
+    for aid in (stage.get("agents") or []):
+        name = ags[aid].name if aid in ags else aid
+        try:
+            out = await _run_agent(aid, stage["goal"])
+        except Exception as exc:
+            out = f"⚠️ {_friendly_err(exc)}"
+        parts.append(f"### {ags.get(aid).emoji if aid in ags else '•'} {name}\n{out}")
+    combined = "\n\n".join(parts)
+    db.set_stage_result(stage["id"], "done", combined)
+    return combined
+
+
+async def _run_project_all(pid: int) -> None:
+    proj = db.get_project(pid)
+    if not proj:
+        return
+    for st in proj["stages"]:
+        if st.get("status") != "done":
+            await run_project_stage(st)
+
+
+@app.get("/api/projects/templates")
+async def projects_templates() -> dict:
+    return {"templates": projects_mod.template_list()}
+
+
+@app.get("/api/projects")
+async def projects_list() -> dict:
+    return {"projects": db.list_projects()}
+
+
+@app.post("/api/projects")
+async def projects_create(p: dict) -> dict:
+    tpl_id = (p.get("template") or "").strip()
+    tpl = projects_mod.TEMPLATES.get(tpl_id)
+    if not tpl:
+        return {"error": "unknown template"}
+    brief = (p.get("brief") or "").strip() or "(ยังไม่ระบุรายละเอียด)"
+    name = (p.get("name") or tpl["name"]).strip()
+    stages = [{"name": s["name"], "agents": s["agents"], "goal": s["goal"].format(brief=brief)}
+              for s in tpl["stages"]]
+    pid = db.create_project(name, tpl_id, brief, stages)
+    return {"ok": True, "id": pid}
+
+
+@app.get("/api/projects/{pid}")
+async def projects_detail(pid: int) -> dict:
+    proj = db.get_project(pid)
+    if not proj:
+        return {"error": "ไม่พบโปรเจกต์"}
+    ags = all_agents()
+    for st in proj["stages"]:
+        st["agent_names"] = [(ags[a].emoji + " " + ags[a].name) if a in ags else a for a in st.get("agents", [])]
+    return {"project": proj}
+
+
+@app.post("/api/projects/stage/run")
+async def projects_run_stage(p: dict) -> dict:
+    stage = db.get_stage(int(p.get("stage_id")))
+    if not stage:
+        return {"error": "ไม่พบสเตจ"}
+    try:
+        await run_project_stage(stage)
+        return {"ok": True, "stage": db.get_stage(stage["id"])}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.post("/api/projects/{pid}/run-all")
+async def projects_run_all(pid: int) -> dict:
+    if not db.get_project(pid):
+        return {"error": "ไม่พบโปรเจกต์"}
+    import asyncio
+    asyncio.create_task(_run_project_all(pid))     # run in background; UI polls detail
+    return {"ok": True}
+
+
+@app.post("/api/projects/{pid}/summary")
+async def projects_summary(pid: int) -> dict:
+    proj = db.get_project(pid)
+    if not proj:
+        return {"error": "ไม่พบโปรเจกต์"}
+    body = "\n\n".join(f"{s['name']}:\n{(s.get('result') or '(ยังไม่ได้รัน)')[:1500]}" for s in proj["stages"])
+    prompt = (f"คุณคือ CEO สรุปผลโปรเจกต์ '{proj['name']}' ให้เจ้าของธุรกิจอ่านเข้าใจง่าย.\n"
+              f"เป้าหมาย: {proj['brief']}\n\nผลแต่ละขั้น:\n{body}\n\n"
+              "สรุปเป็นภาษาไทย: ภาพรวม, ผลลัพธ์สำคัญแต่ละขั้น, และ next steps ที่ควรทำต่อ")
+    try:
+        text = await _run_agent("ceo", prompt)
+        db.set_project_summary(pid, text)
+        return {"ok": True, "summary": text}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.post("/api/projects/{pid}/delete")
+async def projects_delete(pid: int) -> dict:
+    db.delete_project(pid)
     return {"ok": True}
 
 

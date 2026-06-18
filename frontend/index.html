@@ -415,6 +415,7 @@
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
+      <div class="menu-item" data-view="projects"><span class="ico">📂</span><span class="label">โปรเจกต์</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="tokens"><span class="ico">🪙</span><span class="label">Token Usage</span></div>
@@ -969,6 +970,24 @@
           <button class="save" id="cfSaveKeys" style="margin-top:12px">💾 บันทึกคีย์</button>
         </div>
         <div class="panel"><h3>📋 บอร์ดคอนเทนต์ (คิว/ร่าง/โพสต์แล้ว)</h3><div id="cfBoard" style="display:flex;flex-direction:column;gap:12px"></div></div>
+      </section>
+
+      <!-- PROJECTS -->
+      <section class="view" id="view-projects">
+        <div id="prListWrap">
+          <div class="panel"><h3>📂 สร้างโปรเจกต์ใหม่</h3>
+            <p style="color:#94a3b8;font-size:13px;margin:4px 0 10px">รวมงานหลายขั้นเป็น 1 โปรเจกต์ — แต่ละขั้นมอบให้เอเจนต์ที่เหมาะ แล้วดูผลรวม + สรุปแยกแต่ละโปรเจกต์</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="prTemplate" class="numfld" style="width:auto;margin:0"></select>
+              <input id="prName" class="numfld" style="width:180px;margin:0" placeholder="ชื่อโปรเจกต์ (เว้นว่าง=ตามแม่แบบ)">
+              <input id="prBrief" class="numfld" style="flex:1;min-width:240px;margin:0" placeholder="รายละเอียด/เป้าหมาย เช่น ร้านกาแฟ specialty เชียงใหม่">
+              <button class="qbtn" id="prCreate" style="font-weight:700">➕ สร้าง</button>
+            </div>
+            <div id="prTplPreview" style="font-size:12px;color:#64748b;margin-top:8px"></div>
+          </div>
+          <div class="panel"><h3>📋 โปรเจกต์ของฉัน</h3><div id="prList" style="display:flex;flex-direction:column;gap:10px"></div></div>
+        </div>
+        <div id="prDetail" style="display:none"></div>
       </section>
 
       <!-- SETTINGS -->
@@ -2786,10 +2805,83 @@ async function cfRun(){
   b.disabled=false;b.textContent=o;loadContentFactory();
 }
 
+/* ---------- Projects ---------- */
+let PR_TEMPLATES = [];
+const PR_ST = { pending:["#1e293b","#94a3b8","รอรัน"], running:["#78350f","#fbbf24","กำลังรัน"], done:["#064e3b","#6ee7b7","เสร็จ"] };
+async function loadProjects(){
+  $("prDetail").style.display = "none"; $("prListWrap").style.display = "";
+  if (!PR_TEMPLATES.length){
+    try { PR_TEMPLATES = (await (await fetch("/api/projects/templates")).json()).templates || []; } catch(e){}
+    $("prTemplate").innerHTML = PR_TEMPLATES.map(t => `<option value="${t.id}">${t.emoji} ${t.name}</option>`).join("");
+    prTplPreview();
+  }
+  let d; try { d = await (await fetch("/api/projects")).json(); } catch(e){ return; }
+  $("prList").innerHTML = (d.projects||[]).length ? d.projects.map(p => `
+    <div class="wf-row" style="justify-content:space-between;align-items:center;gap:10px;cursor:pointer" data-pr="${p.id}">
+      <div><div style="font-weight:800;color:#fff">${escapeHtml(p.name)}</div>
+        <div style="font-size:12px;color:#94a3b8">${escapeHtml(p.brief||"")}</div>
+        <div style="font-size:12px;color:#6ee7b7">ความคืบหน้า ${p.stage_done}/${p.stage_total} ขั้น</div></div>
+      <div style="display:flex;gap:6px"><button class="qbtn pr-open" data-id="${p.id}">เปิด →</button>
+        <button class="qbtn pr-del" data-id="${p.id}" style="color:#f87171">🗑️</button></div>
+    </div>`).join("") : '<div style="color:#64748b">ยังไม่มีโปรเจกต์ — เลือกแม่แบบด้านบนแล้วกดสร้าง</div>';
+  $("prList").querySelectorAll(".pr-open").forEach(x => x.onclick = () => prOpen(+x.dataset.id));
+  $("prList").querySelectorAll("[data-pr]").forEach(x => x.onclick = (e) => { if(!e.target.classList.contains("pr-del")) prOpen(+x.dataset.pr); });
+  $("prList").querySelectorAll(".pr-del").forEach(x => x.onclick = async (e) => { e.stopPropagation(); if(!confirm("ลบโปรเจกต์นี้?"))return; await postJSON(`/api/projects/${x.dataset.id}/delete`,{}); loadProjects(); });
+}
+function prTplPreview(){
+  const t = PR_TEMPLATES.find(x => x.id === $("prTemplate").value);
+  $("prTplPreview").innerHTML = t ? "ขั้นตอน: " + t.stages.map(s => s.name).join(" → ") : "";
+}
+async function prCreate(){
+  const r = await postJSON("/api/projects", { template:$("prTemplate").value, name:$("prName").value.trim(), brief:$("prBrief").value.trim() });
+  if (r.error){ toastNote(r.error,"#f59e0b"); return; }
+  $("prName").value=""; $("prBrief").value=""; toastNote("สร้างโปรเจกต์แล้ว ✅","#22c55e");
+  prOpen(r.id);
+}
+async function prOpen(pid){
+  let d; try { d = (await (await fetch(`/api/projects/${pid}`)).json()).project; } catch(e){ return; }
+  if (!d) return;
+  $("prListWrap").style.display = "none"; $("prDetail").style.display = "";
+  const stageHtml = d.stages.map(s => {
+    const [bg,fg,lab] = PR_ST[s.status] || ["#1e293b","#94a3b8",s.status];
+    return `<div class="panel" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><b style="color:#fff">${escapeHtml(s.name)}</b> <span class="tag" style="background:${bg};color:${fg}">${lab}</span>
+          <div style="font-size:12px;color:#94a3b8">ผู้รับผิดชอบ: ${(s.agent_names||[]).join(", ")}</div></div>
+        <button class="qbtn pr-stage" data-sid="${s.id}" data-pid="${pid}" style="font-weight:700">${s.status==='done'?'รันซ้ำ':'▶ รันขั้นนี้'}</button>
+      </div>
+      ${s.result?`<div style="font-size:13px;color:#cbd5e1;white-space:pre-wrap;margin-top:8px;background:#0b1220;border-radius:8px;padding:10px;max-height:300px;overflow:auto">${escapeHtml(s.result)}</div>`:''}
+    </div>`;
+  }).join("");
+  $("prDetail").innerHTML = `
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><h3 style="margin:0">${escapeHtml(d.name)}</h3><div style="font-size:13px;color:#94a3b8">${escapeHtml(d.brief||"")}</div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="qbtn" id="prBack">← กลับ</button>
+          <button class="qbtn" id="prRunAll" data-pid="${pid}" style="font-weight:700">⏩ รันทั้งหมด</button>
+          <button class="qbtn" id="prSum" data-pid="${pid}">🧠 สรุปโปรเจกต์</button>
+          <button class="qbtn" id="prRefresh" data-pid="${pid}">🔄</button>
+        </div>
+      </div>
+    </div>
+    ${d.summary?`<div class="panel" style="border:1px solid #4f46e555"><h3>🧠 สรุปจาก CEO</h3><div style="font-size:13px;color:#e2e8f0;white-space:pre-wrap">${escapeHtml(d.summary)}</div></div>`:''}
+    ${stageHtml}`;
+  $("prBack").onclick = loadProjects;
+  $("prRefresh").onclick = () => prOpen(pid);
+  $("prRunAll").onclick = async () => { await postJSON(`/api/projects/${pid}/run-all`,{}); toastNote("เริ่มรันทั้งหมดเบื้องหลัง — กด 🔄 เพื่อดูความคืบหน้า","#a855f7"); };
+  $("prSum").onclick = async () => { const b=$("prSum"),o=b.textContent;b.disabled=true;b.textContent="⏳ สรุป…"; const r=await postJSON(`/api/projects/${pid}/summary`,{}); if(r.error)toastNote(r.error,"#f59e0b"); b.disabled=false;b.textContent=o; prOpen(pid); };
+  $("prDetail").querySelectorAll(".pr-stage").forEach(x => x.onclick = async () => {
+    const o=x.textContent; x.disabled=true; x.textContent="⏳ กำลังรัน…";
+    const r=await postJSON("/api/projects/stage/run",{stage_id:+x.dataset.sid});
+    if(r.error)toastNote(r.error,"#f59e0b"); prOpen(pid);
+  });
+}
+
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
@@ -2797,6 +2889,7 @@ function showView(v) {
   if (v === "automation") loadAutomation();
   if (v === "tradebot") loadTradeBots();
   if (v === "content") loadContentFactory();
+  if (v === "projects") loadProjects();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
   if (v === "n8n") loadN8n();
@@ -3662,6 +3755,8 @@ $("tbAi").addEventListener("click", tbAiStrategy);
 $("cfRun").addEventListener("click", cfRun);
 $("cfSaveRules").addEventListener("click", cfSaveRules);
 $("cfSaveKeys").addEventListener("click", cfSaveKeys);
+$("prCreate").addEventListener("click", prCreate);
+$("prTemplate").addEventListener("change", prTplPreview);
 (function handleMcpOAuthReturn(){
   const q = new URLSearchParams(location.search);
   const ok = q.get("mcp_connected"), err = q.get("mcp_error");

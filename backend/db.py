@@ -164,6 +164,16 @@ def init() -> None:
                 platforms TEXT, status TEXT, scheduled_at TEXT, created_at TEXT,
                 posted_at TEXT, result TEXT
             );
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT, template TEXT, brief TEXT, status TEXT,
+                summary TEXT, created_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS project_stages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, idx INTEGER, name TEXT, agents TEXT,
+                goal TEXT, status TEXT, result TEXT, updated_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -1079,3 +1089,76 @@ def due_planned() -> list[dict]:
             d["platforms"] = []
         out.append(d)
     return out
+
+
+# --- Projects ---------------------------------------------------------------
+def create_project(name, template, brief, stages: list) -> int:
+    with _conn() as c:
+        cur = c.execute("INSERT INTO projects (name, template, brief, status, created_at) VALUES (?,?,?,?,?)",
+                        (name, template, brief, "active", _now()))
+        pid = cur.lastrowid
+        for i, st in enumerate(stages):
+            c.execute("INSERT INTO project_stages (project_id, idx, name, agents, goal, status, updated_at) "
+                      "VALUES (?,?,?,?,?,?,?)",
+                      (pid, i, st["name"], _json.dumps(st.get("agents") or []), st.get("goal", ""), "pending", _now()))
+        return pid
+
+def list_projects() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM projects ORDER BY id DESC").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            sts = c.execute("SELECT status FROM project_stages WHERE project_id=?", (d["id"],)).fetchall()
+            d["stage_total"] = len(sts)
+            d["stage_done"] = sum(1 for s in sts if s[0] == "done")
+            out.append(d)
+    return out
+
+def get_project(pid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        rows = c.execute("SELECT * FROM project_stages WHERE project_id=? ORDER BY idx", (pid,)).fetchall()
+    stages = []
+    for s in rows:
+        sd = dict(s)
+        try:
+            sd["agents"] = _json.loads(sd.get("agents") or "[]")
+        except Exception:
+            sd["agents"] = []
+        stages.append(sd)
+    d["stages"] = stages
+    return d
+
+def get_stage(stage_id) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM project_stages WHERE id=?", (stage_id,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    try:
+        d["agents"] = _json.loads(d.get("agents") or "[]")
+    except Exception:
+        d["agents"] = []
+    return d
+
+def set_stage_result(stage_id, status, result) -> None:
+    with _conn() as c:
+        c.execute("UPDATE project_stages SET status=?, result=?, updated_at=? WHERE id=?",
+                  (status, result, _now(), stage_id))
+
+def set_project_summary(pid, summary) -> None:
+    with _conn() as c:
+        c.execute("UPDATE projects SET summary=? WHERE id=?", (summary, pid))
+
+def set_project_status(pid, status) -> None:
+    with _conn() as c:
+        c.execute("UPDATE projects SET status=? WHERE id=?", (status, pid))
+
+def delete_project(pid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM projects WHERE id=?", (pid,))
+        c.execute("DELETE FROM project_stages WHERE project_id=?", (pid,))
