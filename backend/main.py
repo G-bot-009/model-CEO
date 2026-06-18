@@ -1896,7 +1896,16 @@ async def _run_project_all(pid: int) -> None:
 
 @app.get("/api/projects/templates")
 async def projects_templates() -> dict:
-    return {"templates": projects_mod.template_list()}
+    ags = all_agents()
+    tpls = projects_mod.template_list()
+    for t in tpls:
+        for s in t["stages"]:
+            s["agent_detail"] = [
+                {"id": a, "name": ags[a].name if a in ags else a,
+                 "emoji": ags[a].emoji if a in ags else "•",
+                 "desc": (ags[a].desc or ags[a].title) if a in ags else ""}
+                for a in s.get("agents", [])]
+    return {"templates": tpls}
 
 
 @app.get("/api/projects")

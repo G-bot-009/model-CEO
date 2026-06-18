@@ -1095,6 +1095,14 @@
   </div>
 </div>
 
+<!-- Project confirm modal -->
+<div class="modal-overlay" id="prConfirmModal" hidden style="z-index:170">
+  <div class="modal" style="width:min(720px,96vw); max-height:90vh; overflow:auto">
+    <div class="mh">📂 ยืนยันสร้างโปรเจกต์ <span style="cursor:pointer" data-close="prConfirmModal">✕</span></div>
+    <div class="mb" id="prConfirmBody"></div>
+  </div>
+</div>
+
 <!-- Image lightbox (click an image to view it large) -->
 <div class="modal-overlay" id="imgLightbox" hidden style="z-index:200">
   <div style="width:min(1150px,96vw); max-height:94vh; overflow:auto; background:#0b1220; border:1px solid #1e293b; border-radius:16px; padding:16px; position:relative">
@@ -2832,8 +2840,34 @@ function prTplPreview(){
   const t = PR_TEMPLATES.find(x => x.id === $("prTemplate").value);
   $("prTplPreview").innerHTML = t ? "ขั้นตอน: " + t.stages.map(s => s.name).join(" → ") : "";
 }
-async function prCreate(){
+function prCreate(){
+  const t = PR_TEMPLATES.find(x => x.id === $("prTemplate").value);
+  if (!t){ toastNote("เลือกแม่แบบก่อน","#f59e0b"); return; }
+  const name = $("prName").value.trim() || t.name;
+  const brief = $("prBrief").value.trim() || "(ยังไม่ระบุรายละเอียด)";
+  const stages = t.stages.map(s => `
+    <div style="border:1px solid #1e293b;border-radius:10px;padding:10px;margin-bottom:8px">
+      <div style="font-weight:700;color:#fff">${escapeHtml(s.name)}</div>
+      ${(s.agent_detail||[]).map(a => `<div style="font-size:13px;color:#cbd5e1;margin-top:4px">${a.emoji} <b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.desc||"")}</div>`).join("")}
+    </div>`).join('<div style="text-align:center;color:#475569;margin:-2px 0 6px">↓</div>');
+  $("prConfirmBody").innerHTML = `
+    <div class="conn-howto"><div class="conn-howto-h">สรุปโปรเจกต์</div>
+      <div style="font-weight:800;color:#fff;font-size:15px">${t.emoji} ${escapeHtml(name)}</div>
+      <div style="color:#94a3b8;font-size:13px;margin-top:4px">${escapeHtml(brief)}</div>
+    </div>
+    <h4 style="margin:14px 0 8px">🔁 ทีม AI ที่จะทำงาน (ครบทุกขั้น ปิดลูป)</h4>
+    ${stages}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="save" id="prConfirmBtn" style="flex:1">✅ ยืนยัน — สร้างโปรเจกต์</button>
+      <button class="qbtn" id="prCancelBtn" style="flex:1;color:#f87171;font-weight:700">🗑️ ลบ (ปิด)</button>
+    </div>`;
+  openModal("prConfirmModal");
+  $("prConfirmBtn").onclick = prConfirmCreate;
+  $("prCancelBtn").onclick = () => closeModal("prConfirmModal");
+}
+async function prConfirmCreate(){
   const r = await postJSON("/api/projects", { template:$("prTemplate").value, name:$("prName").value.trim(), brief:$("prBrief").value.trim() });
+  closeModal("prConfirmModal");
   if (r.error){ toastNote(r.error,"#f59e0b"); return; }
   $("prName").value=""; $("prBrief").value=""; toastNote("สร้างโปรเจกต์แล้ว ✅","#22c55e");
   prOpen(r.id);
