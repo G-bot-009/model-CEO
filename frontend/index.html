@@ -560,7 +560,7 @@
           </span></h3>
           <div class="bars" id="adBars"></div>
         </div>
-        <div class="panel"><h3>🎨 สตูดิโอสร้างภาพ (SVG)</h3>
+        <div class="panel" id="adImgStudio"><h3>🎨 สตูดิโอสร้างภาพ (SVG)</h3>
           <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px">
             <input id="adImgPrompt" class="numfld" style="flex:1; min-width:240px; margin:0" placeholder="อธิบายภาพ เช่น โลโก้ร้านกาแฟมินิมอล โทนน้ำตาล" />
             <select id="adImgSize" class="numfld" style="width:auto; margin:0">
@@ -2230,6 +2230,7 @@ function openAgentDetail(id){
 }
 async function loadAgentDetail(){
   if (!adAgentId) return;
+  $("adImgStudio").style.display = (adAgentId === "designer") ? "" : "none";   // image studio: Designer only
   let d; try { d = await (await fetch(`/api/agent/${adAgentId}?period=${adPeriod}`)).json(); } catch(e){ return; }
   if (d.error) return;
   $("adEmoji").textContent = d.emoji; $("adName").textContent = d.name; $("adTitle").textContent = d.desc || d.title;
