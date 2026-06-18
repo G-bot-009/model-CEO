@@ -2100,7 +2100,7 @@ async def projects_delete(pid: int) -> dict:
 
 # ============================== Bio Link Page ===============================
 _BIO_RESERVED = {"", "api", "oauth", "login", "logout", "ws", "l", "p", "health",
-                 "favicon.ico", "robots.txt", "static", "assets"}
+                 "favicon.ico", "robots.txt", "static", "assets", "privacy", "terms"}
 
 
 def _ip_hash(request: Request) -> str:
@@ -2442,6 +2442,87 @@ def _render_bio(page: dict, links: list) -> str:
   {btns or f'<p style="color:{sub};text-align:center">ยังไม่มีลิงก์</p>'}
   <p style="text-align:center;color:{sub};font-size:12px;margin-top:28px">⚡ by G Office</p>
 </div></body></html>"""
+
+
+def _legal_page(title: str, body_html: str) -> HTMLResponse:
+    company = db.get_settings().get("company_name") or "G Office"
+    today = __import__("datetime").date.today().isoformat()
+    base = _public_base_or_default()
+    return HTMLResponse(f"""<!doctype html><html lang="th"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_esc(title)} · {_esc(company)}</title>
+<style>
+ body{{font-family:-apple-system,'Segoe UI',Roboto,'Noto Sans Thai',sans-serif;background:#0f172a;color:#e2e8f0;margin:0;line-height:1.8}}
+ .wrap{{max-width:780px;margin:0 auto;padding:40px 22px 80px}}
+ h1{{color:#fff;font-size:26px;margin:0 0 6px}} h2{{color:#a5b4fc;font-size:18px;margin:30px 0 8px}}
+ .muted{{color:#64748b;font-size:13px}} a{{color:#818cf8}} ul{{padding-left:22px}} li{{margin:5px 0}}
+ .top{{display:flex;gap:14px;font-size:14px;margin-bottom:26px}}
+</style></head><body><div class="wrap">
+ <div class="top"><a href="/privacy">นโยบายความเป็นส่วนตัว</a><a href="/terms">ข้อกำหนดการใช้งาน</a></div>
+ <h1>{_esc(title)}</h1>
+ <p class="muted">{_esc(company)} · ปรับปรุงล่าสุด {today} · {_esc(base)}</p>
+ {body_html}
+ <p class="muted" style="margin-top:40px">ติดต่อ: gingerlookza@gmail.com</p>
+</div></body></html>""")
+
+
+_PRIVACY_BODY = """
+<p>นโยบายนี้อธิบายว่า {C} ("เรา") เก็บ ใช้ และปกป้องข้อมูลของผู้ใช้บริการแพลตฟอร์มของเราอย่างไร
+รวมถึงเมื่อคุณเชื่อมต่อบัญชีภายนอก เช่น Facebook, Instagram, Google และบริการอื่น ๆ</p>
+<h2>1. ข้อมูลที่เราเก็บ</h2>
+<ul>
+ <li><b>ข้อมูลบัญชีที่เชื่อมต่อ:</b> เมื่อคุณยินยอมเชื่อมบริการภายนอก เราเก็บโทเค็นการเข้าถึง (access token) และข้อมูลโปรไฟล์สาธารณะที่จำเป็นต่อการให้บริการเท่านั้น</li>
+ <li><b>ข้อมูลเพจ/โฆษณา:</b> หากคุณให้สิทธิ์ เราเข้าถึงชื่อเพจ โพสต์ และข้อมูลแคมเปญโฆษณา เพื่อช่วยจัดการและวิเคราะห์ตามคำสั่งของคุณ</li>
+ <li><b>เนื้อหาที่คุณอัปโหลด:</b> เช่น รูปภาพที่ส่งให้ AI วิเคราะห์ ใช้เพื่อประมวลผลตามที่คุณร้องขอเท่านั้น</li>
+ <li><b>ข้อมูลการใช้งาน:</b> บันทึกการใช้งานพื้นฐานเพื่อความปลอดภัยและปรับปรุงบริการ</li>
+</ul>
+<h2>2. การใช้ข้อมูล</h2>
+<p>เราใช้ข้อมูลเพื่อให้บริการตามที่คุณสั่งเท่านั้น เช่น โพสต์/ตอบข้อความ จัดการโฆษณา วิเคราะห์เนื้อหา
+เราไม่ขายข้อมูลของคุณให้บุคคลที่สาม</p>
+<h2>3. การแชร์ข้อมูลกับบุคคลที่สาม</h2>
+<p>เราส่งข้อมูลไปยังผู้ให้บริการที่จำเป็นต่อการทำงาน เช่น Meta (Facebook/Instagram) ผ่าน API ทางการ
+และผู้ให้บริการ AI เพื่อประมวลผลคำสั่งของคุณ ภายใต้ข้อกำหนดของผู้ให้บริการเหล่านั้น</p>
+<h2>4. การเก็บรักษาและการลบข้อมูล</h2>
+<p>คุณสามารถยกเลิกการเชื่อมต่อบัญชีได้ตลอดเวลาจากในแอป ซึ่งจะลบโทเค็นการเข้าถึงที่เก็บไว้
+หากต้องการให้ลบข้อมูลทั้งหมด ติดต่อเราที่อีเมลด้านล่าง เราจะดำเนินการภายใน 30 วัน</p>
+<h2>5. ความปลอดภัย</h2>
+<p>เราจัดเก็บโทเค็นและข้อมูลสำคัญอย่างปลอดภัย และเข้าถึงเฉพาะเท่าที่จำเป็นต่อการให้บริการ</p>
+<h2>6. สิทธิ์ของคุณ</h2>
+<p>คุณมีสิทธิ์เข้าถึง แก้ไข หรือขอลบข้อมูลส่วนบุคคลของคุณ และเพิกถอนความยินยอมได้ทุกเมื่อ</p>
+<h2>7. การเปลี่ยนแปลงนโยบาย</h2>
+<p>เราอาจปรับปรุงนโยบายนี้เป็นครั้งคราว โดยจะแสดงวันที่ปรับปรุงล่าสุดไว้ด้านบน</p>
+"""
+
+_TERMS_BODY = """
+<p>ข้อกำหนดนี้ใช้กับการใช้บริการแพลตฟอร์มของ {C} ("บริการ") การใช้บริการถือว่าคุณยอมรับข้อกำหนดนี้</p>
+<h2>1. การใช้งาน</h2>
+<p>คุณต้องใช้บริการอย่างถูกกฎหมาย และปฏิบัติตามนโยบายของแพลตฟอร์มที่เชื่อมต่อ เช่น นโยบายโฆษณาและเนื้อหาของ Meta</p>
+<h2>2. บัญชีที่เชื่อมต่อ</h2>
+<p>คุณรับผิดชอบบัญชีภายนอกที่นำมาเชื่อม และการให้สิทธิ์ต่าง ๆ คุณยืนยันว่ามีสิทธิ์จัดการบัญชี/เพจ/บัญชีโฆษณาที่นำมาเชื่อม</p>
+<h2>3. เนื้อหา</h2>
+<p>เนื้อหาที่คุณสร้างหรือเผยแพร่ผ่านบริการเป็นความรับผิดชอบของคุณ
+ฟีเจอร์ AI (เช่น การวิเคราะห์ภาพหรือคำแนะนำโฆษณา) เป็นเพียงตัวช่วย ไม่รับประกันผลลัพธ์หรือการอนุมัติจากแพลตฟอร์มภายนอก</p>
+<h2>4. ข้อจำกัดความรับผิด</h2>
+<p>บริการให้ "ตามสภาพ" เราไม่รับประกันว่าจะไม่มีข้อผิดพลาด และไม่รับผิดต่อความเสียหายที่เกิดจากการใช้บริการหรือบริการภายนอก</p>
+<h2>5. การเปลี่ยนแปลง</h2>
+<p>เราอาจปรับปรุงหรือยุติบริการ และอาจแก้ไขข้อกำหนดนี้ได้ โดยจะแจ้งวันที่ปรับปรุงล่าสุดไว้ด้านบน</p>
+"""
+
+
+def _public_base_or_default() -> str:
+    return PUBLIC_BASE_URL or "https://iamceo.ai"
+
+
+@app.get("/privacy")
+async def privacy_page():
+    c = db.get_settings().get("company_name") or "G Office"
+    return _legal_page("นโยบายความเป็นส่วนตัว", _PRIVACY_BODY.replace("{C}", _esc(c)))
+
+
+@app.get("/terms")
+async def terms_page():
+    c = db.get_settings().get("company_name") or "G Office"
+    return _legal_page("ข้อกำหนดการใช้งาน", _TERMS_BODY.replace("{C}", _esc(c)))
 
 
 @app.get("/{slug}")
