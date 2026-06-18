@@ -217,6 +217,17 @@ async def _startup() -> None:
 LOGIN_USER = os.getenv("LOGIN_USER", "admin")
 LOGIN_PASS = os.getenv("LOGIN_PASS", "admin")
 
+# Public address of THIS app (set when behind a domain), e.g. https://app.iamceo.ai
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+# Your self-hosted n8n instance, e.g. https://n8n.iamceo.ai
+N8N_BASE_URL = os.getenv("N8N_BASE_URL", "http://localhost:5678").strip().rstrip("/")
+
+
+def _public_base(request) -> str:
+    """Base URL for outward-facing links (OAuth redirects, n8n callback).
+    Prefers PUBLIC_BASE_URL so they're correct behind a reverse proxy/domain."""
+    return PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+
 
 def _auth_token() -> str:
     """Stable per-install token; the login cookie must match it."""
@@ -299,7 +310,7 @@ _oauth_state: dict = {}   # state -> (platform, code_verifier)
 
 
 def _redirect_uri(request: Request, platform: str) -> str:
-    return str(request.base_url).rstrip("/") + f"/oauth/{platform}/callback"
+    return _public_base(request) + f"/oauth/{platform}/callback"
 
 
 @app.get("/api/social")
@@ -309,7 +320,7 @@ async def social_list(request: Request) -> dict:
         "platforms": [{"id": k, "label": v["label"], "connected": connected.get(k, False),
                        "signed": bool(v.get("signed")), "note": v.get("note", ""), "doc": v.get("doc", "")}
                       for k, v in SOCIAL.items()],
-        "redirect_note": str(request.base_url).rstrip("/") + "/oauth/<platform>/callback",
+        "redirect_note": _public_base(request) + "/oauth/<platform>/callback",
     }
 
 
@@ -679,7 +690,7 @@ async def tools_run(p: dict, request: Request) -> dict:
     files = p.get("files") or []
     if files:                                  # files travel as file_ref only, never binary
         inputs["files"] = files
-    callback_url = str(request.base_url).rstrip("/") + "/api/n8n/callback"
+    callback_url = _public_base(request) + "/api/n8n/callback"
     payload = {
         "task_id": task_id, "trace_id": trace_id, "tool_id": tool["tool_id"],
         "version": tool.get("version", "1.0.0"),
@@ -1159,7 +1170,7 @@ def _n8n_data() -> list:
 @app.get("/api/n8n")
 async def n8n_list() -> dict:
     """n8n automation catalog (only entries that have a download link)."""
-    return {"items": _n8n_data()}
+    return {"items": _n8n_data(), "n8n_base": N8N_BASE_URL}
 
 
 @app.get("/api/cache")
@@ -1317,7 +1328,7 @@ _MCP_OAUTH_PENDING: dict = {}          # state -> {conn_id, verifier, token_endp
 
 
 def _mcp_redirect_uri(request: Request) -> str:
-    return str(request.base_url).rstrip("/") + "/oauth/mcp-callback"
+    return _public_base(request) + "/oauth/mcp-callback"
 
 
 @app.get("/oauth/mcp/{conn_id}/start")
