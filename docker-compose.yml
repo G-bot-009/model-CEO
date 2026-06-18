@@ -1,0 +1,26 @@
+# G Office — deploy alongside n8n on the same VPS.
+# This runs the app and binds it to 127.0.0.1:8000 so your existing reverse
+# proxy (the one already serving n8n.iamceo.ai) can forward app.iamceo.ai → it.
+#
+#   1) put your secrets in .env  (copy from .env.example)
+#   2) docker compose up -d --build
+#   3) point app.iamceo.ai at 127.0.0.1:8000 in your proxy (see deploy/README.md)
+#
+# Traefik users: instead of the published port, attach this service to your
+# traefik network and add the labels shown in deploy/README.md.
+
+services:
+  goffice:
+    build: .
+    container_name: goffice
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - goffice_data:/app/data                 # agents.db (persists)
+      - goffice_shared:/app/backend/shared      # uploaded/shared files
+
+volumes:
+  goffice_data:
+  goffice_shared:

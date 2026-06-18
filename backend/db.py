@@ -14,13 +14,15 @@ Schema:
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator, Optional
 
-DB_PATH = Path(__file__).resolve().parent.parent / "agents.db"
+# DB path is overridable (e.g. a mounted volume in Docker) via AGENTS_DB.
+DB_PATH = Path(os.getenv("AGENTS_DB") or (Path(__file__).resolve().parent.parent / "agents.db"))
 
 
 @contextmanager
