@@ -1036,6 +1036,7 @@
         <div class="panel"><h3>📘 บัญชี Facebook (เชื่อมได้สูงสุด 10) <span id="adsAcctCount" style="font-size:13px;color:#94a3b8"></span></h3>
           <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">เชื่อมหลายบัญชีเพื่อยิง/ตรวจหลายแอดพร้อมกัน — AI ตรวจแยกทีละบัญชี</p>
           <div id="adsAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+          <div id="adsSlots" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <input id="adsAccLabel" class="numfld" style="width:150px;margin:0" placeholder="ชื่อบัญชี เช่น ร้าน A">
             <input id="adsAccToken" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="Meta access token (ads_management)">
@@ -1044,7 +1045,9 @@
           </div>
           <div style="font-size:11px;color:#64748b;margin-top:6px">token + Ad Account ID เอาจาก Meta Graph API / Ads Manager (เลขหลัง act_)</div>
         </div>
-        <div class="panel"><h3>🤖 คำแนะนำจาก AI (แยกตามบัญชี)</h3><div id="adsRecos" style="display:flex;flex-direction:column;gap:10px"></div></div>
+        <div class="panel"><h3>🤖 คำแนะนำจาก AI (แยกตามบัญชี)</h3>
+          <div id="adsTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+          <div id="adsRecos" style="display:flex;flex-direction:column;gap:10px"></div></div>
       </section>
 
       <!-- SETTINGS -->
@@ -3048,24 +3051,39 @@ const ADS_ACT = {
   scale: ["#22c55e", "🔼", "เพิ่มงบ"],
   keep:  ["#f59e0b", "⏸️", "คงงบไว้"],
 };
+let adsFilter = "all";
 async function loadAds(){
   let st; try { st = await (await fetch("/api/ads/status")).json(); } catch(e){ return; }
   $("adsStatus").textContent = `${st.meta?('✓ Facebook '+st.meta_count+' บัญชี'):'• Facebook ยังไม่เชื่อม'} · ${st.google?'✓ Google':'• Google ยังไม่เชื่อม'}`;
   $("adsMode").value = st.mode || "review";
   // Facebook accounts (up to 10)
   let ac; try { ac = await (await fetch("/api/ads/accounts")).json(); } catch(e){ ac = {accounts:[],max:10}; }
-  $("adsAcctCount").textContent = `(${ac.accounts.length}/${ac.max})`;
-  $("adsAccList").innerHTML = ac.accounts.length ? ac.accounts.map(a => `
+  const accs = ac.accounts || [];
+  $("adsAcctCount").textContent = `(${accs.length}/${ac.max})`;
+  $("adsAccList").innerHTML = accs.map((a,i) => `
     <div class="wf-row" style="justify-content:space-between;align-items:center;gap:10px">
-      <div><b style="color:#fff">📘 ${escapeHtml(a.label)}</b>
-        <span style="font-size:12px;color:#94a3b8">act_${escapeHtml(a.ad_account_id)} · ${escapeHtml(a.token)}</span></div>
+      <div><b style="color:#fff">📘 Ads Facebook ตัวที่ ${i+1}</b> <span style="color:#a5b4fc">${escapeHtml(a.label)}</span>
+        <div style="font-size:12px;color:#94a3b8">act_${escapeHtml(a.ad_account_id)} · ${escapeHtml(a.token)}</div></div>
       <button class="qbtn ads-acc-del" data-id="${a.id}" style="color:#f87171">🗑️</button>
-    </div>`).join("") : '<div style="color:#64748b">ยังไม่มีบัญชี — เพิ่มด้านล่าง</div>';
+    </div>`).join("") || '<div style="color:#64748b">ยังไม่มีบัญชี — กดปุ่ม “เชื่อม Facebook ตัวที่ N” ด้านล่าง</div>';
   $("adsAccList").querySelectorAll(".ads-acc-del").forEach(x => x.onclick = async () => { await postJSON("/api/ads/account/delete",{id:+x.dataset.id}); loadAds(); });
-  if (ac.accounts.length >= ac.max) $("adsAccAdd").disabled = true; else $("adsAccAdd").disabled = false;
+  // separate connect button per empty slot
+  let slots = "";
+  for (let n = accs.length + 1; n <= ac.max; n++)
+    slots += `<button class="qbtn ads-slot" data-n="${n}" style="border:1px dashed #6366f1;color:#a5b4fc">➕ เชื่อม Facebook ตัวที่ ${n}</button>`;
+  $("adsSlots").innerHTML = slots;
+  $("adsSlots").querySelectorAll(".ads-slot").forEach(b => b.onclick = () => {
+    $("adsAccLabel").value = "Ads Facebook ตัวที่ " + b.dataset.n;
+    $("adsAccToken").focus(); $("adsAccLabel").scrollIntoView({behavior:"smooth"});
+  });
   let d; try { d = await (await fetch("/api/ads/recommendations")).json(); } catch(e){ d = {recommendations:[]}; }
+  // account filter tabs
+  const tabBtn = (f,label) => `<button class="qbtn ads-tab" data-f="${f}" style="${String(adsFilter)===String(f)?'background:#6366f1;color:#fff;border-color:#6366f1':''}">${label}</button>`;
+  $("adsTabs").innerHTML = tabBtn("all","ทั้งหมด") + accs.map((a,i) => tabBtn(a.id, `📘 ตัวที่ ${i+1}`)).join("");
+  $("adsTabs").querySelectorAll(".ads-tab").forEach(t => t.onclick = () => { adsFilter = t.dataset.f; loadAds(); });
+  const recos = (d.recommendations||[]).filter(r => adsFilter === "all" || String(r.account_id) === String(adsFilter));
   const box = $("adsRecos");
-  box.innerHTML = (d.recommendations||[]).length ? d.recommendations.map(r => {
+  box.innerHTML = recos.length ? recos.map(r => {
     const [col,ic,lab] = ADS_ACT[r.action] || ["#94a3b8","•",r.action];
     const mx = r.metrics || {};
     const pending = r.status === "pending";
