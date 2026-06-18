@@ -295,8 +295,10 @@ async def inbound_enable() -> dict:
 # Each platform: provider auth/token URLs + scope. The user registers their own
 # OAuth app (client_id/secret) and sets the redirect URI we show them.
 SOCIAL = {
-    "instagram": {"label": "Instagram", "auth": "https://www.facebook.com/v19.0/dialog/oauth", "token": "https://graph.facebook.com/v19.0/oauth/access_token", "scope": "instagram_basic,instagram_content_publish,pages_show_list"},
-    "facebook":  {"label": "Facebook", "auth": "https://www.facebook.com/v19.0/dialog/oauth", "token": "https://graph.facebook.com/v19.0/oauth/access_token", "scope": "public_profile,pages_show_list,pages_manage_posts"},
+    # Meta คุมสิทธิ์เพจเข้มงวด (pages_*) — ต้องผ่าน App Review + ยืนยันธุรกิจก่อนถึงจะขอได้
+    # ตอนนี้ขอแค่ public_profile เพื่อให้เชื่อม OAuth ผ่าน; เปิดสิทธิ์เต็ม (scope_full) เมื่อผ่านรีวิวแล้ว
+    "instagram": {"label": "Instagram", "auth": "https://www.facebook.com/v19.0/dialog/oauth", "token": "https://graph.facebook.com/v19.0/oauth/access_token", "scope": "public_profile", "scope_full": "instagram_basic,instagram_content_publish,pages_show_list"},
+    "facebook":  {"label": "Facebook", "auth": "https://www.facebook.com/v19.0/dialog/oauth", "token": "https://graph.facebook.com/v19.0/oauth/access_token", "scope": "public_profile", "scope_full": "public_profile,pages_show_list,pages_manage_posts"},
     "tiktok":    {"label": "TikTok", "auth": "https://www.tiktok.com/v2/auth/authorize/", "token": "https://open.tiktokapis.com/v2/oauth/token/", "scope": "user.info.basic,video.publish", "client_param": "client_key"},
     "youtube":   {"label": "YouTube", "auth": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token", "scope": "https://www.googleapis.com/auth/youtube.upload", "extra": {"access_type": "offline", "prompt": "consent"}},
     "x":         {"label": "X", "auth": "https://twitter.com/i/oauth2/authorize", "token": "https://api.twitter.com/2/oauth2/token", "scope": "tweet.read tweet.write users.read offline.access", "pkce": True, "basic": True},
@@ -353,11 +355,15 @@ async def oauth_start(platform: str, request: Request):
     if not cfg or not creds or not creds.get("client_id"):
         return HTMLResponse("<h3>ยังไม่ได้ใส่ client_id/secret ของแพลตฟอร์มนี้ — ปิดหน้าต่างแล้วกรอกก่อน</h3>", status_code=400)
     state = secrets.token_urlsafe(16)
+    # หลังผ่าน App Review ตั้ง META_FULL_SCOPE=1 เพื่อขอสิทธิ์เพจเต็ม (scope_full) อัตโนมัติ
+    scope = cfg["scope"]
+    if cfg.get("scope_full") and os.getenv("META_FULL_SCOPE", "").strip() in ("1", "true", "True"):
+        scope = cfg["scope_full"]
     params = {
         "response_type": "code",
         cfg.get("client_param", "client_id"): creds["client_id"],
         "redirect_uri": _redirect_uri(request, platform),
-        "scope": cfg["scope"],
+        "scope": scope,
         "state": state,
     }
     verifier = ""
