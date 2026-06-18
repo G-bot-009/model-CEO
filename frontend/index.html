@@ -1129,7 +1129,7 @@
 
 <!-- NOTIFICATION DRAWER -->
 <div class="drawer" id="drawer">
-  <h3>การแจ้งเตือน <span style="cursor:pointer" id="drawerClose">✕</span></h3>
+  <h3>การแจ้งเตือน <span style="display:flex;gap:12px;align-items:center"><span style="cursor:pointer;font-size:12px;color:#94a3b8;font-weight:400" id="notifClear">🗑️ ล้าง</span><span style="cursor:pointer" id="drawerClose">✕</span></span></h3>
   <div id="notifList" style="overflow:auto"></div>
 </div>
 
@@ -1210,6 +1210,24 @@ let usage = { per_agent:{}, input:0, output:0 };
 let pricing = { input_per_mtok_usd:5, output_per_mtok_usd:25, usd_to_thb:36.5, daily_token_limit:2000000, warn_ratio:0.8 };
 let series = [];
 let notifications = [], unread = 0;
+try { notifications = JSON.parse(localStorage.getItem("goNotifs") || "[]") || []; } catch(e) { notifications = []; }
+function saveNotifs(){ try { localStorage.setItem("goNotifs", JSON.stringify(notifications.slice(0, 60))); } catch(e){} }
+// บันทึกเข้าประวัติกระดิ่ง (ใช้ร่วมกันทั้ง notify + toastNote)
+function logNotif(c, title, body){
+  notifications.unshift({ c, title, body: body || "", time: new Date().toLocaleString() });
+  notifications = notifications.slice(0, 60);
+  saveNotifs();
+  if (typeof renderNotifs === "function") renderNotifs();
+  if (!$("drawer").classList.contains("open")) { unread++; updateBadge(); }
+}
+// แปลงสีของ toast → หัวข้อในประวัติ (สำเร็จ/เตือน/ผิดพลาด)
+function notifTitleFor(c){
+  c = (c||"").toLowerCase();
+  if (c.indexOf("22c55e")>=0 || c.indexOf("6ee7b7")>=0 || c.indexOf("14532d")>=0) return "✅ สำเร็จ";
+  if (c.indexOf("ef4444")>=0 || c.indexOf("f87171")>=0 || c.indexOf("b91c1c")>=0) return "❌ ผิดพลาด";
+  if (c.indexOf("f59e0b")>=0 || c.indexOf("fbbf24")>=0 || c.indexOf("fcd34d")>=0) return "⚠️ เตือน";
+  return "ℹ️ แจ้งเตือน";
+}
 let liveBlocks = {};
 
 const $ = (id) => document.getElementById(id);
@@ -1915,11 +1933,7 @@ function notify(agentId, title, body) {
   t.innerHTML = `<b style="color:${c}">${title}</b><span style="font-size:13px;color:#cbd5e1">${body}</span>`;
   $("toasts").appendChild(t);
   setTimeout(() => { t.style.opacity = 0; setTimeout(()=>t.remove(), 300); }, 4500);
-  // history
-  const time = new Date().toLocaleTimeString();
-  notifications.unshift({ c, title, body, time });
-  renderNotifs();
-  if (!$("drawer").classList.contains("open")) { unread++; updateBadge(); }
+  logNotif(c, title, body);     // เก็บประวัติกระดิ่ง
 }
 function renderNotifs() {
   $("notifList").innerHTML = notifications.map(n =>
@@ -3376,6 +3390,7 @@ function toastNote(msg, c="#a855f7"){
   const t = document.createElement("div"); t.className = "toast"; t.style.borderLeftColor = c;
   t.innerHTML = `<span style="font-size:13px;color:#cbd5e1">${msg}</span>`;
   $("toasts").appendChild(t); setTimeout(()=>{ t.style.opacity=0; setTimeout(()=>t.remove(),300); }, 4000);
+  logNotif(c, notifTitleFor(c), msg);     // เก็บเข้าประวัติกระดิ่งด้วย
 }
 async function postJSON(url, data){ return (await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)})).json(); }
 
@@ -4016,6 +4031,7 @@ $("goal").addEventListener("keydown", e => { if(e.key==="Enter") send(); });
 document.querySelectorAll(".qbtn[data-q]").forEach(b => b.addEventListener("click", () => send(b.dataset.q)));
 $("bell").addEventListener("click", () => { const d=$("drawer"); d.classList.toggle("open"); if(d.classList.contains("open")){ unread=0; updateBadge(); } });
 $("drawerClose").addEventListener("click", () => $("drawer").classList.remove("open"));
+$("notifClear").addEventListener("click", () => { notifications = []; saveNotifs(); renderNotifs(); unread = 0; updateBadge(); });
 $("newSession").addEventListener("click", () => ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({action:"new_session"})));
 $("sessionSelect").addEventListener("change", e => { const id=parseInt(e.target.value,10);
   if(!isNaN(id) && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({action:"load_session", id})); });
