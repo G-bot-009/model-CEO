@@ -34,6 +34,7 @@ from . import trading
 from . import content_factory
 from . import media
 from . import projects as projects_mod
+from . import ads
 from .agents import AGENTS, JARVIS, all_agents, compose_custom_system, SPECIALIST_FOOTER as _SPECIALIST_FOOTER
 from .orchestrator import Orchestrator, get_model, set_model, thinking_kwargs
 
@@ -2175,6 +2176,115 @@ async def bio_link_delete(p: dict) -> dict:
 async def bio_analytics_api(page_id: int, range: str = "90d") -> dict:
     days = {"7d": 7, "30d": 30, "90d": 90}.get(range, 90)
     return db.bio_analytics(page_id, days)
+
+
+# ============================== Ads Manager =================================
+def _ads_cfg(name: str) -> dict:
+    row = db.get_connector(name)
+    if not row or row.get("status") != "connected":
+        return {}
+    try:
+        return json.loads(row.get("config") or "{}")
+    except Exception:
+        return {}
+
+
+def _ads_mode() -> str:
+    return "auto" if db.get_settings().get("ads_mode") == "auto" else "review"
+
+
+_ADS_PROMPT = (
+    "คุณคือผู้จัดการโฆษณา วิเคราะห์ผลแคมเปญแล้วแนะนำการตัดสินใจรายแคมเปญ "
+    "(ไม่การันตีผล ใช้ดุลพินิจจากตัวเลข).\n"
+    "เกณฑ์: ROAS ต่ำ/ใช้งบแต่ไม่มีคอนเวอร์ชัน → pause · ROAS ดี/คุ้ม → scale (เพิ่มงบ ~20-50%) · "
+    "ยังเก็บข้อมูล/ก้ำกึ่ง → keep.\n\n"
+    "ข้อมูลแคมเปญ (JSON):\n{data}\n\n"
+    "ตอบ JSON อย่างเดียว: {{\"recos\":[{{\"campaign_id\":\"...\",\"action\":\"pause|scale|keep\","
+    "\"reason\":\"เหตุผลสั้นๆ ภาษาไทย\",\"suggested_budget\":ตัวเลขงบ/วันที่แนะนำ(บาท)}}]}}"
+)
+
+
+async def run_ads_review() -> list:
+    """Pull campaign metrics (Meta), let Claude recommend, store as pending recos."""
+    campaigns = []
+    meta = _ads_cfg("Meta Ads")
+    if meta.get("token"):
+        rows = await __import__("asyncio").to_thread(ads.meta_campaigns, meta["token"], meta.get("ad_account_id", ""))
+        for r in rows:
+            r["_platform"] = "meta"
+        campaigns += rows
+    if not campaigns:
+        raise RuntimeError("ยังไม่มีข้อมูลแคมเปญ — เชื่อม Meta Ads (token + Ad Account ID) ก่อน")
+    model = model_for_agent("analyst")
+    raw = await _claude_text("analyst", model, _ADS_PROMPT.format(
+        data=json.dumps([{k: v for k, v in c.items() if k != "_platform"} for c in campaigns], ensure_ascii=False)), 1500)
+    plan = _parse_json(raw)
+    recos = {r.get("campaign_id"): r for r in plan.get("recos", [])}
+    db.ads_clear_pending()
+    for c in campaigns:
+        rc = recos.get(c["id"], {})
+        action = rc.get("action") if rc.get("action") in ("pause", "scale", "keep") else "keep"
+        db.ads_add_reco(c["_platform"], c["id"], c["name"], c, action,
+                        rc.get("reason", ""), float(rc.get("suggested_budget") or c.get("daily_budget") or 0))
+    return db.ads_list_reco()
+
+
+def _apply_reco(reco: dict) -> str:
+    if reco["platform"] == "meta":
+        meta = _ads_cfg("Meta Ads")
+        if not meta.get("token"):
+            raise RuntimeError("ไม่พบ token ของ Meta Ads")
+        if reco["action"] == "pause":
+            ads.meta_pause(meta["token"], reco["campaign_id"]); return "หยุดแคมเปญแล้ว"
+        if reco["action"] == "scale":
+            ads.meta_set_budget(meta["token"], reco["campaign_id"], reco["suggested_budget"]); return f"เพิ่มงบเป็น {reco['suggested_budget']}/วัน"
+        return "คงไว้ (ไม่เปลี่ยน)"
+    raise RuntimeError("แพลตฟอร์มนี้ยังใช้กับการสั่งจริงไม่ได้")
+
+
+@app.get("/api/ads/status")
+async def ads_status() -> dict:
+    return {"meta": bool(_ads_cfg("Meta Ads").get("token")),
+            "google": bool(_ads_cfg("Google Ads")),
+            "mode": _ads_mode()}
+
+
+@app.post("/api/ads/settings")
+async def ads_settings(p: dict) -> dict:
+    db.set_settings({"ads_mode": "auto" if p.get("mode") == "auto" else "review"})
+    return {"ok": True, "mode": _ads_mode()}
+
+
+@app.post("/api/ads/review")
+async def ads_review() -> dict:
+    try:
+        return {"ok": True, "recommendations": await run_ads_review()}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.get("/api/ads/recommendations")
+async def ads_recos() -> dict:
+    return {"recommendations": db.ads_list_reco(), "mode": _ads_mode()}
+
+
+@app.post("/api/ads/apply")
+async def ads_apply(p: dict) -> dict:
+    reco = db.ads_get_reco(int(p.get("id")))
+    if not reco:
+        return {"error": "ไม่พบรายการ"}
+    try:
+        msg = await __import__("asyncio").to_thread(_apply_reco, reco)
+        db.ads_set_reco_status(reco["id"], "applied")
+        return {"ok": True, "message": msg}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+
+
+@app.post("/api/ads/dismiss")
+async def ads_dismiss(p: dict) -> dict:
+    db.ads_set_reco_status(int(p.get("id")), "dismissed")
+    return {"ok": True}
 
 
 # ---- Public: click redirect + the public bio page (catch-all, keep last) ----

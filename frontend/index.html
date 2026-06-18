@@ -417,6 +417,7 @@
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
+      <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
     </nav>
@@ -1008,6 +1009,31 @@
           <div class="panel"><h3>📋 เพจของฉัน</h3><div id="biList" style="display:flex;flex-direction:column;gap:10px"></div></div>
         </div>
         <div id="biDetail" style="display:none"></div>
+      </section>
+
+      <!-- ADS MANAGER -->
+      <section class="view" id="view-ads">
+        <div class="panel" style="background:linear-gradient(135deg,#6d28d9,#7c3aed);border:none">
+          <h3 style="color:#fff;margin:0">📣 ให้ AI ดูแลโฆษณาให้คุณ</h3>
+          <p style="color:#ede9fe;font-size:13px;margin:8px 0 0">เชื่อม Facebook &amp; Google Ads — AI ดูตัวเลขให้ทุกวัน หยุดแคมเปญที่ไม่เวิร์ค ย้ายงบไปตัวที่เวิร์ค ช่วยร่างแคมเปญใหม่ (รอคุณตรวจก่อน) · คุณตั้งงบต่อวัน AI ไม่ใช้เกินแม้แต่บาทเดียว</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+            <button class="qbtn" id="adsConnFb">📘 เชื่อม Facebook/Meta</button>
+            <button class="qbtn" id="adsConnGg">🔍 เชื่อม Google Ads</button>
+            <span id="adsStatus" style="color:#ede9fe;font-size:13px"></span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+            <label style="color:#fff;font-size:13px">โหมด:
+              <select id="adsMode" class="numfld" style="width:auto;margin:0 0 0 6px;display:inline-block">
+                <option value="review">ร่าง รออนุมัติ</option>
+                <option value="auto">อัตโนมัติ (AI ลงมือเอง)</option>
+              </select></label>
+            <button class="qbtn" id="adsReview" style="font-weight:700;background:#fff;color:#6d28d9;border:none">🔍 ตรวจวันนี้</button>
+          </div>
+        </div>
+        <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
+          <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ AI วิเคราะห์จากตัวเลข ไม่การันตีผล · โหมด "ร่าง" จะแค่แนะนำให้คุณกดอนุมัติเอง · โหมด "อัตโนมัติ" จะหยุด/ปรับงบจริงในบัญชีโฆษณา · การเชื่อม Meta ต้องมี token+Ad Account ID, Google ต้องมี developer token (เชื่อมไว้ก่อนได้)</p>
+        </div>
+        <div class="panel"><h3>🤖 คำแนะนำจาก AI</h3><div id="adsRecos" style="display:flex;flex-direction:column;gap:10px"></div></div>
       </section>
 
       <!-- SETTINGS -->
@@ -3005,6 +3031,43 @@ async function prOpen(pid){
   });
 }
 
+/* ---------- Ads Manager ---------- */
+const ADS_ACT = {
+  pause: ["#ef4444", "❌", "หยุดแคมเปญ"],
+  scale: ["#22c55e", "🔼", "เพิ่มงบ"],
+  keep:  ["#f59e0b", "⏸️", "คงงบไว้"],
+};
+async function loadAds(){
+  let st; try { st = await (await fetch("/api/ads/status")).json(); } catch(e){ return; }
+  $("adsStatus").textContent = `${st.meta?'✓ Meta เชื่อมแล้ว':'• Meta ยังไม่เชื่อม'} · ${st.google?'✓ Google':'• Google ยังไม่เชื่อม'}`;
+  $("adsMode").value = st.mode || "review";
+  let d; try { d = await (await fetch("/api/ads/recommendations")).json(); } catch(e){ d = {recommendations:[]}; }
+  const box = $("adsRecos");
+  box.innerHTML = (d.recommendations||[]).length ? d.recommendations.map(r => {
+    const [col,ic,lab] = ADS_ACT[r.action] || ["#94a3b8","•",r.action];
+    const mx = r.metrics || {};
+    const pending = r.status === "pending";
+    return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px;border-left:4px solid ${col}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><b style="color:#fff">${ic} ${escapeHtml(r.name)}</b>
+          <span class="tag" style="background:${col}33;color:${col}">${lab}</span>
+          ${r.status!=='pending'?`<span class="tag" style="background:#1e293b;color:#94a3b8">${r.status==='applied'?'ทำแล้ว':'ข้ามแล้ว'}</span>`:''}</div>
+        <div style="display:flex;gap:6px">
+          ${pending?`<button class="qbtn ads-apply" data-id="${r.id}" style="font-weight:700;color:${col}">✅ อนุมัติ</button>
+                     <button class="qbtn ads-dismiss" data-id="${r.id}" style="color:#94a3b8">ข้าม</button>`:''}
+        </div>
+      </div>
+      <div style="font-size:12px;color:#94a3b8">ใช้งบ ฿${(mx.spend||0).toLocaleString()} · ROAS ${mx.roas||0} · คลิก ${mx.clicks||0} · คอนเวอร์ชัน ${mx.conversions||0}${r.action==='scale'?` · แนะนำงบ ฿${r.suggested_budget}/วัน`:''}</div>
+      <div style="font-size:13px;color:#cbd5e1">${escapeHtml(r.reason||"")}</div>
+    </div>`;
+  }).join("") : '<div style="color:#64748b">ยังไม่มีคำแนะนำ — เชื่อมโฆษณาแล้วกด “ตรวจวันนี้”</div>';
+  box.querySelectorAll(".ads-apply").forEach(x => x.onclick = async () => {
+    const r = await postJSON("/api/ads/apply",{id:+x.dataset.id});
+    toastNote(r.error||r.message||"ทำแล้ว", r.error?"#f59e0b":"#22c55e"); loadAds();
+  });
+  box.querySelectorAll(".ads-dismiss").forEach(x => x.onclick = async () => { await postJSON("/api/ads/dismiss",{id:+x.dataset.id}); loadAds(); });
+}
+
 /* ---------- Bio Link Page ---------- */
 async function loadBio(){
   $("biDetail").style.display = "none"; $("biListWrap").style.display = "";
@@ -3120,7 +3183,7 @@ async function biOpen(pid){
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", bio:"Bio Link Page", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
+  $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
   if (v === "connectors") loadConnectors();
@@ -3129,6 +3192,7 @@ function showView(v) {
   if (v === "tradebot") loadTradeBots();
   if (v === "content") loadContentFactory();
   if (v === "bio") loadBio();
+  if (v === "ads") loadAds();
   if (v === "projects") loadProjects();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
@@ -3998,6 +4062,15 @@ $("cfSaveKeys").addEventListener("click", cfSaveKeys);
 $("prCreate").addEventListener("click", prCreate);
 $("prTemplate").addEventListener("change", prTplPreview);
 $("biCreate").addEventListener("click", biCreate);
+$("adsConnFb").addEventListener("click", () => openConnect("Meta Ads", loadAds));
+$("adsConnGg").addEventListener("click", () => openConnect("Google Ads", loadAds));
+$("adsMode").addEventListener("change", e => postJSON("/api/ads/settings", { mode: e.target.value }).then(() => toastNote("เปลี่ยนโหมดแล้ว", "#22c55e")));
+$("adsReview").addEventListener("click", async () => {
+  const b = $("adsReview"), o = b.textContent; b.disabled = true; b.textContent = "⏳ AI กำลังตรวจ…";
+  const r = await postJSON("/api/ads/review", {});
+  if (r.error) toastNote(r.error, "#f59e0b"); else toastNote("ตรวจเสร็จ — ดูคำแนะนำด้านล่าง", "#22c55e");
+  b.disabled = false; b.textContent = o; loadAds();
+});
 (function handleMcpOAuthReturn(){
   const q = new URLSearchParams(location.search);
   const ok = q.get("mcp_connected"), err = q.get("mcp_error");

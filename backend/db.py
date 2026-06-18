@@ -198,6 +198,12 @@ def init() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 link_id INTEGER, page_id INTEGER, clicked_at TEXT, ip_hash TEXT, referrer TEXT
             );
+            CREATE TABLE IF NOT EXISTS ads_reco (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform TEXT, campaign_id TEXT, name TEXT, metrics TEXT,
+                action TEXT, reason TEXT, suggested_budget REAL,
+                status TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS api_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL, provider TEXT, base_url TEXT, secret TEXT,
@@ -1316,3 +1322,46 @@ def bio_analytics(page_id, days=90) -> dict:
         "daily_views": [dict(r) for r in daily_v],
         "per_link": [dict(r) for r in per_link],
     }
+
+
+# --- Ads Manager recommendations --------------------------------------------
+def ads_clear_pending() -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM ads_reco WHERE status='pending'")
+
+def ads_add_reco(platform, campaign_id, name, metrics: dict, action, reason, suggested_budget) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO ads_reco (platform, campaign_id, name, metrics, action, reason, suggested_budget, status, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (platform, campaign_id, name, _json.dumps(metrics or {}), action, reason, suggested_budget, "pending", _now()))
+        return cur.lastrowid
+
+def ads_list_reco(limit=60) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM ads_reco ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["metrics"] = _json.loads(d.get("metrics") or "{}")
+        except Exception:
+            d["metrics"] = {}
+        out.append(d)
+    return out
+
+def ads_get_reco(rid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM ads_reco WHERE id=?", (rid,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    try:
+        d["metrics"] = _json.loads(d.get("metrics") or "{}")
+    except Exception:
+        d["metrics"] = {}
+    return d
+
+def ads_set_reco_status(rid, status) -> None:
+    with _conn() as c:
+        c.execute("UPDATE ads_reco SET status=? WHERE id=?", (status, rid))
