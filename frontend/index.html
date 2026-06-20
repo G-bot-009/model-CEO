@@ -766,11 +766,13 @@
         <div class="panel">
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
             <button class="qbtn" id="cbRefresh" style="font-weight:700">🔄 โหลดบทสนทนา</button>
+            <button class="qbtn" id="cbDiag" style="font-weight:700;background:#0e7490;color:#fff;border-color:#0e7490">🩺 ตรวจสอบการเชื่อม</button>
             <label style="display:flex;align-items:center;gap:6px;color:#cbd5e1;font-size:13px"><input type="checkbox" id="cbAuto" style="width:16px;height:16px" checked> อัปเดตอัตโนมัติทุก 10 วิ</label>
             <span style="flex:1"></span>
             <span id="cbStatus" style="font-size:12px;color:#94a3b8"></span>
             <button class="qbtn" id="cbClear" style="color:#f87171">🗑️ ล้างประวัติ</button>
           </div>
+          <div id="cbDiagBox" style="display:none;background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:12px;margin-bottom:10px;font-size:13px;line-height:1.8;color:#cbd5e1"></div>
           <div id="cbThread" style="height:420px;overflow:auto;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px"></div>
           <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
             <input id="cbInput" class="numfld" style="flex:1;margin:0" placeholder="หรือพิมพ์ส่งจากที่นี่ก็ได้ (ส่งเข้า Telegram)…">
@@ -4562,7 +4564,8 @@ async function loadChatBot(silent){
   cbRenderThread(r.messages || []);
   _cbLastCount = (r.messages||[]).length;
   $("cbAssistant").checked = !!r.assistant;
-  $("cbStatus").textContent = r.chat_id ? ("Chat ID: "+r.chat_id) : "เชื่อมแล้ว";
+  if (r.warn){ $("cbStatus").textContent = "⚠️ " + r.warn; $("cbStatus").style.color = "#fca5a5"; }
+  else { $("cbStatus").textContent = (r.assistant?"🤖 ผู้ช่วยเปิด · ":"⚠️ ผู้ช่วยปิด · ") + (r.chat_id ? ("Chat ID: "+r.chat_id) : "เชื่อมแล้ว"); $("cbStatus").style.color = r.assistant?"#34d399":"#fbbf24"; }
   // auto-refresh on by default
   if ($("cbAuto").checked && !_cbTimer) _cbTimer = setInterval(() => loadChatBot(true), 10000);
 }
@@ -4575,6 +4578,15 @@ async function cbSend(){
   $("cbInput").value=""; loadChatBot(true);
 }
 $("cbRefresh").addEventListener("click", () => loadChatBot());
+$("cbDiag").addEventListener("click", async () => {
+  const box = $("cbDiagBox"); box.style.display = "block";
+  box.innerHTML = "⏳ กำลังตรวจสอบ…";
+  let r; try { r = await (await fetch("/api/chatbot/diag")).json(); } catch(e){ box.innerHTML = "ตรวจสอบไม่ได้"; return; }
+  const rows = (r.checks||[]).map(c => `${c[0]} ${escapeHtml(c[1])}`).join("<br>");
+  const extra = r.poller_error ? `<br>⚠️ ระบบอ่านข้อความ: ${escapeHtml(r.poller_error)}` : "";
+  box.innerHTML = `<b style="color:#fff">🩺 ผลตรวจการเชื่อม Telegram</b><br>${rows}${extra}`;
+  loadChatBot(true);
+});
 $("cbSend").addEventListener("click", cbSend);
 $("cbInput").addEventListener("keydown", e => { if (e.key==="Enter") cbSend(); });
 $("cbAssistant").addEventListener("change", async (e) => {

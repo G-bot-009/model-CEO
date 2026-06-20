@@ -3439,6 +3439,10 @@ async def _telegram_send(tok: str, chat_id, text: str) -> None:
                           json={"chat_id": chat_id, "text": text})
 
 
+# live status of the Telegram poller so the UI can explain "why nothing happens"
+_TG_STATUS = {"error": "", "ok_at": 0, "polls": 0, "bot": "", "webhook_cleared": False}
+
+
 async def _telegram_assistant_reply(incoming: str) -> str:
     """G Office personal assistant reply (concise Thai summary) using recent context."""
     history = [m for m in db.chat_msgs_list("telegram", 14) if m.get("direction") in ("in", "out")]
@@ -3464,14 +3468,27 @@ async def _telegram_assistant_reply(incoming: str) -> str:
 async def _telegram_loop() -> None:
     """Single poller: mirror Telegram chat into DB; auto-reply via AI when assistant is on."""
     import asyncio
+    import httpx
+    import time as _t
     await asyncio.sleep(20)
     while True:
         tok, _ = _telegram_creds()
         if not tok:
             await asyncio.sleep(30)
             continue
+        # a webhook blocks getUpdates (409); clear it once so polling works
+        if not _TG_STATUS["webhook_cleared"]:
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    await client.get(f"https://api.telegram.org/bot{tok}/deleteWebhook")
+                _TG_STATUS["webhook_cleared"] = True
+            except Exception:
+                pass
         try:
             new_msgs = await _telegram_pull(tok, long_poll=True)
+            _TG_STATUS["error"] = ""
+            _TG_STATUS["ok_at"] = int(_t.time())
+            _TG_STATUS["polls"] += 1
             assistant_on = db.get_settings().get("telegram_assistant") == "true"
             if assistant_on:
                 for nm in new_msgs:
@@ -3480,8 +3497,56 @@ async def _telegram_loop() -> None:
                         continue
                     await _telegram_send(tok, nm["chat_id"], reply)
                     db.chat_msg_add("telegram", nm["chat_id"], "out", "ผู้ช่วย AI", reply, _tg_now())
-        except Exception:
+        except Exception as exc:
+            _TG_STATUS["error"] = _friendly_err(exc)
             await asyncio.sleep(15)
+
+
+@app.get("/api/chatbot/diag")
+async def chatbot_diag() -> dict:
+    """Diagnose why Telegram chat may not be working (token, webhook, assistant, poller)."""
+    import httpx
+    import time as _t
+    tok, chat = _telegram_creds()
+    out = {"connected": bool(tok), "assistant": db.get_settings().get("telegram_assistant") == "true",
+           "chat_id": chat, "poller_polls": _TG_STATUS["polls"],
+           "poller_error": _TG_STATUS["error"],
+           "poller_age_sec": (int(_t.time()) - _TG_STATUS["ok_at"]) if _TG_STATUS["ok_at"] else None,
+           "checks": []}
+    if not tok:
+        out["checks"].append(["❌", "ยังไม่ได้เชื่อม Telegram — เชื่อมในเมนูการเชื่อมต่อก่อน"])
+        return out
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            me = (await client.get(f"https://api.telegram.org/bot{tok}/getMe")).json()
+            wh = (await client.get(f"https://api.telegram.org/bot{tok}/getWebhookInfo")).json()
+            if me.get("ok"):
+                bot = me["result"].get("username", "")
+                _TG_STATUS["bot"] = bot
+                out["bot"] = bot
+                out["checks"].append(["✅", f"Bot Token ใช้ได้ — บอท @{bot}"])
+            else:
+                out["checks"].append(["❌", "Bot Token ไม่ถูกต้อง — คัดลอกใหม่จาก @BotFather"])
+                return out
+            whurl = (wh.get("result") or {}).get("url") or ""
+            if whurl:
+                # a webhook is set → getUpdates is blocked; clear it
+                await client.get(f"https://api.telegram.org/bot{tok}/deleteWebhook")
+                _TG_STATUS["webhook_cleared"] = True
+                out["checks"].append(["🔧", "พบ webhook ค้างอยู่ (บล็อกการอ่านข้อความ) — ลบให้แล้ว ลองพิมพ์ใหม่"])
+            else:
+                out["checks"].append(["✅", "ไม่มี webhook บล็อก — อ่านข้อความได้"])
+    except Exception as exc:
+        out["checks"].append(["❌", "ต่อ Telegram ไม่ได้: " + _friendly_err(exc)])
+        return out
+    out["checks"].append(["✅" if out["assistant"] else "⚠️",
+                          "ผู้ช่วย AI เปิดอยู่ — บอทจะตอบให้อัตโนมัติ" if out["assistant"]
+                          else "ผู้ช่วย AI ปิดอยู่ — เปิดสวิตช์ “ให้บอทคุยกับฉัน” ก่อน บอทถึงจะตอบ"])
+    inc = len([m for m in db.chat_msgs_list("telegram") if m.get("direction") == "in"])
+    out["checks"].append(["✅" if inc else "⚠️",
+                          f"ได้รับข้อความเข้ามาแล้ว {inc} ข้อความ" if inc
+                          else "ยังไม่เคยได้รับข้อความ — กด Start กับบอท แล้วพิมพ์ทักไปหาบอท 1 ครั้ง"])
+    return out
 
 
 @app.get("/api/chatbot/messages")
@@ -3492,7 +3557,8 @@ async def chatbot_messages() -> dict:
                 "messages": [], "connected": False}
     msgs = [m for m in db.chat_msgs_list("telegram") if m.get("direction") != "sys"]
     return {"messages": msgs, "connected": True, "chat_id": chat,
-            "assistant": db.get_settings().get("telegram_assistant") == "true"}
+            "assistant": db.get_settings().get("telegram_assistant") == "true",
+            "warn": _TG_STATUS["error"]}
 
 
 @app.post("/api/chatbot/assistant")
