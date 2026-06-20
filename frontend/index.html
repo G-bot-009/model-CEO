@@ -4841,6 +4841,14 @@ setTimeout(checkSchedule, 2500);
 
 loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); refreshPause(); });
 $("chatbar").style.display = "";   // เริ่มที่ Dashboard — แสดงช่องคำสั่ง CEO
+// เชื่อม Facebook Ads เสร็จในหน้าต่าง popup → รีเฟรชหน้า Ads Manager ให้อัตโนมัติ
+window.addEventListener("message", function(e){
+  if (e.data === "goffice-ads-connected"){
+    closeModal("genModal");
+    showView("ads");
+    toastNote("เชื่อมบัญชี Facebook แล้ว ✅","#22c55e");
+  }
+});
 </script>
 </body>
 </html>

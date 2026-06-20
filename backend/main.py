@@ -2714,7 +2714,7 @@ async def fb_ads_oauth_callback():
   var h = new URLSearchParams((location.hash||'').replace(/^#/,''));
   var token = h.get('access_token'); var state = h.get('state')||''; var slot = (state.split('|')[0]||'');
   var m = document.getElementById('m'), pick = document.getElementById('pick');
-  function done(t){ m.textContent=t; setTimeout(function(){ try{window.close();}catch(e){} },2500); }
+  function done(t){ m.textContent=t; try{ if(window.opener) window.opener.postMessage('goffice-ads-connected','*'); }catch(e){} setTimeout(function(){ try{window.close();}catch(e){} },1800); }
   if(!token){ m.textContent='❌ ไม่ได้รับสิทธิ์ / ยกเลิก — ปิดหน้าต่างแล้วลองใหม่'; return; }
   fetch('/api/ads/fb-sdk-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,slot:slot})})
    .then(function(r){return r.json();}).then(function(d){
