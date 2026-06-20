@@ -425,6 +425,7 @@
       <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
+      <div class="menu-item" data-view="guide"><span class="ico">📖</span><span class="label">คู่มือใช้งาน</span></div>
     </nav>
     <div class="side-title">ทีมเอเจนต์</div>
     <div class="agent-list" id="agentList"></div>
@@ -614,6 +615,24 @@
           <button class="qbtn" id="clearTasks">🗑️ ล้างงานทั้งหมด</button>
         </div>
         <div class="card" style="padding:14px"><div id="tasksBody" style="display:flex; flex-direction:column; gap:10px;"></div></div>
+      </section>
+
+      <!-- GUIDE / คู่มือใช้งาน -->
+      <section class="view" id="view-guide">
+        <div style="max-width:980px;margin:0 auto">
+          <div style="background:linear-gradient(135deg,#6d28d9,#7c3aed);border-radius:18px;padding:26px 24px;margin-bottom:18px;color:#fff">
+            <div style="font-size:26px;font-weight:900">📖 คู่มือใช้งาน G Office</div>
+            <div style="color:#ede9fe;font-size:14px;margin-top:6px">ออฟฟิศ AI ครบวงจร — ทีมเอเจนต์ + การตลาด + เทรด + คอนเทนต์ ทำงานให้คุณ 24 ชม. (คุณสั่ง มันทำ)</div>
+          </div>
+          <div id="guideGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
+          <div style="background:#0b1220;border:1px solid #1e293b;border-radius:14px;padding:18px;margin-top:16px;color:#cbd5e1;line-height:1.8">
+            <div style="font-weight:800;color:#fff;font-size:16px;margin-bottom:8px">⚠️ สิ่งที่ควรรู้ (ตรงไปตรงมา)</div>
+            • AI ช่วยคิด/ร่าง/วิเคราะห์ — <b>ไม่การันตีผล</b> และไม่ทำอะไรเองนอกจากที่คุณสั่ง<br>
+            • โฆษณา/เทรด/คอนเทนต์ ค่าเริ่มต้นเป็น <b>“ร่าง/รออนุมัติ”</b> — คุณตรวจก่อนเสมอ<br>
+            • เชื่อมบริการนอก (Facebook/Google/Notion ฯลฯ) ใช้ <b>บัญชี/คีย์ของคุณเอง</b> เก็บในเซิร์ฟเวอร์คุณ<br>
+            • ภาพ/วิดีโอ/เพลงจริง ต้องต่อ API ภายนอก (BYO key) — Claude ทำข้อความ/โค้ด/วิเคราะห์
+          </div>
+        </div>
       </section>
 
       <!-- HISTORY -->
@@ -3904,9 +3923,35 @@ function showView(v) {
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
   if (v === "n8n") loadN8n();
+  if (v === "guide") renderGuide();
   if (v === "settings") initSettingsForm();
   // ช่องส่งคำสั่งถึง CEO โผล่ที่ Dashboard, CEO Console และ Jarvis
   const cb = $("chatbar"); if (cb) cb.style.display = (v === "dashboard" || v === "console" || v === "jarvis") ? "" : "none";
+}
+
+/* ---------- คู่มือใช้งาน ---------- */
+const GUIDE = [
+  {ic:"🗺️",c:"#3b82f6",t:"Dashboard · CEO Console · Jarvis",s:["พิมพ์สั่งงานในช่องล่าง เช่น “ช่วยวางแผนการตลาดร้านกาแฟ”","CEO (Mochi) แตกงาน → มอบทีมเอเจนต์ทำ → สรุปให้","Jarvis = ผู้ช่วยส่วนตัว สั่งงานเร็วๆ ได้เลย"]},
+  {ic:"🧑‍💼",c:"#6366f1",t:"Agents (ทีม AI)",s:["คลิกการ์ดเอเจนต์ = สั่งงานตัวนั้นตรงๆ","ปุ่ม 🔌 เครื่องมือ = เปิดหน้า MCP (เชื่อม Notion/Canva/ClickUp)","สร้างเอเจนต์เองได้จากชื่อ+หน้าที่"]},
+  {ic:"📂",c:"#a855f7",t:"Project (งานหลายขั้น)",s:["เลือกแม่แบบ (SEO/Ads) หรือสร้างเอง","แต่ละขั้นมอบเอเจนต์ที่เหมาะ → กดรันทีละขั้น หรือรันทั้งหมด","มีหลอดความคืบหน้า + สรุปจาก CEO ท้ายงาน"]},
+  {ic:"📣",c:"#1877F2",t:"Ads Manager + Autopilot",s:["เชื่อม Facebook สูงสุด 10 บัญชี (ลูกค้าแชร์บัญชี → ใส่ Ad Account ID)","กด 🔍 ตรวจวันนี้ → AI แนะนำ หยุด/เพิ่มงบ/คงไว้","Autopilot A: จัดการงบอัตโนมัติ+Kill-switch · B: สร้างแคมเปญเอง+A/B+แนบรูป","🖼️ ตรวจรูปก่อนยิง: เช็คโอกาสผ่านรีวิว Meta"]},
+  {ic:"🏭",c:"#ef4444",t:"โรงงานคอนเทนต์",s:["ตั้งกฎ (โพสต์/วัน, โทน) → AI เขียนแคปชั่น+ทำภาพ","โหมดร่าง = รออนุมัติ · อัตโนมัติ = โพสต์เอง","คลิกรูปดูใหญ่ได้ · รูปไม่สำเร็จจะแจ้งเตือน ไม่โพสต์มั่ว"]},
+  {ic:"🖼️",c:"#22c55e",t:"Image AI · 🎵 Music AI",s:["เลือก provider (OpenAI/Gemini/Stability) + ใส่คีย์","พิมพ์คำอธิบาย → สร้างภาพ/เพลงจริง","เก็บประวัติ + ดาวน์โหลดได้"]},
+  {ic:"🔗",c:"#f59e0b",t:"Bio Link Page",s:["สร้างเพจรวมลิงก์ (เหมือน Linktree) มี slug ของตัวเอง","เพิ่ม/แก้ลิงก์ + ดูสถิติคลิก/วิว","แชร์ลิงก์ iamceo.ai/ชื่อเพจ"]},
+  {ic:"🤖",c:"#10b981",t:"บอทเทรด (Bot)",s:["เดโม่ (paper) ก่อน → ค่อยเชื่อม Binance/Bybit/MT5","ตั้ง TP 3 ไม้, SL→ทุน, เป้า/ลิมิตขาดทุนต่อวัน","ดูกราฟเรียลไทม์ตอนเทรด · ไม่การันตีกำไร"]},
+  {ic:"💬",c:"#06C755",t:"Social Inbox · Connectors",s:["รวมกล่องข้อความ LINE/FB/IG/TikTok/Lazada/Shopee","เชื่อมเครื่องมือใน Connectors (Slack/Discord/Email/WordPress)","MCP เชื่อม OAuth คลิกเดียว + ปุ่ม 🧪 ทดสอบ"]},
+  {ic:"📝",c:"#21759B",t:"WordPress · n8n",s:["WordPress: ใส่ Site URL+Application Password → AI เขียน+โพสต์บทความ","n8n: เชื่อม automation ที่ n8n.iamceo.ai","ทุกอย่างใช้บัญชีของคุณเอง"]},
+  {ic:"🔐",c:"#64748b",t:"ตั้งค่า (Settings)",s:["เปลี่ยนรหัสผ่านล็อกอินได้ในแอป","เลือกโมเดล AI (Opus/Sonnet/Haiku) เพื่อคุม token","ตั้งชื่อบริษัท + ชื่อเอเจนต์"]},
+  {ic:"🔔",c:"#7c5cff",t:"การแจ้งเตือน (กระดิ่ง)",s:["ทุกงานสำเร็จ/ผิดพลาด เก็บประวัติในกระดิ่งมุมบนขวา","บอกเหตุผลเมื่อไม่สำเร็จ","กดล้างประวัติได้"]},
+];
+function renderGuide(){
+  $("guideGrid").innerHTML = GUIDE.map(g => `
+    <div style="background:#0b1220;border:1px solid #1e293b;border-left:4px solid ${g.c};border-radius:14px;padding:16px">
+      <div style="font-weight:900;color:#fff;font-size:16px;margin-bottom:10px">${g.ic} ${g.t}</div>
+      <ul style="margin:0;padding-left:18px;color:#cbd5e1;font-size:13px;line-height:1.7">
+        ${g.s.map(x=>`<li style="margin:4px 0">${x}</li>`).join("")}
+      </ul>
+    </div>`).join("");
 }
 
 /* ---------- company + agent names (Settings) ---------- */
