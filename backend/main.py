@@ -2467,12 +2467,16 @@ _ADS_PROMPT = (
 )
 
 
-async def run_ads_review() -> list:
-    """Pull campaign metrics from every connected Meta account (up to 10),
-    let Claude recommend per campaign, store as pending recos tagged by account."""
+async def run_ads_review(only_account_id=None) -> list:
+    """Pull campaign metrics from connected Meta accounts (all, or one when
+    only_account_id is given), let Claude recommend per campaign, store as
+    pending recos tagged by account."""
     import asyncio
     campaigns, errors = [], []
-    for acc in _ads_meta_accounts():
+    metas = _ads_meta_accounts()
+    if only_account_id is not None:
+        metas = [a for a in metas if str(a.get("id")) == str(only_account_id)]
+    for acc in metas:
         try:
             rows = await asyncio.to_thread(ads.meta_campaigns, acc["token"], acc.get("ad_account_id", ""))
         except Exception as exc:
@@ -2482,7 +2486,7 @@ async def run_ads_review() -> list:
             r["_platform"] = "meta"; r["_acc_id"] = acc["id"]; r["_acc_label"] = acc["label"]
             campaigns.append(r)
     gcfg = _ads_cfg("Google Ads")
-    if gcfg.get("developer_token") and gcfg.get("customer_id"):
+    if only_account_id is None and gcfg.get("developer_token") and gcfg.get("customer_id"):
         try:
             for r in await asyncio.to_thread(ads.google_campaigns, gcfg):
                 r["_platform"] = "google"; r["_acc_id"] = None; r["_acc_label"] = "Google Ads"
@@ -2496,7 +2500,7 @@ async def run_ads_review() -> list:
     data = [dict(account=c["_acc_label"], **{k: v for k, v in c.items() if not k.startswith("_")}) for c in campaigns]
     raw = await _claude_text("analyst", model, _ADS_PROMPT.format(data=json.dumps(data, ensure_ascii=False)), 2000)
     recos = {r.get("campaign_id"): r for r in _parse_json(raw).get("recos", [])}
-    db.ads_clear_pending()
+    db.ads_clear_pending(only_account_id)
     for c in campaigns:
         rc = recos.get(c["id"], {})
         action = rc.get("action") if rc.get("action") in ("pause", "scale", "keep") else "keep"
@@ -2658,9 +2662,10 @@ async def ads_settings(p: dict) -> dict:
 
 
 @app.post("/api/ads/review")
-async def ads_review() -> dict:
+async def ads_review(p: dict = None) -> dict:
+    acc = (p or {}).get("account_id")
     try:
-        return {"ok": True, "recommendations": await run_ads_review()}
+        return {"ok": True, "recommendations": await run_ads_review(acc if acc not in (None, "", "all") else None)}
     except Exception as exc:
         return {"error": _friendly_err(exc)}
 

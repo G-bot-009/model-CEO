@@ -1349,9 +1349,12 @@ def bio_analytics(page_id, days=90) -> dict:
 
 
 # --- Ads Manager recommendations --------------------------------------------
-def ads_clear_pending() -> None:
+def ads_clear_pending(account_id=None) -> None:
     with _conn() as c:
-        c.execute("DELETE FROM ads_reco WHERE status='pending'")
+        if account_id is None:
+            c.execute("DELETE FROM ads_reco WHERE status='pending'")
+        else:
+            c.execute("DELETE FROM ads_reco WHERE status='pending' AND account_id=?", (account_id,))
 
 def ads_add_reco(platform, campaign_id, name, metrics: dict, action, reason, suggested_budget,
                  account_id=None, account_label="") -> int:
