@@ -1804,15 +1804,28 @@ async def trading_bot_markers(bot_id: int) -> dict:
     if not bot:
         return {"error": "ไม่พบบอท", "markers": []}
     marks = db.trade_markers(bot_id)
-    pos = (bot.get("state") or {}).get("pos")
+    st = bot.get("state") or {}
+    pos = st.get("pos")
     lines = []
+    position = None
     if pos:
         lines.append({"price": pos["entry"], "color": "#3b82f6", "title": "จุดเข้า"})
         lines.append({"price": pos["sl"], "color": "#ef4444", "title": "SL"})
         for leg in pos.get("legs", []):
             lines.append({"price": leg["tp"], "color": "#22c55e",
                           "title": f"TP{leg['i']}" + (" ✓" if leg.get("filled") else "")})
-    return {"markers": marks, "lines": lines, "side": bot["config"].get("side"),
+        unreal = _bot_unrealized(bot)
+        position = {"side": pos.get("side"), "entry": pos["entry"], "sl": pos["sl"],
+                    "size_usd": bot["config"].get("size_usd"),
+                    "last_price": st.get("last_price"),
+                    "unrealized": round(unreal, 2)}
+    # global demo wallet (so the figure matches the wallet panel)
+    bal = db.paper_balance_get()
+    total_unreal = sum(_bot_unrealized(b) for b in db.list_bots() if b["mode"] == "paper")
+    wallet = {"balance": bal, "equity": round(bal + total_unreal, 2),
+              "unrealized": round(total_unreal, 2)} if bot["mode"] == "paper" else None
+    return {"markers": marks, "lines": lines, "position": position, "wallet": wallet,
+            "side": bot["config"].get("side"), "mode": bot["mode"],
             "exchange": bot["exchange"], "symbol": bot["symbol"]}
 
 

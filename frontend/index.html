@@ -3163,6 +3163,7 @@ async function twAction(action){
   toastNote("✅ ยอดเดโม่: $"+Number(r.balance).toLocaleString("en-US",{minimumFractionDigits:2}),"#22c55e");
 }
 async function loadTradeBots(){
+  closeBotMarks();   // list is about to re-render; drop any open markers chart to avoid stale refs
   if ($("tvchart") && !$("tvchart").dataset.loaded){ $("tvchart").dataset.loaded = "1"; tbMountMainChart(); }
   loadTradeWallet();
   let d; try { d = await (await fetch("/api/trading/bots")).json(); } catch(e){ return; }
@@ -3234,23 +3235,27 @@ function ensureLWC(){
   return _lwcLoading;
 }
 const _SECPC = { "1":60, "5":300, "15":900, "60":3600, "240":14400, "D":86400 };
+let _marks = null;        // {id, ex, sym, chart, series, priceLines:[]}
+let _marksTimer = null;
+function closeBotMarks(){
+  if (_marksTimer){ clearInterval(_marksTimer); _marksTimer = null; }
+  if (_marks){ try { _marks.chart.remove(); } catch(e){}
+    const el = $("tbMarks"+_marks.id); if (el){ el.style.display="none"; el.innerHTML=""; }
+    _marks = null; }
+}
 async function toggleBotMarks(id, ex, sym){
+  if (_marks && String(_marks.id)===String(id)){ closeBotMarks(); return; }
+  closeBotMarks();
   const el = $("tbMarks"+id);
-  if (el.style.display === "block"){ el.style.display = "none"; el.innerHTML = ""; return; }
   el.style.display = "block";
   el.innerHTML = '<div style="color:#64748b;font-size:12px">⏳ กำลังโหลดกราฟ + จังหวะเข้าไม้…</div>';
   await ensureLWC();
   if (!window.LightweightCharts){ el.innerHTML = '<div style="color:#f59e0b;font-size:12px">โหลดไลบรารีกราฟไม่ได้ (ต้องต่ออินเทอร์เน็ต)</div>'; return; }
-  const iv = ($("tbChartInt") && $("tbChartInt").value) || "5";
-  let kd, md;
-  try {
-    [kd, md] = await Promise.all([
-      (await fetch(`/api/trading/klines?exchange=${ex}&symbol=${encodeURIComponent(sym)}&interval=${iv}`)).json(),
-      (await fetch(`/api/trading/bot/${id}/markers`)).json(),
-    ]);
-  } catch(e){ el.innerHTML = '<div style="color:#f59e0b;font-size:12px">โหลดข้อมูลไม่ได้</div>'; return; }
-  if (kd.error){ el.innerHTML = `<div style="color:#f59e0b;font-size:12px">${escapeHtml(kd.error)}</div>`; return; }
-  el.innerHTML = '<div class="lwc" style="height:320px"></div><div style="font-size:11px;color:#64748b;margin-top:6px">🔵 จุดเข้า · 🟢 TP (ทำกำไร) · 🔴 SL (ตัดขาดทุน) · 🟠 ปิดที่ทุน · เส้นประ = แนวเข้า/SL/TP ของไม้ที่ถืออยู่</div><div class="marks-list" style="margin-top:8px;display:flex;flex-direction:column;gap:6px"></div>';
+  el.innerHTML =
+    '<div id="marksSummary" style="margin-bottom:8px"></div>' +
+    '<div class="lwc" style="height:320px"></div>' +
+    '<div style="font-size:11px;color:#64748b;margin-top:6px">🔵 จุดเข้า · 🟢 TP (ทำกำไร) · 🔴 SL (ตัดขาดทุน) · 🟠 ปิดที่ทุน · เส้นประ = แนวเข้า/SL/TP ของไม้ที่ถืออยู่ · 🔄 อัปเดตอัตโนมัติทุก 8 วิ</div>' +
+    '<div class="marks-list" style="margin-top:8px;display:flex;flex-direction:column;gap:6px"></div>';
   const cdiv = el.querySelector(".lwc");
   const chart = LightweightCharts.createChart(cdiv, { autoSize:true, height:320,
     layout:{ background:{color:"#0b1220"}, textColor:"#cbd5e1" },
@@ -3259,9 +3264,27 @@ async function toggleBotMarks(id, ex, sym){
     rightPriceScale:{ borderColor:"#1e293b" } });
   const series = chart.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444",
     wickUpColor:"#22c55e", wickDownColor:"#ef4444", borderVisible:false });
-  series.setData(kd.candles || []);
-  (md.lines || []).forEach(l => series.createPriceLine({ price:l.price, color:l.color,
+  _marks = { id, ex, sym, chart, series, priceLines:[], first:true };
+  await refreshBotMarks();
+  _marksTimer = setInterval(refreshBotMarks, 8000);
+}
+async function refreshBotMarks(){
+  if (!_marks) return;
+  const { id, ex, sym, series } = _marks;
+  const iv = ($("tbChartInt") && $("tbChartInt").value) || "5";
+  let kd, md;
+  try {
+    [kd, md] = await Promise.all([
+      (await fetch(`/api/trading/klines?exchange=${ex}&symbol=${encodeURIComponent(sym)}&interval=${iv}`)).json(),
+      (await fetch(`/api/trading/bot/${id}/markers`)).json(),
+    ]);
+  } catch(e){ return; }
+  if (kd.candles) series.setData(kd.candles);
+  // refresh price lines
+  (_marks.priceLines||[]).forEach(pl => { try { series.removePriceLine(pl); } catch(e){} });
+  _marks.priceLines = (md.lines || []).map(l => series.createPriceLine({ price:l.price, color:l.color,
     lineWidth:1, lineStyle:2, axisLabelVisible:true, title:l.title }));
+  // markers
   const sec = _SECPC[iv] || 300;
   const mk = (md.markers || []).map(m => {
     const t = Math.floor((m.epoch||0)/sec)*sec;
@@ -3274,15 +3297,43 @@ async function toggleBotMarks(id, ex, sym){
     return { time:t, ...c };
   }).sort((a,b)=>a.time-b.time);
   try { series.setMarkers(mk); } catch(e){}
-  chart.timeScale().fitContent();
-  const list = el.querySelector(".marks-list");
-  const ms = (md.markers || []).slice().reverse();
-  list.innerHTML = ms.length ? ms.map(m => {
-    const c = m.pnl>0?"#22c55e":(m.pnl<0?"#f87171":"#94a3b8");
-    const tm = new Date((m.epoch||0)*1000).toLocaleString("th-TH",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-    return `<div style="background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:8px;font-size:12px;color:#cbd5e1;line-height:1.5">
-      <span style="color:#64748b">🕒 ${tm}</span><br>${escapeHtml(m.text||"")} ${m.pnl?`<b style="color:${c}">(${m.pnl>=0?'+':''}${m.pnl.toFixed(2)})</b>`:""}</div>`;
-  }).join("") : '<div style="color:#64748b;font-size:12px">ยังไม่มีจังหวะเข้าไม้ — เริ่มบอท หรือกด ⏭️ tick เพื่อให้บอทเดินจังหวะ แล้วเปิดดูใหม่</div>';
+  if (_marks.first){ _marks.chart.timeScale().fitContent(); _marks.first = false; }
+  // ----- summary box (entry price + money, tied to demo wallet) -----
+  const sb = $("marksSummary");
+  if (sb){
+    const p = md.position, w = md.wallet;
+    let html = "";
+    if (p){
+      const flc = p.unrealized>0?"#34d399":(p.unrealized<0?"#f87171":"#cbd5e1");
+      const sideTxt = p.side==="long" ? "Long ▲" : "Short ▼";
+      html += `<div style="background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13px">
+        <span style="color:#93c5fd;font-weight:800">📍 ถือ ${sideTxt}</span>
+        <span style="color:#cbd5e1">เข้าที่ <b style="color:#fff">${Number(p.entry).toLocaleString("en-US",{minimumFractionDigits:2})}</b></span>
+        <span style="color:#cbd5e1">เงินลงไม้ <b style="color:#fff">$${Number(p.size_usd||0).toFixed(2)}</b></span>
+        ${p.last_price?`<span style="color:#cbd5e1">ราคาสด <b style="color:#fff">${Number(p.last_price).toLocaleString("en-US",{minimumFractionDigits:2})}</b></span>`:""}
+        <span style="color:${flc};font-weight:800">กำไร/ขาดทุนลอยตัว ${p.unrealized>=0?'+':'−'}$${Math.abs(p.unrealized).toFixed(2)}</span>
+      </div>`;
+    } else {
+      html += `<div style="background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:10px;font-size:13px;color:#94a3b8">📭 ตอนนี้ไม่มีไม้ที่ถืออยู่ — รอบอทเข้าไม้ใหม่</div>`;
+    }
+    if (w){
+      html += `<div style="margin-top:6px;font-size:12px;color:#a7f3d0">💰 กระเป๋าเดโม่: ยอดเงินจริง <b style="color:#fff">$${Number(w.balance).toLocaleString("en-US",{minimumFractionDigits:2})}</b> · มูลค่ารวมสด <b style="color:#fff">$${Number(w.equity).toLocaleString("en-US",{minimumFractionDigits:2})}</b> (ตรงกับแผงกระเป๋าด้านบน)</div>`;
+    }
+    sb.innerHTML = html;
+  }
+  // keep the top wallet panel in sync too
+  loadTradeWallet();
+  // ----- reasons list -----
+  const list = $("tbMarks"+id).querySelector(".marks-list");
+  if (list){
+    const ms = (md.markers || []).slice().reverse();
+    list.innerHTML = ms.length ? ms.map(m => {
+      const c = m.pnl>0?"#22c55e":(m.pnl<0?"#f87171":"#94a3b8");
+      const tm = new Date((m.epoch||0)*1000).toLocaleString("th-TH",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+      return `<div style="background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:8px;font-size:12px;color:#cbd5e1;line-height:1.5">
+        <span style="color:#64748b">🕒 ${tm}</span><br>${escapeHtml(m.text||"")} ${m.pnl?`<b style="color:${c}">(${m.pnl>=0?'+':''}${m.pnl.toFixed(2)})</b>`:""}</div>`;
+    }).join("") : '<div style="color:#64748b;font-size:12px">ยังไม่มีจังหวะเข้าไม้ — เริ่มบอท หรือกด ⏭️ tick เพื่อให้บอทเดินจังหวะ</div>';
+  }
 }
 
 /* ---------- Content factory ---------- */
@@ -4297,7 +4348,7 @@ function showView(v) {
   if (v === "connectors") loadConnectors();
   if (v === "inbox") loadInbox();
   if (v === "automation") loadAutomation();
-  if (v === "tradebot"){ loadTradeBots(); tbStartWalletTicker(); } else tbStopWalletTicker();
+  if (v === "tradebot"){ loadTradeBots(); tbStartWalletTicker(); } else { tbStopWalletTicker(); closeBotMarks(); }
   if (v === "content") loadContentFactory();
   if (v === "music") loadMusic();
   if (v === "imageai") loadImageAI();
