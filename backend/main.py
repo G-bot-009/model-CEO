@@ -3274,6 +3274,124 @@ async def _fb_autoreply_loop() -> None:
         await asyncio.sleep(300)     # check every 5 min
 
 
+# --- Chat Bot (Telegram conversation viewer) --------------------------------
+def _telegram_creds():
+    """(bot_token, chat_id) from the connected Telegram connector, or (None, None)."""
+    row = db.get_connector("Telegram")
+    if not row or row.get("status") != "connected":
+        return None, None
+    try:
+        data = json.loads(row.get("config") or "{}")
+    except Exception:
+        data = {}
+    return data.get("bot_token", ""), str(data.get("chat_id", "") or "").strip()
+
+
+async def _telegram_pull(tok: str) -> int:
+    """Fetch new updates via getUpdates and store incoming messages. Returns count added."""
+    import httpx
+    offset = db.chat_last_update_id("telegram")
+    params = {"limit": 100, "timeout": 0}
+    if offset:
+        params["offset"] = offset + 1
+    added = 0
+    async with httpx.AsyncClient(timeout=25) as client:
+        r = await client.get(f"https://api.telegram.org/bot{tok}/getUpdates", params=params)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Telegram {r.status_code}: {r.text[:160]}")
+    data = r.json()
+    if not data.get("ok"):
+        raise RuntimeError(data.get("description") or "getUpdates ล้มเหลว")
+    for u in data.get("result", []):
+        uid = u.get("update_id")
+        msg = u.get("message") or u.get("edited_message") or u.get("channel_post") or {}
+        if not msg:
+            continue
+        frm = msg.get("from") or {}
+        name = (frm.get("first_name", "") + " " + frm.get("last_name", "")).strip() \
+            or frm.get("username") or "ผู้ใช้"
+        text = msg.get("text") or msg.get("caption") or ("[" + (
+            "รูปภาพ" if msg.get("photo") else "ไฟล์/สื่อ") + "]")
+        chat = (msg.get("chat") or {}).get("id")
+        from datetime import datetime, timezone, timedelta
+        ts = datetime.fromtimestamp(msg.get("date", 0), tz=timezone(timedelta(hours=7))) \
+            .strftime("%Y-%m-%d %H:%M") if msg.get("date") else ""
+        if db.chat_msg_add("telegram", chat, "in", name, text, ts, update_id=uid):
+            added += 1
+    return added
+
+
+@app.get("/api/chatbot/messages")
+async def chatbot_messages() -> dict:
+    tok, chat = _telegram_creds()
+    if not tok:
+        return {"error": "ยังไม่ได้เชื่อม Telegram — ไปที่เมนู “การเชื่อมต่อ” แล้วเชื่อม Telegram ก่อน",
+                "messages": [], "connected": False}
+    warn = ""
+    try:
+        await _telegram_pull(tok)
+    except Exception as exc:
+        warn = _friendly_err(exc)
+    return {"messages": db.chat_msgs_list("telegram"), "connected": True,
+            "chat_id": chat, "warn": warn}
+
+
+@app.post("/api/chatbot/send")
+async def chatbot_send(p: dict) -> dict:
+    import httpx
+    tok, default_chat = _telegram_creds()
+    if not tok:
+        return {"error": "ยังไม่ได้เชื่อม Telegram"}
+    text = (p.get("text") or "").strip()
+    chat = str(p.get("chat_id") or default_chat or "").strip()
+    if not text:
+        return {"error": "พิมพ์ข้อความก่อน"}
+    if not chat:
+        return {"error": "ยังไม่มี Chat ID — ตั้งค่าตอนเชื่อม Telegram"}
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+                              json={"chat_id": chat, "text": text})
+    if r.status_code >= 400:
+        low = r.text.lower()
+        if "can't send messages to the bot" in low or "chat not found" in low:
+            return {"error": "ส่งไม่ได้ — Chat ID ไม่ถูกต้อง (ดูวิธีหา Chat ID ที่เมนูการเชื่อมต่อ)"}
+        return {"error": f"Telegram {r.status_code}: {r.text[:160]}"}
+    from datetime import datetime, timezone, timedelta
+    ts = datetime.now(tz=timezone(timedelta(hours=7))).strftime("%Y-%m-%d %H:%M")
+    db.chat_msg_add("telegram", chat, "out", "บอท (คุณ)", text, ts)
+    return {"ok": True}
+
+
+@app.post("/api/chatbot/ai-reply")
+async def chatbot_ai_reply(p: dict) -> dict:
+    """Let AI draft + send a reply to the latest incoming Telegram message."""
+    import httpx
+    tok, default_chat = _telegram_creds()
+    if not tok:
+        return {"error": "ยังไม่ได้เชื่อม Telegram"}
+    msgs = [m for m in db.chat_msgs_list("telegram") if m.get("direction") == "in"]
+    if not msgs:
+        return {"error": "ยังไม่มีข้อความเข้ามาให้ตอบ"}
+    last = msgs[-1]
+    chat = str(last.get("chat_id") or default_chat or "").strip()
+    reply = (await _ai_reply(last.get("text") or "")).strip() or "ขอบคุณที่ทักมาค่ะ 🙏"
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+                              json={"chat_id": chat, "text": reply})
+    if r.status_code >= 400:
+        return {"error": f"Telegram {r.status_code}: {r.text[:160]}"}
+    from datetime import datetime, timezone, timedelta
+    ts = datetime.now(tz=timezone(timedelta(hours=7))).strftime("%Y-%m-%d %H:%M")
+    db.chat_msg_add("telegram", chat, "out", "บอท (AI)", reply, ts)
+    return {"ok": True, "reply": reply}
+
+
+@app.post("/api/chatbot/clear")
+async def chatbot_clear() -> dict:
+    db.chat_clear("telegram")
+    return {"ok": True}
+
+
 @app.get("/api/ads/audiences")
 async def ads_audiences(account_id: int) -> dict:
     import asyncio

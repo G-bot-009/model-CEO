@@ -230,6 +230,13 @@ def init() -> None:
                 page_id TEXT PRIMARY KEY, name TEXT, token TEXT,
                 autoreply INTEGER DEFAULT 0, last_seen TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                platform TEXT, chat_id TEXT, update_id INTEGER,
+                direction TEXT, name TEXT, text TEXT, ts TEXT
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_update
+                ON chat_messages(platform, update_id) WHERE update_id IS NOT NULL;
             """
         )
         # migrate older DBs that predate the skills columns
@@ -1504,3 +1511,35 @@ def fb_page_set_autoreply(page_id, on: bool) -> None:
 def fb_page_set_seen(page_id, ts) -> None:
     with _conn() as c:
         c.execute("UPDATE fb_pages SET last_seen=? WHERE page_id=?", (ts, page_id))
+
+
+# --- Chat Bot (Telegram conversation) ---------------------------------------
+def chat_msg_add(platform, chat_id, direction, name, text, ts, update_id=None) -> bool:
+    """Insert one chat message. Returns False if it was a duplicate (by update_id)."""
+    with _conn() as c:
+        try:
+            c.execute(
+                "INSERT INTO chat_messages (platform, chat_id, update_id, direction, name, text, ts) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (platform, str(chat_id) if chat_id is not None else None,
+                 update_id, direction, name, text, ts))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+def chat_msgs_list(platform, limit=200) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM chat_messages WHERE platform=? ORDER BY id DESC LIMIT ?",
+            (platform, limit)).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+def chat_last_update_id(platform) -> int:
+    with _conn() as c:
+        r = c.execute(
+            "SELECT MAX(update_id) FROM chat_messages WHERE platform=?", (platform,)).fetchone()
+    return (r[0] or 0) if r else 0
+
+def chat_clear(platform) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM chat_messages WHERE platform=?", (platform,))

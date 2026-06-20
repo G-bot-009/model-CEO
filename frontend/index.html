@@ -425,6 +425,7 @@
       <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
       <div class="menu-item" data-view="adlibrary"><span class="ico">🔎</span><span class="label">Ad Library</span></div>
       <div class="menu-item" data-view="autopost"><span class="ico">📲</span><span class="label">Auto Post Facebook</span></div>
+      <div class="menu-item" data-view="chatbot"><span class="ico">💬</span><span class="label">Chat Bot</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="guide"><span class="ico">📖</span><span class="label">คู่มือใช้งาน</span></div>
@@ -659,6 +660,30 @@
         </div>
         <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
           <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ <b>โพสต์ข้อความ/รูป + คอมเมนต์เพจ</b> ใช้ได้กับเพจของคุณเองในโหมดพัฒนา (รูปแนบจากเครื่อง หรือเลือกจาก Image AI ได้แล้ว) · ให้คนอื่น/ลูกค้าใช้ต้องผ่าน App Review (pages_manage_posts) · <b>ตอบแชต Messenger/IG</b> และ <b>IG/TikTok/YouTube</b> ต้องตั้งค่า webhook + สิทธิ์เพิ่ม (ยังไม่รวมในนี้)</p>
+        </div>
+      </section>
+
+      <!-- CHAT BOT (Telegram conversation) -->
+      <section class="view" id="view-chatbot">
+        <div class="panel" style="background:linear-gradient(135deg,#229ED9,#0b5e8a);border:none">
+          <h3 style="color:#fff;margin:0">💬 Chat Bot — แชตกับบอท Telegram</h3>
+          <p style="color:#e0f2fe;font-size:13px;margin:8px 0 0">ดึงข้อความที่ลูกค้าทักเข้ามาหาบอท Telegram มาแสดง · คุณตอบกลับเองหรือให้ AI ตอบให้ก็ได้</p>
+        </div>
+        <div class="panel">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <button class="qbtn" id="cbRefresh" style="font-weight:700">🔄 โหลดข้อความใหม่</button>
+            <button class="qbtn" id="cbAiReply" style="font-weight:700;background:#7c3aed;color:#fff;border-color:#7c3aed">✨ ให้ AI ตอบข้อความล่าสุด</button>
+            <label style="display:flex;align-items:center;gap:6px;color:#cbd5e1;font-size:13px"><input type="checkbox" id="cbAuto" style="width:16px;height:16px"> รีเฟรชอัตโนมัติทุก 15 วิ</label>
+            <span style="flex:1"></span>
+            <span id="cbStatus" style="font-size:12px;color:#94a3b8"></span>
+            <button class="qbtn" id="cbClear" style="color:#f87171">🗑️ ล้างประวัติ</button>
+          </div>
+          <div id="cbThread" style="height:440px;overflow:auto;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+            <input id="cbInput" class="numfld" style="flex:1;margin:0" placeholder="พิมพ์ข้อความตอบกลับ…">
+            <button class="send" id="cbSend" style="padding:10px 22px">📤 ส่ง</button>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:8px">ℹ️ Telegram คืนเฉพาะข้อความที่ “ทักเข้าหาบอท” (ลูกค้าต้องกด Start กับบอทก่อน) · ข้อความที่คุณส่งจากหน้านี้จะถูกบันทึกไว้ในประวัติด้วย</div>
         </div>
       </section>
 
@@ -4144,6 +4169,7 @@ function showView(v) {
   if (v === "ads") loadAds();
   if (v === "adlibrary") loadAdLibrary();
   if (v === "autopost") loadAutoPost();
+  if (v === "chatbot") loadChatBot(); else cbStopAuto();
   if (v === "projects") loadProjects();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
@@ -4252,6 +4278,57 @@ $("apAutoReply").addEventListener("change", async (e) => {
   const pid = $("apPageSel").value; if (!pid){ e.target.checked=false; toastNote("เลือกเพจก่อน","#f59e0b"); return; }
   await postJSON("/api/fb/page/autoreply",{page_id:pid, on:e.target.checked});
   toastNote(e.target.checked?"เปิดตอบคอมเมนต์อัตโนมัติแล้ว ✅":"ปิดแล้ว","#22c55e");
+});
+
+/* ---------- Chat Bot (Telegram conversation) ---------- */
+let _cbTimer = null, _cbLastCount = -1;
+function cbStopAuto(){ if (_cbTimer){ clearInterval(_cbTimer); _cbTimer = null; } }
+function cbRenderThread(msgs){
+  const box = $("cbThread");
+  if (!msgs.length){ box.innerHTML = '<div style="color:#64748b;margin:auto">ยังไม่มีข้อความ — ให้ลูกค้าทักหาบอทใน Telegram (กด Start) แล้วกดโหลดข้อความใหม่</div>'; return; }
+  box.innerHTML = msgs.map(m => {
+    const out = m.direction === "out";
+    return `<div style="display:flex;justify-content:${out?"flex-end":"flex-start"}">
+      <div style="max-width:78%;background:${out?"#1d4ed8":"#1e293b"};color:#fff;border-radius:12px;padding:8px 12px">
+        <div style="font-size:11px;color:${out?"#bfdbfe":"#94a3b8"};margin-bottom:2px">${escapeHtml(m.name||"")} · ${escapeHtml(m.ts||"")}</div>
+        <div style="font-size:14px;white-space:pre-wrap;word-break:break-word">${escapeHtml(m.text||"")}</div>
+      </div></div>`;
+  }).join("");
+  box.scrollTop = box.scrollHeight;
+}
+async function loadChatBot(silent){
+  if (!silent) $("cbStatus").textContent = "⏳ กำลังโหลด…";
+  let r; try { r = await (await fetch("/api/chatbot/messages")).json(); } catch(e){ $("cbStatus").textContent="โหลดไม่ได้"; return; }
+  if (r.error){ $("cbThread").innerHTML = `<div style="color:#f59e0b;margin:auto;text-align:center">${escapeHtml(r.error)}</div>`; $("cbStatus").textContent=""; return; }
+  cbRenderThread(r.messages || []);
+  _cbLastCount = (r.messages||[]).length;
+  $("cbStatus").textContent = r.warn ? ("⚠️ "+r.warn) : (r.chat_id ? ("Chat ID: "+r.chat_id) : "เชื่อมแล้ว");
+}
+async function cbSend(){
+  const t = $("cbInput").value.trim(); if (!t) return;
+  const b=$("cbSend"),o=b.textContent; b.disabled=true; b.textContent="⏳";
+  const r = await postJSON("/api/chatbot/send",{text:t});
+  b.disabled=false; b.textContent=o;
+  if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
+  $("cbInput").value=""; loadChatBot(true);
+}
+$("cbRefresh").addEventListener("click", () => loadChatBot());
+$("cbSend").addEventListener("click", cbSend);
+$("cbInput").addEventListener("keydown", e => { if (e.key==="Enter") cbSend(); });
+$("cbAiReply").addEventListener("click", async () => {
+  const b=$("cbAiReply"),o=b.textContent; b.disabled=true; b.textContent="⏳ AI กำลังตอบ…";
+  const r = await postJSON("/api/chatbot/ai-reply",{});
+  b.disabled=false; b.textContent=o;
+  if (r.error){ toastNote("❌ "+r.error,"#f59e0b"); return; }
+  toastNote("✅ AI ตอบแล้ว: "+(r.reply||"").slice(0,40),"#22c55e"); loadChatBot(true);
+});
+$("cbClear").addEventListener("click", async () => {
+  if (!confirm("ล้างประวัติแชตทั้งหมดในหน้านี้?")) return;
+  await postJSON("/api/chatbot/clear",{}); loadChatBot();
+});
+$("cbAuto").addEventListener("change", e => {
+  cbStopAuto();
+  if (e.target.checked) _cbTimer = setInterval(() => loadChatBot(true), 15000);
 });
 
 /* ---------- Ad Library (สอดส่องคู่แข่ง) ---------- */
