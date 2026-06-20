@@ -3518,12 +3518,21 @@ async function loadAds(){
   // connected slots stay visible as green ✅, empty slots get a connect button
   let slots = "";
   accs.forEach((a,i) => {
-    slots += `<button class="qbtn ads-slot-on" data-id="${a.id}" style="border:1px solid #22c55e;color:#22c55e;font-weight:700">✅ ตัวที่ ${i+1} · เชื่อมแล้ว</button>`;
+    slots += `<span style="display:inline-flex;align-items:center">
+      <button class="qbtn ads-slot-on" data-id="${a.id}" style="border:1px solid #22c55e;color:#22c55e;font-weight:700;border-right:none;border-radius:8px 0 0 8px">✅ ตัวที่ ${i+1} · เชื่อมแล้ว</button>
+      <button class="qbtn ads-slot-del" data-id="${a.id}" data-n="${i+1}" title="ยกเลิกการเชื่อมตัวที่ ${i+1}" style="border:1px solid #22c55e;color:#f87171;border-radius:0 8px 8px 0;padding:6px 10px">✕</button>
+    </span>`;
   });
   for (let n = accs.length + 1; n <= ac.max; n++)
     slots += `<button class="qbtn ads-slot" data-n="${n}" style="border:1px dashed #6366f1;color:#a5b4fc">➕ เชื่อม Facebook ตัวที่ ${n}</button>`;
   $("adsSlots").innerHTML = slots;
   $("adsSlots").querySelectorAll(".ads-slot-on").forEach(b => b.onclick = () => { adsFilter = b.dataset.id; loadAds(); });
+  $("adsSlots").querySelectorAll(".ads-slot-del").forEach(b => b.onclick = async () => {
+    if (!confirm(`ยกเลิกการเชื่อม Ads Facebook ตัวที่ ${b.dataset.n}?`)) return;
+    await postJSON("/api/ads/account/delete", { id: +b.dataset.id });
+    if (String(adsFilter) === String(b.dataset.id)) adsFilter = "all";
+    toastNote("ยกเลิกการเชื่อมแล้ว", "#f59e0b"); loadAds();
+  });
   $("adsSlots").querySelectorAll(".ads-slot").forEach(b => b.onclick = () => {
     $("adsAccLabel").value = "Ads Facebook ตัวที่ " + b.dataset.n;
     $("adsAccToken").focus(); $("adsAccLabel").scrollIntoView({behavior:"smooth"});
