@@ -3488,19 +3488,47 @@ async function adsConnectPopup(n){
   let appId = ""; try { appId = (await (await fetch("/api/ads/fb-appid")).json()).app_id || ""; } catch(e){}
   $("genTitle").textContent = "เชื่อม Ads Facebook ตัวที่ " + n;
   $("genBody").innerHTML = `
-    <p class="conn-note" style="margin-top:0">ช่องนี้แยกขาดจากช่องอื่น — ลูกค้า/บัญชีคนละคนได้ คนละ token คนละบัญชีโฆษณา</p>
-    <button class="save" id="adsPopLogin" style="background:#1877F2;width:100%;font-size:15px">🔵 ล็อกอิน Facebook ของตัวที่ ${n} (คลิกเดียว)</button>
+    <p class="conn-note" style="margin-top:0">ช่องนี้แยกขาดจากช่องอื่น — ลูกค้าคนละราย คนละบัญชีโฆษณา เช็คแยกกัน</p>
+    <div class="conn-howto" style="border:1px solid #22c55e"><div class="conn-howto-h" style="color:#16a34a">⭐ แนะนำสำหรับเอเจนซี: ลูกค้าแชร์บัญชีให้คุณ → ใส่แค่ Ad Account ID</div>
+      <p class="conn-note" style="margin:0 0 8px">ลูกค้าแชร์บัญชีโฆษณาให้ Business คุณ (ทำในฝั่งลูกค้าครั้งเดียว) — ไม่ต้อง App Review / ไม่ต้องล็อกอินแอปคุณ</p>
+      <button class="qbtn" id="adsPopList" style="font-weight:700;width:100%;margin-bottom:8px">📋 ดึงบัญชีที่เข้าถึงได้ → เลือกคลิกเดียว</button>
+      <div id="adsPopListBox" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+      <label>หรือใส่ Ad Account ID ของลูกค้า</label>
+      <input id="adsPopQuickAcc" placeholder="ตัวเลขหลัง act_ เช่น 2465780223871944">
+      <button class="save" id="adsPopQuickAdd" style="margin-top:10px">➕ เพิ่มตัวที่ ${n} (ใช้ token ของคุณ)</button>
+    </div>
+    <div style="text-align:center;color:#9ca3af;margin:14px 0;font-size:13px;font-weight:700">— หรือให้ลูกค้าล็อกอินเอง —</div>
+    <button class="save" id="adsPopLogin" style="background:#1877F2;width:100%;font-size:15px">🔵 ล็อกอิน Facebook ของตัวที่ ${n}</button>
     <p class="conn-note" style="margin-top:8px">${s.has
-        ? 'ให้เจ้าของบัญชีนี้ล็อกอิน Facebook ของเขา + อนุญาต → เลือกบัญชีโฆษณา 1 บัญชี เข้าช่องนี้'
-        : 'ครั้งแรก เจ้าของระบบตั้ง App ID/Secret 1 ครั้ง (กดปุ่มนี้) — หลังจากนั้นลูกค้าทุกคนล็อกอินคลิกเดียว'}</p>
-    <div style="text-align:center;color:#9ca3af;margin:16px 0;font-size:13px;font-weight:700">— หรือ —</div>
-    <div class="conn-howto"><div class="conn-howto-h">🔑 ทาง B: วาง token + Ad Account ID ของตัวที่ ${n}</div>
+        ? 'ลูกค้าล็อกอิน Facebook ของเขา + อนุญาต (ลูกค้าต้องเป็น Tester หรือแอปต้องผ่าน App Review)'
+        : 'ครั้งแรกตั้ง App ID 1 ครั้ง (กดปุ่มนี้)'}</p>
+    <div style="text-align:center;color:#9ca3af;margin:14px 0;font-size:13px;font-weight:700">— หรือวาง token เอง —</div>
+    <div class="conn-howto"><div class="conn-howto-h">🔑 ทาง B: token + Ad Account ID ของตัวที่ ${n}</div>
       <label>Meta access token (ads_management)</label>
       <input id="adsPopTok" type="password" placeholder="วาง token EAA... ของบัญชีนี้">
       <label>Ad Account ID (ตัวเลขหลัง act_)</label>
       <input id="adsPopAcc" placeholder="เช่น 2465780223871944">
       <button class="save" id="adsPopAdd" style="margin-top:12px">➕ เพิ่มบัญชีตัวที่ ${n}</button>
     </div>`;
+  $("adsPopList").onclick = async () => {
+    const box = $("adsPopListBox"); box.innerHTML = '<div style="color:#64748b;font-size:12px">⏳ กำลังดึง…</div>';
+    const r = await (await fetch("/api/ads/available")).json();
+    if (r.error){ box.innerHTML = `<div style="color:#b45309;font-size:12px">${escapeHtml(r.error)}</div>`; return; }
+    if (!(r.accounts||[]).length){ box.innerHTML = '<div style="color:#64748b;font-size:12px">ไม่พบบัญชีที่เข้าถึงได้ — ให้ลูกค้าแชร์บัญชีให้ Business คุณก่อน</div>'; return; }
+    box.innerHTML = r.accounts.map(a => a.added
+      ? `<div style="font-size:13px;color:#22c55e;padding:6px 8px">✅ ${escapeHtml(a.name)} (เชื่อมแล้ว)</div>`
+      : `<button class="qbtn ads-pick-acc" data-acc="${escapeHtml(a.account_id)}" data-name="${escapeHtml(a.name||'')}" style="text-align:left">📘 ${escapeHtml(a.name||'')} · act_${escapeHtml(a.account_id)}</button>`).join("");
+    box.querySelectorAll(".ads-pick-acc").forEach(b => b.onclick = async () => {
+      const r2 = await postJSON("/api/ads/account-quick", { label:"ตัวที่ "+n+" · "+(b.dataset.name||""), ad_account_id:b.dataset.acc });
+      if (r2.error){ toastNote(r2.error,"#f59e0b"); return; }
+      closeModal("genModal"); toastNote("เพิ่ม "+(b.dataset.name||"บัญชี")+" แล้ว ✅","#22c55e"); loadAds();
+    });
+  };
+  $("adsPopQuickAdd").onclick = async () => {
+    const r = await postJSON("/api/ads/account-quick", { label:"Ads Facebook ตัวที่ "+n, ad_account_id:$("adsPopQuickAcc").value.trim() });
+    if (r.error){ toastNote(r.error,"#f59e0b"); return; }
+    closeModal("genModal"); toastNote("เพิ่มตัวที่ "+n+" แล้ว ✅","#22c55e"); loadAds();
+  };
   $("adsPopLogin").onclick = () => {
     // ใส่แค่ App ID พอ (implicit flow — เปิด facebook.com ตรงๆ ไม่โดน ad blocker บล็อก)
     if (!appId){ adsPopSetup(n, s.redirect_uri); return; }
