@@ -3500,8 +3500,13 @@ async function adsConnectPopup(n){
       <button class="save" id="adsPopAdd" style="margin-top:12px">➕ เพิ่มบัญชีตัวที่ ${n}</button>
     </div>`;
   $("adsPopLogin").onclick = () => {
-    if (s.has){ window.open("/oauth-ads/facebook/start?slot="+encodeURIComponent(n),"_blank","width=600,height=760"); toastNote("เปิดหน้า Facebook — เลือกบัญชีสำหรับตัวที่ "+n+" แล้วรีเฟรชหน้านี้","#1877F2"); }
-    else adsPopSetup(n, s.redirect_uri);
+    if (s.has){
+      const w = window.open("/oauth-ads/facebook/start?slot="+encodeURIComponent(n),"_blank","width=600,height=760");
+      if (!w) toastNote("เบราว์เซอร์บล็อก popup — อนุญาต popup ของ iamceo.ai แล้วกดใหม่ (หรือใช้ทาง B วาง token ด้านล่าง)","#f59e0b");
+      else toastNote("เปิดหน้า Facebook — เลือกบัญชีสำหรับตัวที่ "+n+" แล้วรีเฟรชหน้านี้","#1877F2");
+    } else {
+      adsPopSetup(n, s.redirect_uri);
+    }
   };
   $("adsPopAdd").onclick = async () => {
     const r = await postJSON("/api/ads/account", { label:"Ads Facebook ตัวที่ "+n, token:$("adsPopTok").value.trim(), ad_account_id:$("adsPopAcc").value.trim() });
