@@ -3487,14 +3487,15 @@ async function adsConnectPopup(n){
   let s; try { s = await (await fetch("/api/ads/fb-oauth-status")).json(); } catch(e){ s = {has:false,redirect_uri:""}; }
   $("genTitle").textContent = "เชื่อม Ads Facebook ตัวที่ " + n;
   $("genBody").innerHTML = `
-    <button class="save" id="adsPopLogin" style="background:#1877F2;width:100%;font-size:15px">🔵 ล็อกอิน Facebook (คลิกเดียว)</button>
+    <p class="conn-note" style="margin-top:0">ช่องนี้แยกขาดจากช่องอื่น — ลูกค้า/บัญชีคนละคนได้ คนละ token คนละบัญชีโฆษณา</p>
+    <button class="save" id="adsPopLogin" style="background:#1877F2;width:100%;font-size:15px">🔵 ล็อกอิน Facebook ของตัวที่ ${n} (คลิกเดียว)</button>
     <p class="conn-note" style="margin-top:8px">${s.has
-        ? 'ใช้บัญชี Facebook ที่ล็อกอินในเบราว์เซอร์ตอนนี้ — ระบบดึงบัญชีโฆษณาให้อัตโนมัติ · อยากใช้บัญชีอื่น ล็อกเอาท์ Facebook ก่อน หรือเปิด Incognito'
-        : 'ครั้งแรกกดปุ่มนี้เพื่อตั้งค่า App ID/Secret (ทำครั้งเดียว) แล้วครั้งต่อไปล็อกอินคลิกเดียว'}</p>
+        ? 'ให้เจ้าของบัญชีนี้ล็อกอิน Facebook ของเขา + อนุญาต → เลือกบัญชีโฆษณา 1 บัญชี เข้าช่องนี้'
+        : 'ครั้งแรก เจ้าของระบบตั้ง App ID/Secret 1 ครั้ง (กดปุ่มนี้) — หลังจากนั้นลูกค้าทุกคนล็อกอินคลิกเดียว'}</p>
     <div style="text-align:center;color:#9ca3af;margin:16px 0;font-size:13px;font-weight:700">— หรือ —</div>
-    <div class="conn-howto"><div class="conn-howto-h">🔑 ทาง B: วาง token + Ad Account ID (บัญชี Facebook อื่น)</div>
+    <div class="conn-howto"><div class="conn-howto-h">🔑 ทาง B: วาง token + Ad Account ID ของตัวที่ ${n}</div>
       <label>Meta access token (ads_management)</label>
-      <input id="adsPopTok" type="password" placeholder="วาง token EAA...">
+      <input id="adsPopTok" type="password" placeholder="วาง token EAA... ของบัญชีนี้">
       <label>Ad Account ID (ตัวเลขหลัง act_)</label>
       <input id="adsPopAcc" placeholder="เช่น 2465780223871944">
       <button class="save" id="adsPopAdd" style="margin-top:12px">➕ เพิ่มบัญชีตัวที่ ${n}</button>

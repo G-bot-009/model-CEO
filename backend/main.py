@@ -2707,6 +2707,48 @@ async def fb_ads_pick(pid: str = "", acc: str = ""):
                         "<script>setTimeout(function(){window.close()},2200)</script>")
 
 
+def _ads_shared_token() -> str:
+    """Reuse the token from an already-connected Meta account (same business/user)."""
+    accts = db.ads_list_accounts("meta")
+    return accts[-1]["token"] if accts else ""
+
+
+@app.get("/api/ads/available")
+async def ads_available() -> dict:
+    """List ad accounts reachable by the existing (shared) token — pick to add, no new token."""
+    import httpx
+    token = _ads_shared_token()
+    if not token:
+        return {"error": "ยังไม่มีบัญชีที่เชื่อมไว้ — เชื่อมตัวแรกด้วย token/ล็อกอินก่อน 1 ครั้ง", "accounts": []}
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.get("https://graph.facebook.com/v19.0/me/adaccounts",
+                            params={"fields": "name,account_id", "access_token": token, "limit": 50})
+        data = r.json().get("data", [])
+    except Exception as exc:
+        return {"error": _friendly_err(exc), "accounts": []}
+    existing = {a["ad_account_id"] for a in db.ads_list_accounts("meta")}
+    return {"accounts": [{"name": d.get("name") or "Ad Account", "account_id": d.get("account_id"),
+                          "added": d.get("account_id") in existing} for d in data if d.get("account_id")]}
+
+
+@app.post("/api/ads/account-quick")
+async def ads_account_quick(p: dict) -> dict:
+    """Add an ad account by ID only, reusing the existing shared token."""
+    token = _ads_shared_token()
+    if not token:
+        return {"error": "ยังไม่มี token เดิม — เชื่อมตัวแรกด้วย token/ล็อกอินก่อน 1 ครั้ง"}
+    acc_id = "".join(ch for ch in (p.get("ad_account_id") or "") if ch.isdigit())
+    if not acc_id:
+        return {"error": "ใส่ Ad Account ID ก่อน"}
+    if acc_id in {a["ad_account_id"] for a in db.ads_list_accounts("meta")}:
+        return {"error": "บัญชีนี้เชื่อมแล้ว"}
+    if len(db.ads_list_accounts("meta")) >= 10:
+        return {"error": "ครบ 10 บัญชีแล้ว"}
+    db.ads_add_account("meta", (p.get("label") or "Ads Facebook").strip(), token, acc_id)
+    return {"ok": True}
+
+
 @app.get("/api/ads/accounts")
 async def ads_accounts() -> dict:
     out = []
