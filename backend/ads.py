@@ -98,6 +98,62 @@ def meta_set_budget(token: str, campaign_id: str, daily_budget_thb: float) -> di
     return _post(f"{GRAPH}/{campaign_id}", {"daily_budget": cents, "access_token": token})
 
 
+# Map a plain goal → Meta campaign objective (new ODAX objectives)
+_GOAL_OBJECTIVE = {
+    "sales": "OUTCOME_SALES", "messages": "OUTCOME_ENGAGEMENT",
+    "leads": "OUTCOME_LEADS", "traffic": "OUTCOME_TRAFFIC", "website": "OUTCOME_TRAFFIC",
+}
+
+
+def meta_create_campaign(token: str, ad_account_id: str, name: str, goal: str,
+                         daily_budget_thb: float, page_id: str, link: str,
+                         message: str, headline: str) -> dict:
+    """Create a PAUSED campaign (campaign→ad set→creative→ad) for review.
+    Uses a safe LINK_CLICKS/IMPRESSIONS ad set so it doesn't require a pixel/lead form.
+    Sales/Leads optimization may need manual adjustment in Ads Manager afterwards."""
+    if not (token and ad_account_id):
+        raise RuntimeError("ต้องมี token + Ad Account ID")
+    if not page_id:
+        raise RuntimeError("ต้องมี Facebook Page ID สำหรับสร้างชิ้นงานโฆษณา")
+    if not link:
+        raise RuntimeError("ต้องมีลิงก์ปลายทาง (เว็บ/เพจ)")
+    acct = _acct(ad_account_id)
+    objective = _GOAL_OBJECTIVE.get((goal or "").lower(), "OUTCOME_TRAFFIC")
+    cents = int(round(float(daily_budget_thb or 100) * 100))
+
+    camp = _post(f"{GRAPH}/{acct}/campaigns", {
+        "name": name or "G Office Autopilot", "objective": objective,
+        "status": "PAUSED", "special_ad_categories": "[]", "access_token": token})
+    cid = camp.get("id")
+    if not cid:
+        raise RuntimeError(f"สร้างแคมเปญไม่สำเร็จ: {str(camp)[:160]}")
+
+    targeting = json.dumps({"geo_locations": {"countries": ["TH"]}, "age_min": 18, "age_max": 65})
+    adset = _post(f"{GRAPH}/{acct}/adsets", {
+        "name": (name or "Autopilot") + " — Ad set", "campaign_id": cid,
+        "daily_budget": cents, "billing_event": "IMPRESSIONS",
+        "optimization_goal": "LINK_CLICKS", "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "targeting": targeting, "status": "PAUSED", "access_token": token})
+    asid = adset.get("id")
+    if not asid:
+        raise RuntimeError(f"สร้าง ad set ไม่สำเร็จ: {str(adset)[:160]}")
+
+    story = json.dumps({"page_id": page_id, "link_data": {
+        "link": link, "message": message or "", "name": headline or ""}})
+    creative = _post(f"{GRAPH}/{acct}/adcreatives", {
+        "name": (name or "Autopilot") + " — Creative",
+        "object_story_spec": story, "access_token": token})
+    crid = creative.get("id")
+    if not crid:
+        raise RuntimeError(f"สร้างชิ้นงานไม่สำเร็จ: {str(creative)[:160]}")
+
+    ad = _post(f"{GRAPH}/{acct}/ads", {
+        "name": (name or "Autopilot") + " — Ad", "adset_id": asid,
+        "creative": json.dumps({"creative_id": crid}), "status": "PAUSED", "access_token": token})
+    return {"campaign_id": cid, "adset_id": asid, "creative_id": crid, "ad_id": ad.get("id"),
+            "objective": objective, "status": "PAUSED"}
+
+
 # ---------------------------------------------------------------------------
 # Google Ads (REST API v17). Needs: developer_token, customer_id, and OAuth
 # (either a raw access_token, or refresh_token + client_id + client_secret to

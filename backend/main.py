@@ -2749,13 +2749,20 @@ async def ads_account_quick(p: dict) -> dict:
     return {"ok": True}
 
 
+def _autopilot_cfg(a: dict) -> dict:
+    try:
+        return json.loads(a.get("autopilot") or "{}")
+    except Exception:
+        return {}
+
+
 @app.get("/api/ads/accounts")
 async def ads_accounts() -> dict:
     out = []
     for a in db.ads_list_accounts("meta"):
         t = a.get("token") or ""
         out.append({"id": a["id"], "label": a["label"], "ad_account_id": a["ad_account_id"],
-                    "token": (t[:6] + "…") if t else ""})
+                    "token": (t[:6] + "…") if t else "", "autopilot": _autopilot_cfg(a)})
     return {"accounts": out, "max": 10}
 
 
@@ -2776,6 +2783,100 @@ async def ads_account_add(p: dict) -> dict:
 async def ads_account_delete(p: dict) -> dict:
     db.ads_delete_account(int(p.get("id")))
     return {"ok": True}
+
+
+# --- Ads Autopilot: A = manage budget within cap · B = auto-create campaign ---
+_AUTOPILOT_MANAGE_PROMPT = (
+    "คุณคือผู้จัดการโฆษณาอัตโนมัติ จัดสรรงบรายวันใหม่ภายใต้ 'เพดานงบรวม/วัน' ที่กำหนด "
+    "(ห้ามรวมเกินเพดานเด็ดขาด) เป้าหมาย: {goal}. เพดานงบรวม/วัน: {cap} บาท.\n"
+    "เกณฑ์: ตัวไม่มีคอนเวอร์ชัน/ROAS ต่ำ → pause · ตัว ROAS ดี → เพิ่มงบ · ก้ำกึ่ง → คงไว้ "
+    "ผลรวม daily_budget ของตัวที่ active ต้อง ≤ เพดาน.\n\n"
+    "ข้อมูลแคมเปญ (JSON):\n{data}\n\n"
+    "ตอบ JSON อย่างเดียว: {{\"recos\":[{{\"campaign_id\":\"...\",\"action\":\"pause|scale|keep\","
+    "\"reason\":\"สั้นๆ ไทย\",\"suggested_budget\":งบ/วัน(บาท)}}]}}"
+)
+
+_AUTOPILOT_CREATE_PROMPT = (
+    "เขียนแผนโฆษณา Facebook 1 แคมเปญ (ภาษาไทย) จากโจทย์ลูกค้า ให้ครีเอทีฟดึงดูด ปลอดภัยตามนโยบาย Meta.\n"
+    "ธุรกิจ/โจทย์: {brief}\nเป้าหมาย: {goal}\n\n"
+    "ตอบ JSON อย่างเดียว: {{\"campaign_name\":\"...\",\"headline\":\"พาดหัวสั้น\","
+    "\"primary_text\":\"ข้อความโฆษณา 1-3 บรรทัด มี CTA\"}}"
+)
+
+
+@app.post("/api/ads/autopilot")
+async def ads_autopilot_save(p: dict) -> dict:
+    acc = db.ads_get_account(int(p.get("account_id")))
+    if not acc:
+        return {"error": "ไม่พบบัญชี"}
+    cfg = {
+        "mode": p.get("mode") if p.get("mode") in ("off", "manage", "create") else "off",
+        "daily_cap": float(p.get("daily_cap") or 0),
+        "goal": (p.get("goal") or "traffic").strip(),
+        "page_id": (p.get("page_id") or "").strip(),
+        "link": (p.get("link") or "").strip(),
+        "brief": (p.get("brief") or "").strip(),
+    }
+    db.ads_set_autopilot(acc["id"], cfg)
+    return {"ok": True, "autopilot": cfg}
+
+
+@app.post("/api/ads/autopilot/run")
+async def ads_autopilot_run(p: dict) -> dict:
+    import asyncio
+    acc = db.ads_get_account(int(p.get("account_id")))
+    if not acc:
+        return {"error": "ไม่พบบัญชี"}
+    cfg = _autopilot_cfg(acc)
+    mode = cfg.get("mode")
+    model = model_for_agent("analyst")
+    if mode == "manage":
+        cap = cfg.get("daily_cap") or 0
+        if cap <= 0:
+            return {"error": "ตั้งเพดานงบ/วัน ก่อน (โหมดจัดการงบ)"}
+        try:
+            rows = await asyncio.to_thread(ads.meta_campaigns, acc["token"], acc.get("ad_account_id", ""))
+        except Exception as exc:
+            return {"error": "ดึงแคมเปญไม่สำเร็จ: " + _friendly_err(exc)}
+        if not rows:
+            return {"ok": True, "message": "ยังไม่มีแคมเปญให้จัดการ"}
+        data = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+        raw = await _claude_text("analyst", model,
+                                 _AUTOPILOT_MANAGE_PROMPT.format(goal=cfg.get("goal"), cap=cap,
+                                 data=json.dumps(data, ensure_ascii=False)), 2000)
+        recos = {r.get("campaign_id"): r for r in _parse_json(raw).get("recos", [])}
+        done = []
+        for r in rows:
+            rc = recos.get(r["id"], {})
+            act = rc.get("action")
+            try:
+                if act == "pause":
+                    await asyncio.to_thread(ads.meta_pause, acc["token"], r["id"]); done.append(f"⏸️ {r['name']}")
+                elif act == "scale":
+                    b = float(rc.get("suggested_budget") or r.get("daily_budget") or 0)
+                    if b > 0:
+                        await asyncio.to_thread(ads.meta_set_budget, acc["token"], r["id"], b); done.append(f"🔼 {r['name']} → ฿{b}/วัน")
+            except Exception as exc:
+                done.append(f"⚠️ {r['name']}: {type(exc).__name__}")
+        return {"ok": True, "message": "จัดการงบอัตโนมัติแล้ว (ภายใต้เพดาน ฿%s/วัน)" % cap, "actions": done}
+    if mode == "create":
+        if not cfg.get("page_id") or not cfg.get("link"):
+            return {"error": "โหมดสร้างแคมเปญ ต้องใส่ Page ID + ลิงก์ปลายทาง ก่อน"}
+        raw = await _claude_text("marketing", model,
+                                 _AUTOPILOT_CREATE_PROMPT.format(brief=cfg.get("brief") or acc["label"],
+                                 goal=cfg.get("goal")), 1200)
+        plan = _parse_json(raw)
+        try:
+            res = await asyncio.to_thread(
+                ads.meta_create_campaign, acc["token"], acc.get("ad_account_id", ""),
+                plan.get("campaign_name") or "G Office Autopilot", cfg.get("goal"),
+                cfg.get("daily_cap") or 100, cfg.get("page_id"), cfg.get("link"),
+                plan.get("primary_text") or "", plan.get("headline") or "")
+        except Exception as exc:
+            return {"error": "สร้างแคมเปญไม่สำเร็จ: " + _friendly_err(exc)}
+        return {"ok": True, "message": "สร้างแคมเปญใหม่แล้ว (สถานะ PAUSED — ตรวจแล้วค่อยเปิดใน Ads Manager)",
+                "plan": plan, "result": res}
+    return {"error": "ยังไม่ได้เลือกโหมด Autopilot ของบัญชีนี้"}
 
 
 @app.post("/api/ads/settings")

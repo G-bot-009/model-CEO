@@ -242,6 +242,10 @@ def init() -> None:
         occols = {r[1] for r in c.execute("PRAGMA table_info(mcp_oauth_clients)").fetchall()}
         if "redirect_uri" not in occols:
             c.execute("ALTER TABLE mcp_oauth_clients ADD COLUMN redirect_uri TEXT")
+        # per-ad-account Autopilot config (JSON)
+        acols = {r[1] for r in c.execute("PRAGMA table_info(ads_accounts)").fetchall()}
+        if "autopilot" not in acols:
+            c.execute("ALTER TABLE ads_accounts ADD COLUMN autopilot TEXT")
         # link agent_mcp rows back to a directory connector (NULL = manual entry)
         mcols = {r[1] for r in c.execute("PRAGMA table_info(agent_mcp)").fetchall()}
         if "conn_id" not in mcols:
@@ -1386,6 +1390,10 @@ def ads_get_account(aid) -> "Optional[dict]":
     with _conn() as c:
         r = c.execute("SELECT * FROM ads_accounts WHERE id=?", (aid,)).fetchone()
     return dict(r) if r else None
+
+def ads_set_autopilot(aid, config: dict) -> None:
+    with _conn() as c:
+        c.execute("UPDATE ads_accounts SET autopilot=? WHERE id=?", (_json.dumps(config), aid))
 
 def ads_count_accounts(platform) -> int:
     with _conn() as c:
