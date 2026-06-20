@@ -3465,6 +3465,97 @@ async def _telegram_assistant_reply(incoming: str) -> str:
         return ""
 
 
+_TG_HELP = (
+    "🤖 สั่งงาน G Office ผ่าน Telegram ได้เลย:\n"
+    "• สถานะ — สรุปภาพรวม (บอท + กระเป๋า)\n"
+    "• กระเป๋า — ดูยอดเดโม่ (จริง/ลอยตัว/รวม)\n"
+    "• เติม 100 / ถอน 50 — ปรับเครดิตเดโม่\n"
+    "• บอท — ดูรายชื่อบอทเทรด + สถานะ\n"
+    "• เริ่มบอท <ชื่อ> / หยุดบอท <ชื่อ>\n"
+    "• รันคอนเทนต์ — สั่งทีมทำคอนเทนต์ 1 รอบ\n"
+    "หรือพิมพ์ถามอะไรก็ได้ เดี๋ยว AI ตอบให้ 💬"
+)
+
+
+async def _telegram_command(text: str):
+    """Run a real G Office action from a Telegram message. Returns a reply, or None to fall through to AI."""
+    import re as _re
+    t = (text or "").strip()
+    low = t.lower()
+    def has(*ks): return any(k in low for k in ks)
+
+    if low in ("/start", "/help") or has("ช่วยอะไรได้", "คำสั่ง", "เมนูคำสั่ง", "สั่งอะไรได้"):
+        return _TG_HELP
+
+    # adjust demo wallet: "เติม 100" / "ถอน 50"
+    m = _re.search(r"(เติม|ถอน)\s*\$?\s*([0-9][0-9,\.]*)", t)
+    if m:
+        amt = float(m.group(2).replace(",", ""))
+        bal = db.paper_balance_adjust(amt if m.group(1) == "เติม" else -amt)
+        verb = "เติม" if m.group(1) == "เติม" else "ถอน"
+        return f"✅ {verb}กระเป๋าเดโม่ ${amt:,.2f} แล้ว\n💰 ยอดเงินจริงตอนนี้ ${bal:,.2f}"
+
+    # wallet view
+    if low in ("กระเป๋า", "เงิน", "ยอด", "wallet") or has("ยอดเงิน", "ยอดคงเหลือ", "กระเป๋าเดโม"):
+        bal = db.paper_balance_get()
+        unreal = sum(_bot_unrealized(b) for b in db.list_bots() if b["mode"] == "paper")
+        return (f"💰 กระเป๋าเดโม่ (เครดิตปลอม)\n"
+                f"ยอดเงินจริง ${bal:,.2f}\n"
+                f"ลอยตัว {unreal:+,.2f}\n"
+                f"มูลค่ารวมสด ${bal + unreal:,.2f}")
+
+    # overall status
+    if has("สถานะ", "status", "สรุปภาพรวม", "ภาพรวม") or low == "สรุป":
+        bots = db.list_bots()
+        running = [b for b in bots if b["status"] == "running"]
+        bal = db.paper_balance_get()
+        unreal = sum(_bot_unrealized(b) for b in bots if b["mode"] == "paper")
+        asst = db.get_settings().get("telegram_assistant") == "true"
+        return ("📊 สรุป G Office\n"
+                f"🤖 บอทเทรด: {len(running)}/{len(bots)} กำลังรัน\n"
+                f"💰 กระเป๋าเดโม่: ${bal + unreal:,.2f} (จริง ${bal:,.2f} · ลอยตัว {unreal:+,.2f})\n"
+                f"💬 ผู้ช่วย Telegram: {'เปิด' if asst else 'ปิด'}")
+
+    # start/stop a bot by name
+    m = _re.search(r"(เริ่ม|เปิด|หยุด|ปิด|start|stop)\s*บอท\s*(.+)", t, _re.I)
+    if m:
+        want = m.group(2).strip().lower()
+        start = m.group(1).lower() in ("เริ่ม", "เปิด", "start")
+        bots = db.list_bots()
+        hit = next((b for b in bots if want in b["name"].lower() or want in b["symbol"].lower()), None)
+        if not hit:
+            return f"❓ ไม่เจอบอทชื่อ “{m.group(2).strip()}” — พิมพ์ “บอท” เพื่อดูรายชื่อ"
+        db.set_bot_status(hit["id"], "running" if start else "stopped")
+        db.add_trade_log(hit["id"], "start" if start else "stop",
+                         f"{'เริ่ม' if start else 'หยุด'}บอทผ่าน Telegram", 0.0)
+        return f"{'▶️ เริ่ม' if start else '■ หยุด'}บอท “{hit['name']}” ({hit['symbol']}) แล้ว"
+
+    # list bots
+    if low in ("บอท", "bots", "บอทเทรด", "รายชื่อบอท"):
+        bots = db.list_bots()
+        if not bots:
+            return "ยังไม่มีบอทเทรด — สร้างในเว็บก่อน"
+        out = ["🤖 บอทเทรด:"]
+        for b in bots:
+            st = b.get("state") or {}
+            out.append(f"• {b['name']} [{b['symbol']}] "
+                       f"{'▶รัน' if b['status'] == 'running' else '■หยุด'} · "
+                       f"PnL วันนี้ {float(st.get('daily_pnl') or 0):+.2f}")
+        return "\n".join(out)
+
+    # run a content cycle
+    if has("รันคอนเทนต์", "ทำคอนเทนต์", "คอนเทนต์", "content", "โพสต์อัตโนมัติ"):
+        try:
+            post = await run_content_cycle(db.get_content_rules())
+        except Exception as exc:
+            return "❌ รันคอนเทนต์ไม่สำเร็จ: " + _friendly_err(exc)
+        if post and post.get("caption"):
+            return "✅ ทีมทำคอนเทนต์ 1 รอบแล้ว\n📝 " + post["caption"][:300]
+        return "✅ สั่งทีมทำคอนเทนต์ 1 รอบแล้ว (ดูผลในเว็บ เมนูโรงงานคอนเทนต์)"
+
+    return None
+
+
 async def _telegram_loop() -> None:
     """Single poller: mirror Telegram chat into DB; auto-reply via AI when assistant is on."""
     import asyncio
@@ -3490,13 +3581,22 @@ async def _telegram_loop() -> None:
             _TG_STATUS["ok_at"] = int(_t.time())
             _TG_STATUS["polls"] += 1
             assistant_on = db.get_settings().get("telegram_assistant") == "true"
+            _, owner = _telegram_creds()
             if assistant_on:
                 for nm in new_msgs:
-                    reply = (await _telegram_assistant_reply(nm["text"])).strip()
+                    # commands only from the owner's chat (if a Chat ID is configured)
+                    is_owner = (not owner) or (str(nm["chat_id"]) == str(owner))
+                    reply, who = "", "ผู้ช่วย AI"
+                    if is_owner:
+                        cmd = await _telegram_command(nm["text"])
+                        if cmd:
+                            reply, who = cmd, "G Office"
+                    if not reply:
+                        reply = (await _telegram_assistant_reply(nm["text"])).strip()
                     if not reply:
                         continue
                     await _telegram_send(tok, nm["chat_id"], reply)
-                    db.chat_msg_add("telegram", nm["chat_id"], "out", "ผู้ช่วย AI", reply, _tg_now())
+                    db.chat_msg_add("telegram", nm["chat_id"], "out", who, reply, _tg_now())
         except Exception as exc:
             _TG_STATUS["error"] = _friendly_err(exc)
             await asyncio.sleep(15)
