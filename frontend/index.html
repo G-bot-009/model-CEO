@@ -617,6 +617,21 @@
           </div>
           <div class="quick" id="jarvisQuick" style="margin-top:12px"></div>
           <div class="chat-input" style="margin-top:6px"><input id="jarvisGoal" placeholder="พิมพ์คำสั่งถึง Jarvis… (หรือกด 🎙️ แล้วพูด)"><button class="send" id="jarvisSend">สั่ง</button></div>
+          <!-- voice controls -->
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:10px 14px">
+            <button class="qbtn" id="jarvisMute" title="เปิด/ปิดเสียง" style="font-weight:700">🔊 เสียงเปิด</button>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1;flex:1;min-width:160px">
+              🔊 ระดับเสียง
+              <input id="jarvisVol" type="range" min="0" max="1" step="0.05" value="1" style="flex:1;accent-color:#22d3ee">
+              <span id="jarvisVolVal" style="width:38px;text-align:right;color:#94a3b8">100%</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1;flex:1;min-width:160px">
+              ⚡ ความเร็ว
+              <input id="jarvisRate" type="range" min="0.8" max="2" step="0.05" value="1.35" style="flex:1;accent-color:#22d3ee">
+              <span id="jarvisRateVal" style="width:42px;text-align:right;color:#94a3b8">1.35x</span>
+            </label>
+            <button class="qbtn" id="jarvisTest">▶ ทดสอบเสียง</button>
+          </div>
           <div style="font-size:12px;color:#64748b;margin-top:8px">🔒 Jarvis จะขอยืนยันก่อนโพสต์ / เปลี่ยนงบแอด / ตอบอีเมลลูกค้าเสมอ</div>
         </div>
 
@@ -3090,7 +3105,13 @@ function getJAudio(){
   }
   return _jaudio;
 }
+/* user-adjustable voice settings (persisted) */
+let jarvisVol = parseFloat(localStorage.getItem("jarvisVol"));
+if (isNaN(jarvisVol)) jarvisVol = 1;
+let jarvisRate = parseFloat(localStorage.getItem("jarvisRate"));
+if (isNaN(jarvisRate)) jarvisRate = 1.35;
 function jarvisSpeakText(text){
+  if (!jarvisSpeak || jarvisVol <= 0) return;
   const clean = jarvisStripForSpeech(text).slice(0, 900);
   if (!clean) return;
   const a = getJAudio();
@@ -3099,7 +3120,8 @@ function jarvisSpeakText(text){
   a.onerror = fallback;
   a.onstalled = fallback;
   a.src = "/api/tts?lang=th&text=" + encodeURIComponent(clean);
-  a.playbackRate = 0.9;   // ทุ้มลงให้เป็นผู้ชายขึ้น (preservesPitch=false)
+  a.volume = jarvisVol;
+  a.playbackRate = jarvisRate;   // ความเร็วตามที่ตั้ง (มีผลกับโทนด้วยเพราะ preservesPitch=false)
   const p = a.play();
   if (p && p.catch) p.catch(fallback);
 }
@@ -3109,7 +3131,7 @@ function jarvisSpeakBrowser(text){
     u.lang = "th-TH";
     const v = ensureJarvisVoice();
     if (v) u.voice = v;
-    u.rate = 1.05; u.pitch = 0.75; u.volume = 1;
+    u.rate = Math.min(2, jarvisRate); u.pitch = 0.8; u.volume = jarvisVol;
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
     try { speechSynthesis.resume(); } catch(e){}   // iOS sometimes starts paused
@@ -5757,6 +5779,37 @@ $("jarvisSend").addEventListener("click", () => jarvisSend());
 $("jarvisGoal").addEventListener("keydown", e => { if (e.key === "Enter") jarvisSend(); });
 $("jarvisRoutine").addEventListener("click", () => { jarvisRaw=""; $("jarvisOut").innerHTML="⏳ Jarvis กำลังรันรูทีนเช้า…"; ws.readyState===WebSocket.OPEN && ws.send(JSON.stringify({action:"jarvis_routine"})); });
 $("jarvisVoice").addEventListener("click", jarvisToggleVoice);
+/* Jarvis voice controls (volume / speed / mute / test) */
+function jarvisApplyVoiceUI(){
+  const vEl = $("jarvisVol"), rEl = $("jarvisRate");
+  if (vEl){ vEl.value = jarvisVol; $("jarvisVolVal").textContent = Math.round(jarvisVol*100) + "%"; }
+  if (rEl){ rEl.value = jarvisRate; $("jarvisRateVal").textContent = jarvisRate.toFixed(2) + "x"; }
+  const mb = $("jarvisMute");
+  if (mb){ mb.textContent = jarvisSpeak ? "🔊 เสียงเปิด" : "🔇 เสียงปิด"; mb.classList.toggle("active", !jarvisSpeak); }
+}
+if ($("jarvisVol")){
+  jarvisApplyVoiceUI();
+  $("jarvisVol").addEventListener("input", e => {
+    jarvisVol = parseFloat(e.target.value); localStorage.setItem("jarvisVol", jarvisVol);
+    $("jarvisVolVal").textContent = Math.round(jarvisVol*100) + "%";
+    if (_jaudio) _jaudio.volume = jarvisVol;
+  });
+  $("jarvisRate").addEventListener("input", e => {
+    jarvisRate = parseFloat(e.target.value); localStorage.setItem("jarvisRate", jarvisRate);
+    $("jarvisRateVal").textContent = jarvisRate.toFixed(2) + "x";
+    if (_jaudio) _jaudio.playbackRate = jarvisRate;
+  });
+  $("jarvisMute").addEventListener("click", () => {
+    jarvisSpeak = !jarvisSpeak;
+    if (!jarvisSpeak){ try{ if(_jaudio) _jaudio.pause(); speechSynthesis.cancel(); }catch(e){} }
+    jarvisApplyVoiceUI();
+    toastNote(jarvisSpeak ? "เปิดเสียง Jarvis" : "ปิดเสียง Jarvis", "#22c55e");
+  });
+  $("jarvisTest").addEventListener("click", () => {
+    primeTTS();
+    jarvisSpeakText("สวัสดีครับ ผมคือจาร์วิส ผู้ช่วยของคุณ พร้อมรับคำสั่งแล้วครับ");
+  });
+}
 $("modelSel").addEventListener("change", e => { saveSettings({ model: e.target.value }); toastNote("เปลี่ยนโมเดลเป็น " + e.target.value, "#22c55e"); });
 $("cacheEnabled").addEventListener("change", e => { saveSettings({ cache_enabled: e.target.checked ? "true" : "false" }); toastNote(e.target.checked ? "เปิดแคชคำตอบ" : "ปิดแคชคำตอบ", "#22c55e"); });
 $("cacheClear").addEventListener("click", async () => { await postJSON("/api/cache/clear", {}); $("cacheCount").textContent = "0 รายการ"; toastNote("ล้างแคชแล้ว", "#22c55e"); });
