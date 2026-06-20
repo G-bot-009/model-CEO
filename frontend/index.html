@@ -1104,33 +1104,10 @@
         <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
           <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ AI วิเคราะห์จากตัวเลข ไม่การันตีผล · โหมด "ร่าง" จะแค่แนะนำให้คุณกดอนุมัติเอง · โหมด "อัตโนมัติ" จะหยุด/ปรับงบจริงในบัญชีโฆษณา · การเชื่อม Meta ต้องมี token+Ad Account ID, Google ต้องมี developer token (เชื่อมไว้ก่อนได้)</p>
         </div>
-        <div class="panel" style="border:1px solid #1877F255;background:#1877F215"><h3>🔵 เชื่อม Facebook แบบคลิกเดียว (ง่ายสุด)</h3>
-          <p style="color:#94a3b8;font-size:13px;margin:0 0 10px">ล็อกอิน Facebook + อนุญาต → ระบบดึง token + บัญชีโฆษณาให้อัตโนมัติ (ไม่ต้องก็อป token / ไม่ต้องหา Ad Account ID เอง)</p>
-          <div id="adsFbOauth"></div>
-        </div>
         <div class="panel"><h3>📘 บัญชี Facebook (เชื่อมได้สูงสุด 10) <span id="adsAcctCount" style="font-size:13px;color:#94a3b8"></span></h3>
-          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">เชื่อมหลายบัญชีเพื่อยิง/ตรวจหลายแอดพร้อมกัน — AI ตรวจแยกทีละบัญชี · หรือใช้ <b style="color:#60a5fa">ปุ่มสีฟ้าด้านบน</b> เชื่อมคลิกเดียว</p>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">เชื่อมหลายบัญชีเพื่อยิง/ตรวจหลายแอดพร้อมกัน — AI ตรวจแยกทีละบัญชี · กดปุ่ม “เชื่อม Facebook ตัวที่ N” เพื่อเชื่อมแต่ละบัญชี</p>
           <div id="adsAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
-          <div id="adsSlots" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select id="adsAccLabel" class="numfld" style="width:180px;margin:0">
-              <option value="">เลือกตัวที่…</option>
-              <option value="Ads Facebook ตัวที่ 1">Ads Facebook ตัวที่ 1</option>
-              <option value="Ads Facebook ตัวที่ 2">Ads Facebook ตัวที่ 2</option>
-              <option value="Ads Facebook ตัวที่ 3">Ads Facebook ตัวที่ 3</option>
-              <option value="Ads Facebook ตัวที่ 4">Ads Facebook ตัวที่ 4</option>
-              <option value="Ads Facebook ตัวที่ 5">Ads Facebook ตัวที่ 5</option>
-              <option value="Ads Facebook ตัวที่ 6">Ads Facebook ตัวที่ 6</option>
-              <option value="Ads Facebook ตัวที่ 7">Ads Facebook ตัวที่ 7</option>
-              <option value="Ads Facebook ตัวที่ 8">Ads Facebook ตัวที่ 8</option>
-              <option value="Ads Facebook ตัวที่ 9">Ads Facebook ตัวที่ 9</option>
-              <option value="Ads Facebook ตัวที่ 10">Ads Facebook ตัวที่ 10</option>
-            </select>
-            <input id="adsAccToken" class="numfld" style="flex:1;min-width:200px;margin:0" type="password" placeholder="Meta access token (ads_management)">
-            <input id="adsAccId" class="numfld" style="width:160px;margin:0" placeholder="Ad Account ID (ตัวเลข)">
-            <button class="qbtn" id="adsAccAdd" style="font-weight:700">➕ เพิ่มบัญชี</button>
-          </div>
-          <div style="font-size:11px;color:#64748b;margin-top:6px">token + Ad Account ID เอาจาก Meta Graph API / Ads Manager (เลขหลัง act_)</div>
+          <div id="adsSlots" style="display:flex;gap:6px;flex-wrap:wrap"></div>
         </div>
         <div class="panel"><h3>🖼️ ตรวจรูปก่อนยิงแอด (AI วิเคราะห์ภาพ)</h3>
           <div style="font-size:12px;color:#94a3b8;margin-bottom:10px">อัปโหลดรูปครีเอทีฟ → AI เช็คโอกาสผ่านรีวิว Meta · เสี่ยงเข้าข่ายพนัน/เนื้อหาต้องห้ามไหม · คนเห็นแล้วรู้สึกยังไง · พร้อมคำแนะนำให้ผ่าน</div>
@@ -3591,7 +3568,6 @@ async function loadAds(){
   let st; try { st = await (await fetch("/api/ads/status")).json(); } catch(e){ return; }
   $("adsStatus").textContent = `${st.meta?('✓ Facebook '+st.meta_count+' บัญชี'):'• Facebook ยังไม่เชื่อม'} · ${st.google?'✓ Google':'• Google ยังไม่เชื่อม'}`;
   $("adsMode").value = st.mode || "review";
-  renderFbOauth();
   // Facebook accounts (up to 10)
   let ac; try { ac = await (await fetch("/api/ads/accounts")).json(); } catch(e){ ac = {accounts:[],max:10}; }
   const accs = ac.accounts || [];
@@ -4762,14 +4738,8 @@ $("cfSaveRules").addEventListener("click", cfSaveRules);
 $("prCreate").addEventListener("click", prCreate);
 $("prTemplate").addEventListener("change", prTplPreview);
 $("biCreate").addEventListener("click", biCreate);
-$("adsConnFb").addEventListener("click", () => { $("adsAccLabel").scrollIntoView({behavior:"smooth"}); $("adsAccLabel").focus(); });
+$("adsConnFb").addEventListener("click", () => { const el = $("adsSlots"); if (el) el.scrollIntoView({behavior:"smooth"}); });
 $("adsConnGg").addEventListener("click", () => openConnect("Google Ads", loadAds));
-$("adsAccAdd").addEventListener("click", async () => {
-  const r = await postJSON("/api/ads/account", { label:$("adsAccLabel").value.trim(), token:$("adsAccToken").value.trim(), ad_account_id:$("adsAccId").value.trim() });
-  if (r.error){ toastNote(r.error,"#f59e0b"); return; }
-  $("adsAccLabel").value=""; $("adsAccToken").value=""; $("adsAccId").value="";
-  toastNote("เพิ่มบัญชี Facebook แล้ว ✅","#22c55e"); loadAds();
-});
 let adsImgData = null, adsImgMime = "image/jpeg";
 $("adsImgFile").addEventListener("change", e => {
   const f = e.target.files[0]; if (!f) return;
