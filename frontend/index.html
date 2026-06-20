@@ -3486,6 +3486,7 @@ async function adsSdkConnect(token, n){
 async function adsConnectPopup(n){
   let s; try { s = await (await fetch("/api/ads/fb-oauth-status")).json(); } catch(e){ s = {has:false,redirect_uri:""}; }
   let appId = ""; try { appId = (await (await fetch("/api/ads/fb-appid")).json()).app_id || ""; } catch(e){}
+  if (appId) ensureFBSdk(appId);   // preload SDK so FB.login fires synchronously on click (no popup-block)
   $("genTitle").textContent = "เชื่อม Ads Facebook ตัวที่ " + n;
   $("genBody").innerHTML = `
     <p class="conn-note" style="margin-top:0">ช่องนี้แยกขาดจากช่องอื่น — ลูกค้า/บัญชีคนละคนได้ คนละ token คนละบัญชีโฆษณา</p>
@@ -3501,11 +3502,9 @@ async function adsConnectPopup(n){
       <input id="adsPopAcc" placeholder="เช่น 2465780223871944">
       <button class="save" id="adsPopAdd" style="margin-top:12px">➕ เพิ่มบัญชีตัวที่ ${n}</button>
     </div>`;
-  $("adsPopLogin").onclick = async () => {
+  $("adsPopLogin").onclick = () => {
     if (!appId){ adsPopSetup(n, s.redirect_uri); return; }
-    const ok = await ensureFBSdk(appId);
-    if (!ok || !window.FB){ toastNote("โหลด Facebook SDK ไม่ได้ (เช็กเน็ต/ตัวบล็อก)","#f59e0b"); return; }
-    toastNote("เปิดหน้าต่าง Facebook…","#1877F2");
+    if (!window.FB){ toastNote("กำลังโหลด Facebook… รอ 2 วินาทีแล้วกดอีกที (ถ้ายังไม่ขึ้น ปิดตัวบล็อกโฆษณา)","#f59e0b"); ensureFBSdk(appId); return; }
     FB.login(function(resp){
       if (resp && resp.authResponse && resp.authResponse.accessToken){
         adsSdkConnect(resp.authResponse.accessToken, n);
