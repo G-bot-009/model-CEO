@@ -2544,6 +2544,84 @@ async def ads_status() -> dict:
             "mode": _ads_mode()}
 
 
+# --- One-click Facebook Ads OAuth (no manual token / no System User) ---------
+@app.post("/api/ads/fb-oauth-creds")
+async def ads_fb_oauth_creds(p: dict) -> dict:
+    upd = {}
+    if p.get("app_id"):
+        upd["fb_ads_app_id"] = p["app_id"].strip()
+    if p.get("app_secret"):
+        upd["fb_ads_app_secret"] = p["app_secret"].strip()
+    if upd:
+        db.set_settings(upd)
+    return {"ok": True}
+
+
+@app.get("/api/ads/fb-oauth-status")
+async def ads_fb_oauth_status(request: Request) -> dict:
+    s = db.get_settings()
+    return {"has": bool(s.get("fb_ads_app_id") and s.get("fb_ads_app_secret")),
+            "redirect_uri": _public_base(request) + "/oauth-ads/facebook/callback"}
+
+
+@app.get("/oauth-ads/facebook/start")
+async def fb_ads_oauth_start(request: Request):
+    from urllib.parse import urlencode
+    s = db.get_settings()
+    app_id = s.get("fb_ads_app_id")
+    if not app_id:
+        return HTMLResponse("<h3>ยังไม่ได้ใส่ App ID/Secret — ปิดหน้าต่างแล้วกรอกก่อน</h3>", status_code=400)
+    state = secrets.token_urlsafe(16)
+    _oauth_state[state] = ("facebook_ads", "")
+    params = {"response_type": "code", "client_id": app_id,
+              "redirect_uri": _public_base(request) + "/oauth-ads/facebook/callback",
+              "scope": "ads_management,ads_read", "state": state}
+    return RedirectResponse("https://www.facebook.com/v19.0/dialog/oauth?" + urlencode(params))
+
+
+@app.get("/oauth-ads/facebook/callback")
+async def fb_ads_oauth_callback(request: Request, code: str = "", state: str = ""):
+    import httpx
+    saved = _oauth_state.pop(state or "", None)
+    s = db.get_settings()
+    app_id, app_secret = s.get("fb_ads_app_id"), s.get("fb_ads_app_secret")
+    if not code or not saved or saved[0] != "facebook_ads" or not (app_id and app_secret):
+        return HTMLResponse("<h3>เชื่อมไม่สำเร็จ — ปิดหน้าต่างแล้วลองใหม่</h3>", status_code=400)
+    redirect = _public_base(request) + "/oauth-ads/facebook/callback"
+    try:
+        async with httpx.AsyncClient(timeout=25) as c:
+            r = await c.get("https://graph.facebook.com/v19.0/oauth/access_token",
+                            params={"client_id": app_id, "client_secret": app_secret,
+                                    "redirect_uri": redirect, "code": code})
+            tok = r.json().get("access_token")
+            if not tok:
+                return HTMLResponse(f"<h3>ไม่ได้รับ token: {_esc(r.text[:200])}</h3>", status_code=400)
+            r2 = await c.get("https://graph.facebook.com/v19.0/oauth/access_token",
+                             params={"grant_type": "fb_exchange_token", "client_id": app_id,
+                                     "client_secret": app_secret, "fb_exchange_token": tok})
+            long_tok = r2.json().get("access_token") or tok
+            r3 = await c.get("https://graph.facebook.com/v19.0/me/adaccounts",
+                             params={"fields": "name,account_id", "access_token": long_tok, "limit": 50})
+            accts = r3.json().get("data", [])
+    except Exception as exc:
+        return HTMLResponse(f"<h3>เชื่อมไม่สำเร็จ: {_esc(_friendly_err(exc))}</h3>", status_code=400)
+    existing = {a["ad_account_id"] for a in db.ads_list_accounts("meta")}
+    cur = len(db.ads_list_accounts("meta"))
+    added = 0
+    for a in accts:
+        acc_id = a.get("account_id")
+        if not acc_id or acc_id in existing or cur >= 10:
+            continue
+        cur += 1
+        db.ads_add_account("meta", a.get("name") or f"Ads Facebook ตัวที่ {cur}", long_tok, acc_id)
+        added += 1
+    msg = (f"เชื่อม Facebook สำเร็จ — ดึงมา {added} บัญชี" if added else
+           "เชื่อมสำเร็จ แต่ไม่พบบัญชีโฆษณาใหม่ (อาจเชื่อมไว้แล้ว หรือบัญชีนี้ไม่มีสิทธิ์ ads)")
+    return HTMLResponse(f"<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;background:#0f172a;color:#e2e8f0;text-align:center;padding:60px'>"
+                        f"<h2>✅ {_esc(msg)}</h2><p>ปิดหน้าต่างนี้แล้วกลับไปที่ G Office → Ads Manager (รีเฟรช)</p>"
+                        f"<script>setTimeout(function(){{window.close()}},2500)</script></body>")
+
+
 @app.get("/api/ads/accounts")
 async def ads_accounts() -> dict:
     out = []

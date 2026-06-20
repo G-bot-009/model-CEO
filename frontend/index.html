@@ -1104,8 +1104,12 @@
         <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
           <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ AI วิเคราะห์จากตัวเลข ไม่การันตีผล · โหมด "ร่าง" จะแค่แนะนำให้คุณกดอนุมัติเอง · โหมด "อัตโนมัติ" จะหยุด/ปรับงบจริงในบัญชีโฆษณา · การเชื่อม Meta ต้องมี token+Ad Account ID, Google ต้องมี developer token (เชื่อมไว้ก่อนได้)</p>
         </div>
+        <div class="panel" style="border:1px solid #1877F255;background:#1877F215"><h3>🔵 เชื่อม Facebook แบบคลิกเดียว (ง่ายสุด)</h3>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 10px">ล็อกอิน Facebook + อนุญาต → ระบบดึง token + บัญชีโฆษณาให้อัตโนมัติ (ไม่ต้องก็อป token / ไม่ต้องหา Ad Account ID เอง)</p>
+          <div id="adsFbOauth"></div>
+        </div>
         <div class="panel"><h3>📘 บัญชี Facebook (เชื่อมได้สูงสุด 10) <span id="adsAcctCount" style="font-size:13px;color:#94a3b8"></span></h3>
-          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">เชื่อมหลายบัญชีเพื่อยิง/ตรวจหลายแอดพร้อมกัน — AI ตรวจแยกทีละบัญชี</p>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">เชื่อมหลายบัญชีเพื่อยิง/ตรวจหลายแอดพร้อมกัน — AI ตรวจแยกทีละบัญชี · หรือใช้ <b style="color:#60a5fa">ปุ่มสีฟ้าด้านบน</b> เชื่อมคลิกเดียว</p>
           <div id="adsAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
           <div id="adsSlots" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -3465,10 +3469,41 @@ const ADS_ACT = {
   keep:  ["#f59e0b", "⏸️", "คงงบไว้"],
 };
 let adsFilter = "all";
+async function renderFbOauth(){
+  let s; try { s = await (await fetch("/api/ads/fb-oauth-status")).json(); } catch(e){ return; }
+  const box = $("adsFbOauth");
+  if (s.has){
+    box.innerHTML = `
+      <button class="qbtn" id="adsFbLogin" style="font-weight:800;background:#1877F2;color:#fff;border-color:#1877F2;font-size:15px;padding:11px 22px">🔵 เข้าสู่ระบบด้วย Facebook → ดึงบัญชีอัตโนมัติ</button>
+      <div style="font-size:12px;color:#64748b;margin-top:8px">เชื่อม App แล้ว · กดปุ่มเพื่ออนุญาตและดึงบัญชีโฆษณาทั้งหมดเข้ามา · <span id="adsFbEdit" style="color:#a5b4fc;cursor:pointer">แก้ App ID/Secret</span></div>`;
+    $("adsFbLogin").onclick = () => { window.open("/oauth-ads/facebook/start", "_blank", "width=600,height=760"); toastNote("เปิดหน้า Facebook — อนุญาตเสร็จระบบจะดึงบัญชีให้ แล้วรีเฟรชหน้านี้","#1877F2"); };
+    $("adsFbEdit").onclick = () => renderFbOauthForm();
+  } else {
+    renderFbOauthForm(s.redirect_uri);
+  }
+}
+function renderFbOauthForm(redirect){
+  const box = $("adsFbOauth");
+  box.innerHTML = `
+    <div style="font-size:12px;color:#cbd5e1;margin-bottom:8px">ตั้งครั้งเดียว: ใส่ App ID + Secret ของแอป (เช่น CEOMarketing) แล้วต่อไปเชื่อมคลิกเดียว</div>
+    ${redirect?`<div style="font-size:12px;color:#94a3b8;margin-bottom:8px">⚠️ ใน Meta (แอป → เข้าสู่ระบบด้วย Facebook → การตั้งค่า) ใส่ Valid OAuth Redirect URI ให้ตรงนี้:<br><code style="color:#a5b4fc;word-break:break-all">${redirect}</code></div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="adsFbAppId" class="numfld" style="width:200px;margin:0" placeholder="App ID">
+      <input id="adsFbAppSecret" class="numfld" type="password" style="width:240px;margin:0" placeholder="App Secret">
+      <button class="qbtn" id="adsFbSave" style="font-weight:700">บันทึก App</button>
+    </div>`;
+  $("adsFbSave").onclick = async () => {
+    const app_id = $("adsFbAppId").value.trim(), app_secret = $("adsFbAppSecret").value.trim();
+    if (!app_id || !app_secret){ toastNote("ใส่ App ID + Secret ก่อน","#f59e0b"); return; }
+    await postJSON("/api/ads/fb-oauth-creds", { app_id, app_secret });
+    toastNote("บันทึกแล้ว — กดปุ่มฟ้าเพื่อเชื่อม","#22c55e"); renderFbOauth();
+  };
+}
 async function loadAds(){
   let st; try { st = await (await fetch("/api/ads/status")).json(); } catch(e){ return; }
   $("adsStatus").textContent = `${st.meta?('✓ Facebook '+st.meta_count+' บัญชี'):'• Facebook ยังไม่เชื่อม'} · ${st.google?'✓ Google':'• Google ยังไม่เชื่อม'}`;
   $("adsMode").value = st.mode || "review";
+  renderFbOauth();
   // Facebook accounts (up to 10)
   let ac; try { ac = await (await fetch("/api/ads/accounts")).json(); } catch(e){ ac = {accounts:[],max:10}; }
   const accs = ac.accounts || [];
