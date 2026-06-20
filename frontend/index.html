@@ -1014,47 +1014,110 @@
           <p style="color:#fbbf24;font-size:13px;margin:4px 0 0">⚠️ การเทรดมีความเสี่ยง อาจขาดทุนได้ — บอททำตามกฎที่ตั้งไว้ ไม่ได้ทำนายตลาดและไม่การันตีกำไร · ค่าเริ่มต้นเป็น <b>เดโม่ (paper, ไม่ใช้เงินจริง)</b> · โหมดจริงต้องเปิดเองและเชื่อมคีย์ที่เปิดสิทธิ์เทรด · นี่ไม่ใช่คำแนะนำการลงทุน</p>
         </div>
         <div class="panel"><h3>➕ สร้าง/ตั้งค่าบอท</h3>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-            <input id="tbName" class="numfld" style="width:160px;margin:0" placeholder="ชื่อบอท เช่น BTC scalper">
-            <select id="tbExchange" class="numfld" style="width:auto;margin:0">
-              <option value="binance">Binance Futures (คริปโต)</option>
-              <option value="bybit">Bybit (คริปโต)</option>
-              <option value="mt5">MT5 / Forex (MetaApi)</option>
-            </select>
-            <input id="tbSymbol" class="numfld" style="width:120px;margin:0" placeholder="BTCUSDT" value="BTCUSDT">
-            <select id="tbMode" class="numfld" style="width:auto;margin:0">
-              <option value="paper">เดโม่ (paper)</option>
-              <option value="live">เงินจริง (live)</option>
-            </select>
-            <select id="tbSide" class="numfld" style="width:auto;margin:0">
-              <option value="long">Long</option><option value="short">Short</option>
-            </select>
+          <style>
+            .fld{display:flex;flex-direction:column;gap:4px}
+            .fld>label{font-size:12px;color:#94a3b8;font-weight:700}
+            .fld .numfld{margin:0}
+            .fldrow{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+          </style>
+          <div class="fldrow">
+            <div class="fld" style="width:170px"><label>ชื่อบอท</label>
+              <input id="tbName" class="numfld" placeholder="เช่น BTC scalper"></div>
+            <div class="fld" style="width:auto"><label>ตลาด/โบรกเกอร์</label>
+              <select id="tbExchange" class="numfld" style="width:auto">
+                <option value="binance">Binance Futures (คริปโต)</option>
+                <option value="bybit">Bybit (คริปโต)</option>
+                <option value="mt5">MT5 / Forex (MetaApi)</option>
+              </select></div>
+            <div class="fld" style="width:auto"><label>คู่เทรด (เหรียญ/สินค้า)</label>
+              <select id="tbSymbol" class="numfld" style="width:auto">
+                <optgroup label="คริปโต (Binance/Bybit)">
+                  <option value="BTCUSDT">BTCUSDT — บิตคอยน์</option>
+                  <option value="ETHUSDT">ETHUSDT — อีเธอเรียม</option>
+                  <option value="BNBUSDT">BNBUSDT — BNB</option>
+                  <option value="SOLUSDT">SOLUSDT — โซลานา</option>
+                  <option value="XRPUSDT">XRPUSDT — ริปเปิล</option>
+                  <option value="DOGEUSDT">DOGEUSDT — โดชคอยน์</option>
+                  <option value="ADAUSDT">ADAUSDT — คาร์ดาโน</option>
+                  <option value="AVAXUSDT">AVAXUSDT — อแวแลนช์</option>
+                  <option value="LINKUSDT">LINKUSDT — เชนลิงก์</option>
+                </optgroup>
+                <optgroup label="ฟอเร็กซ์/ทอง (MT5)">
+                  <option value="XAUUSD">XAUUSD — ทองคำ</option>
+                  <option value="EURUSD">EURUSD — ยูโร/ดอลลาร์</option>
+                  <option value="GBPUSD">GBPUSD — ปอนด์/ดอลลาร์</option>
+                  <option value="USDJPY">USDJPY — ดอลลาร์/เยน</option>
+                </optgroup>
+                <option value="__custom__">⌨️ อื่นๆ (พิมพ์เอง)…</option>
+              </select></div>
+            <div class="fld" style="width:120px;display:none" id="tbSymbolCustomWrap"><label>พิมพ์คู่เทรด</label>
+              <input id="tbSymbolCustom" class="numfld" placeholder="เช่น TONUSDT"></div>
+            <div class="fld" style="width:auto"><label>โหมด</label>
+              <select id="tbMode" class="numfld" style="width:auto">
+                <option value="paper">เดโม่ (paper)</option>
+                <option value="live">เงินจริง (live)</option>
+              </select></div>
+            <div class="fld" style="width:auto"><label>ทิศทาง</label>
+              <select id="tbSide" class="numfld" style="width:auto">
+                <option value="long">Long (ซื้อ/ขาขึ้น)</option><option value="short">Short (ขาย/ขาลง)</option>
+              </select></div>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input id="tbSize" class="numfld" style="width:110px;margin:0" placeholder="ขนาด $/ไม้" value="50">
-            <input id="tbTp" class="numfld" style="width:150px;margin:0" placeholder="TP 3 ไม้ % เช่น 0.5,1,1.5" value="0.5,1,1.5">
-            <input id="tbSl" class="numfld" style="width:90px;margin:0" placeholder="SL %" value="0.5">
-            <input id="tbBe" class="numfld" style="width:150px;margin:0" placeholder="เลื่อน SL→ทุน หลังไม้ที่" value="1">
-            <input id="tbTarget" class="numfld" style="width:130px;margin:0" placeholder="เป้ากำไร/วัน $" value="100">
-            <input id="tbLoss" class="numfld" style="width:130px;margin:0" placeholder="ลิมิตขาดทุน/วัน $" value="50">
-            <button class="qbtn" id="tbSave" style="font-weight:700">💾 บันทึกบอท</button>
+          <div class="fldrow">
+            <div class="fld" style="width:120px"><label>ขนาดต่อไม้ ($)</label>
+              <input id="tbSize" class="numfld" placeholder="เช่น 50" value="50"></div>
+            <div class="fld" style="width:160px"><label>TP 3 ไม้ (% คั่นด้วย ,)</label>
+              <input id="tbTp" class="numfld" placeholder="0.5,1,1.5" value="0.5,1,1.5"></div>
+            <div class="fld" style="width:100px"><label>Stop Loss (%)</label>
+              <input id="tbSl" class="numfld" placeholder="0.5" value="0.5"></div>
+            <div class="fld" style="width:170px"><label>เลื่อน SL→ทุน หลังไม้ที่</label>
+              <input id="tbBe" class="numfld" placeholder="1" value="1"></div>
+            <div class="fld" style="width:150px"><label>เป้ากำไร/วัน ($)</label>
+              <input id="tbTarget" class="numfld" placeholder="100" value="100"></div>
+            <div class="fld" style="width:150px"><label>ลิมิตขาดทุน/วัน ($)</label>
+              <input id="tbLoss" class="numfld" placeholder="50" value="50"></div>
+            <button class="qbtn" id="tbSave" style="font-weight:700;height:40px">💾 บันทึกบอท</button>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
-            <input id="tbAiDesc" class="numfld" style="flex:1;min-width:240px;margin:0" placeholder="ให้ AI ตั้งกฎให้: เช่น “สแกล์ปทอง M5 เป้า 1% ต่อวัน เสี่ยงต่ำ”">
-            <button class="qbtn" id="tbAi" style="font-weight:700">✨ ให้ AI ตั้งกฎ</button>
+          <div class="fld">
+            <label>✨ ให้ AI ตั้งกฎอัตโนมัติ (อธิบายเป็นภาษาคน)</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input id="tbAiDesc" class="numfld" style="flex:1;min-width:240px;margin:0" placeholder="เช่น “สแกล์ปทอง M5 เป้า 1% ต่อวัน เสี่ยงต่ำ”">
+              <button class="qbtn" id="tbAi" style="font-weight:700">✨ ให้ AI ตั้งกฎ</button>
+            </div>
           </div>
         </div>
         <div class="panel"><h3>📈 กราฟเรียลไทม์
             <span style="flex:1"></span>
             <span id="tbChartSym" style="font-size:12px;color:#94a3b8"></span></h3>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-            <input id="tbChartInput" class="numfld" style="width:200px;margin:0" placeholder="เช่น BINANCE:BTCUSDT" value="BINANCE:BTCUSDT">
-            <select id="tbChartInt" class="numfld" style="width:auto;margin:0">
-              <option value="1">1 นาที</option><option value="5" selected>5 นาที</option>
-              <option value="15">15 นาที</option><option value="60">1 ชม.</option>
-              <option value="240">4 ชม.</option><option value="D">1 วัน</option>
-            </select>
-            <button class="qbtn" id="tbChartGo" style="font-weight:700">📈 แสดงกราฟ</button>
+          <div class="fldrow" style="margin-bottom:10px">
+            <div class="fld" style="width:auto"><label>เหรียญ/สินค้าที่จะดูกราฟ</label>
+              <select id="tbChartSel" class="numfld" style="width:auto">
+                <optgroup label="คริปโต (Binance)">
+                  <option value="BINANCE:BTCUSDT">บิตคอยน์ (BTC/USDT)</option>
+                  <option value="BINANCE:ETHUSDT">อีเธอเรียม (ETH/USDT)</option>
+                  <option value="BINANCE:BNBUSDT">BNB (BNB/USDT)</option>
+                  <option value="BINANCE:SOLUSDT">โซลานา (SOL/USDT)</option>
+                  <option value="BINANCE:XRPUSDT">ริปเปิล (XRP/USDT)</option>
+                  <option value="BINANCE:DOGEUSDT">โดชคอยน์ (DOGE/USDT)</option>
+                </optgroup>
+                <optgroup label="ฟอเร็กซ์/ทอง/หุ้น">
+                  <option value="OANDA:XAUUSD">ทองคำ (XAU/USD)</option>
+                  <option value="OANDA:EURUSD">ยูโร/ดอลลาร์ (EUR/USD)</option>
+                  <option value="OANDA:GBPUSD">ปอนด์/ดอลลาร์ (GBP/USD)</option>
+                  <option value="OANDA:USDJPY">ดอลลาร์/เยน (USD/JPY)</option>
+                  <option value="NASDAQ:AAPL">หุ้น Apple (AAPL)</option>
+                  <option value="NASDAQ:TSLA">หุ้น Tesla (TSLA)</option>
+                </optgroup>
+                <option value="__custom__">⌨️ อื่นๆ (พิมพ์เอง)…</option>
+              </select></div>
+            <div class="fld" style="width:200px;display:none" id="tbChartCustomWrap"><label>พิมพ์สัญลักษณ์ TradingView</label>
+              <input id="tbChartCustom" class="numfld" placeholder="เช่น BINANCE:TONUSDT"></div>
+            <div class="fld" style="width:auto"><label>กรอบเวลา</label>
+              <select id="tbChartInt" class="numfld" style="width:auto">
+                <option value="1">1 นาที</option><option value="5" selected>5 นาที</option>
+                <option value="15">15 นาที</option><option value="60">1 ชม.</option>
+                <option value="240">4 ชม.</option><option value="D">1 วัน</option>
+              </select></div>
+            <button class="qbtn" id="tbChartGo" style="font-weight:700;height:40px">📈 แสดงกราฟ</button>
           </div>
           <div id="tvchart" style="height:480px;border-radius:10px;overflow:hidden;background:#0b1220"></div>
         </div>
@@ -2956,10 +3019,22 @@ function tbCfg(){
     daily_loss_limit_usd: parseFloat($("tbLoss").value) || 0,
   };
 }
+/* symbol dropdown (with "พิมพ์เอง" custom option) */
+function tbSymbolValue(){
+  const v = $("tbSymbol").value;
+  return (v === "__custom__" ? ($("tbSymbolCustom").value || "").trim() : v).toUpperCase();
+}
+function tbSetSymbol(sym){
+  sym = (sym || "BTCUSDT").toUpperCase();
+  const sel = $("tbSymbol");
+  const has = [...sel.options].some(o => o.value === sym);
+  if (has){ sel.value = sym; $("tbSymbolCustomWrap").style.display = "none"; }
+  else { sel.value = "__custom__"; $("tbSymbolCustom").value = sym; $("tbSymbolCustomWrap").style.display = "flex"; }
+}
 function tbFillForm(b){
   const c = b.config || {};
   $("tbName").value = b.name || ""; $("tbExchange").value = b.exchange || "binance";
-  $("tbSymbol").value = b.symbol || "BTCUSDT"; $("tbMode").value = b.mode || "paper";
+  tbSetSymbol(b.symbol || "BTCUSDT"); $("tbMode").value = b.mode || "paper";
   $("tbSide").value = c.side || "long"; $("tbSize").value = c.size_usd ?? 50;
   $("tbTp").value = (c.tp_legs_pct || [0.5,1,1.5]).join(","); $("tbSl").value = c.sl_pct ?? 0.5;
   $("tbBe").value = c.move_sl_to_be_after_leg ?? 1;
@@ -2967,7 +3042,7 @@ function tbFillForm(b){
 }
 async function tbSaveBot(){
   const body = { id: tbEditId, name: $("tbName").value.trim(), exchange: $("tbExchange").value,
-    symbol: $("tbSymbol").value.trim().toUpperCase(), mode: $("tbMode").value, config: tbCfg() };
+    symbol: tbSymbolValue(), mode: $("tbMode").value, config: tbCfg() };
   const r = await postJSON("/api/trading/bot", body);
   if (r.error){ toastNote(r.error, "#f59e0b"); return; }
   tbEditId = null; toastNote("บันทึกบอทแล้ว ✅", "#22c55e"); loadTradeBots();
@@ -2983,9 +3058,13 @@ async function tbAiStrategy(){
   } catch(e){ toastNote("ขอกฎจาก AI ไม่สำเร็จ", "#f59e0b"); }
   btn.disabled = false; btn.textContent = old;
 }
+function tbChartValue(){
+  const v = $("tbChartSel").value;
+  return (v === "__custom__" ? ($("tbChartCustom").value || "").trim() : v) || "BINANCE:BTCUSDT";
+}
 function tbMountMainChart(){
   const el = $("tvchart"); if (!el) return;
-  const s = ($("tbChartInput").value.trim() || "BINANCE:BTCUSDT");
+  const s = tbChartValue();
   $("tbChartSym").textContent = s;
   mountTV("tvchart", s, $("tbChartInt").value, 460);
 }
@@ -5155,9 +5234,23 @@ $("adMcpAdd").addEventListener("click", addAgentMcp);
 $("openDirectory").addEventListener("click", openDirectory);
 $("tbSave").addEventListener("click", tbSaveBot);
 $("tbChartGo").addEventListener("click", tbMountMainChart);
-// พิมพ์สัญลักษณ์ในฟอร์มสร้างบอท → เติมให้ช่องกราฟอัตโนมัติ
-$("tbSymbol").addEventListener("input", () => { $("tbChartInput").value = tvSymbol($("tbExchange").value, $("tbSymbol").value); });
-$("tbExchange").addEventListener("change", () => { $("tbChartInput").value = tvSymbol($("tbExchange").value, $("tbSymbol").value); });
+// เลือกคู่เทรดในฟอร์มสร้างบอท → ตั้งกราฟให้ตรงกันอัตโนมัติ
+function tbSetChart(fullSym){
+  const sel = $("tbChartSel");
+  const has = [...sel.options].some(o => o.value === fullSym);
+  if (has){ sel.value = fullSym; $("tbChartCustomWrap").style.display = "none"; }
+  else { sel.value = "__custom__"; $("tbChartCustom").value = fullSym; $("tbChartCustomWrap").style.display = "flex"; }
+}
+function tbSyncChartFromBot(){ tbSetChart(tvSymbol($("tbExchange").value, tbSymbolValue())); }
+$("tbSymbol").addEventListener("change", () => {
+  $("tbSymbolCustomWrap").style.display = ($("tbSymbol").value === "__custom__") ? "flex" : "none";
+  tbSyncChartFromBot();
+});
+$("tbSymbolCustom").addEventListener("input", tbSyncChartFromBot);
+$("tbExchange").addEventListener("change", tbSyncChartFromBot);
+$("tbChartSel").addEventListener("change", () => {
+  $("tbChartCustomWrap").style.display = ($("tbChartSel").value === "__custom__") ? "flex" : "none";
+});
 $("tbAi").addEventListener("click", tbAiStrategy);
 $("cfRun").addEventListener("click", cfRun);
 $("cfCancel").addEventListener("click", () => { if (cfAbort) cfAbort.abort(); $("cfProducing").hidden = true; });
