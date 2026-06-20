@@ -2827,6 +2827,24 @@ async def ads_account_delete(p: dict) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/ads/account/refresh")
+async def ads_account_refresh(p: dict) -> dict:
+    """Fetch the real ad-account name from Meta and store it as the label."""
+    acc = db.ads_get_account(int(p.get("id")))
+    if not acc:
+        return {"error": "ไม่พบบัญชี"}
+    try:
+        info = await __import__("asyncio").to_thread(ads.meta_account_info, acc["token"], acc["ad_account_id"])
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    name = (info.get("name") or "").strip()
+    if not name:
+        return {"error": "ดึงชื่อไม่ได้ (token หมดอายุ/ไม่มีสิทธิ์)"}
+    label = f"{name} · {info['business']}" if info.get("business") else name
+    db.ads_set_account_label(acc["id"], label)
+    return {"ok": True, "label": label, "info": info}
+
+
 # --- Ads Autopilot: A = manage budget within cap · B = auto-create campaign ---
 _AUTOPILOT_MANAGE_PROMPT = (
     "คุณคือผู้จัดการโฆษณาอัตโนมัติ จัดสรรงบรายวันใหม่ภายใต้ 'เพดานงบรวม/วัน' ที่กำหนด "

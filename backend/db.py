@@ -1395,6 +1395,10 @@ def ads_set_autopilot(aid, config: dict) -> None:
     with _conn() as c:
         c.execute("UPDATE ads_accounts SET autopilot=? WHERE id=?", (_json.dumps(config), aid))
 
+def ads_set_account_label(aid, label: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE ads_accounts SET label=? WHERE id=?", (label, aid))
+
 def ads_count_accounts(platform) -> int:
     with _conn() as c:
         return c.execute("SELECT COUNT(*) FROM ads_accounts WHERE platform=?", (platform,)).fetchone()[0]

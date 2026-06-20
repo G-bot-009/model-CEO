@@ -88,6 +88,14 @@ def meta_campaigns(token: str, ad_account_id: str, date_preset: str = "last_7d")
     return out
 
 
+def meta_account_info(token: str, ad_account_id: str) -> dict:
+    """Real ad account name + business + status (for displaying which account is connected)."""
+    acct = _acct(ad_account_id)
+    d = _get(f"{GRAPH}/{acct}?fields=name,account_status,currency,business{{name}}&access_token={token}")
+    return {"name": d.get("name", ""), "business": (d.get("business") or {}).get("name", ""),
+            "currency": d.get("currency", ""), "status": d.get("account_status", "")}
+
+
 def meta_pause(token: str, campaign_id: str) -> dict:
     return _post(f"{GRAPH}/{campaign_id}", {"status": "PAUSED", "access_token": token})
 
