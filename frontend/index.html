@@ -3036,7 +3036,22 @@ async function loadJarvis(){
   }).join("");
   $("jarvisTools").querySelectorAll("[data-jtool]").forEach(el => el.onclick = () => openConnect(el.dataset.jtool, loadJarvis));
 }
+/* Mobile (esp. iOS) blocks speech that isn't started by a user tap.
+   "Prime" the engine inside the first gesture so later auto-speech is allowed. */
+let _ttsPrimed = false;
+function primeTTS(){
+  if (_ttsPrimed || !("speechSynthesis" in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0; speechSynthesis.speak(u);
+    _ttsPrimed = true;
+    if (!_jarvisVoice) _jarvisVoice = pickJarvisVoice();
+  } catch(e){}
+}
+document.addEventListener("touchend", primeTTS, { once:true, passive:true });
+document.addEventListener("click", primeTTS, { once:true });
 function jarvisSend(goal){
+  primeTTS();   // ปลดล็อกเสียงตอนแตะส่ง (มือถือ)
   goal = (goal != null ? goal : $("jarvisGoal").value).trim();
   if (!goal || ws.readyState !== WebSocket.OPEN) return;
   jarvisRaw = ""; $("jarvisOut").innerHTML = "⏳ Jarvis กำลังทำงาน…";
@@ -3074,7 +3089,9 @@ function jarvisSpeakText(text){
     u.rate = 1.05;     // พูดคล่อง ไม่ช้า
     u.pitch = 0.75;    // โทนต่ำ = เสียงผู้ชาย
     u.volume = 1;
-    speechSynthesis.cancel(); speechSynthesis.speak(u);
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+    try { speechSynthesis.resume(); } catch(e){}   // iOS sometimes starts paused
   } catch(e){}
 }
 function jarvisToggleVoice(){
