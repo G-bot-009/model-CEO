@@ -180,6 +180,43 @@ def meta_list_audiences(token: str, ad_account_id: str) -> list:
     return d.get("data", [])
 
 
+# --- Facebook Page management (Auto Post) -----------------------------------
+def meta_get_pages(user_token: str) -> list:
+    """Pages the user manages, each with its own Page Access Token."""
+    d = _get(f"{GRAPH}/me/accounts?fields=name,access_token,id&limit=100&access_token={user_token}")
+    return d.get("data", [])
+
+
+def meta_page_post(page_token: str, page_id: str, message: str, link: str = "") -> dict:
+    data = {"message": message or "", "access_token": page_token}
+    if link:
+        data["link"] = link
+    return _post(f"{GRAPH}/{page_id}/feed", data)
+
+
+def meta_page_photo(page_token: str, page_id: str, image_b64: str, message: str) -> dict:
+    # post a photo with caption (image as base64 bytes)
+    return _post(f"{GRAPH}/{page_id}/photos",
+                 {"caption": message or "", "source_bytes": image_b64, "access_token": page_token})
+
+
+def meta_page_recent_comments(page_token: str, page_id: str, limit: int = 5) -> list:
+    """Recent posts + their unanswered comments (for AI auto-reply)."""
+    posts = _get(f"{GRAPH}/{page_id}/posts?fields=message,created_time,"
+                 f"comments.limit(10){{id,message,from,created_time}}&limit={limit}&access_token={page_token}")
+    out = []
+    for p in posts.get("data", []):
+        for c in (p.get("comments", {}).get("data", []) or []):
+            out.append({"post_id": p.get("id"), "post_msg": (p.get("message") or "")[:80],
+                        "comment_id": c.get("id"), "text": c.get("message", ""),
+                        "from": (c.get("from") or {}).get("name", "")})
+    return out
+
+
+def meta_reply_comment(page_token: str, comment_id: str, message: str) -> dict:
+    return _post(f"{GRAPH}/{comment_id}/comments", {"message": message, "access_token": page_token})
+
+
 def meta_ad_library(token: str, search_terms: str, countries=None,
                     ad_type: str = "ALL", limit: int = 24) -> list:
     """Search the public Ad Library (ads_archive). Note: Meta returns full data

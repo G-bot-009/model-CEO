@@ -214,6 +214,7 @@ async def _startup() -> None:
     asyncio.create_task(_trading_loop())        # ticks active trading bots
     asyncio.create_task(_content_loop())        # autonomous content factory
     asyncio.create_task(_ads_autopilot_loop())  # daily ads autopilot + kill-switch
+    asyncio.create_task(_fb_autoreply_loop())   # auto-reply page comments
 
 
 LOGIN_USER = os.getenv("LOGIN_USER", "admin")
@@ -1011,10 +1012,21 @@ async def _send_to_connector(name: str, cfg_raw: str, text: str) -> dict:
         elif name == "Discord":
             r = await client.post(cfg, json={"content": text})
         elif name == "Telegram":
-            tok, chat = data.get("bot_token", ""), data.get("chat_id", "")
+            tok, chat = data.get("bot_token", ""), str(data.get("chat_id", "")).strip()
             if not tok or not chat:
                 return {"error": "ต้องมี Bot Token และ Chat ID — เชื่อมใหม่"}
             r = await client.post(f"https://api.telegram.org/bot{tok}/sendMessage", json={"chat_id": chat, "text": text})
+            if r.status_code >= 400:
+                low = r.text.lower()
+                if "can't send messages to the bot" in low or "chat not found" in low:
+                    return {"error": ("Chat ID ไม่ถูกต้อง — คุณกรอก ID ของ \"บอท\" เอง บอทส่งหาตัวเองไม่ได้\n"
+                                      "วิธีแก้: 1) เปิดแชตกับบอทของคุณใน Telegram แล้วกด Start (พิมพ์ /start)\n"
+                                      "2) เอา Chat ID ของ \"คุณ\" (ไม่ใช่ของบอท) — ทักไปที่ @userinfobot จะได้ตัวเลข ID\n"
+                                      "3) ถ้าจะส่งเข้ากลุ่ม: เพิ่มบอทเข้ากลุ่มก่อน แล้วใช้ Chat ID ของกลุ่ม (ขึ้นต้นด้วย -)")}
+                if "bot was blocked" in low:
+                    return {"error": "คุณบล็อกบอทอยู่ — เปิดแชตกับบอทแล้วกดปลดบล็อก/Start ใหม่"}
+                if "unauthorized" in low:
+                    return {"error": "Bot Token ไม่ถูกต้อง — คัดลอกใหม่จาก @BotFather"}
         elif name == "Webhook → Make/Zapier":
             r = await client.post(cfg, json={"title": "ToonOffice", "text": text, "caption": text, "imageUrl": "", "mediaUrl": ""})
         elif name == "LINE OA":
@@ -2669,17 +2681,22 @@ async def ads_fb_oauth_status(request: Request) -> dict:
 
 
 @app.get("/oauth-ads/facebook/start")
-async def fb_ads_oauth_start(request: Request, slot: str = ""):
+async def fb_ads_oauth_start(request: Request, slot: str = "", kind: str = "ads"):
     """Implicit flow (response_type=token): token returns in the URL fragment so
-    NO App Secret is needed — only App ID. Opens facebook.com (not blocked by ad blockers)."""
+    NO App Secret is needed — only App ID. kind=ads → ad accounts · kind=pages → page management."""
     from urllib.parse import urlencode
     app_id, _ = _fb_ads_creds()
     if not app_id:
         return HTMLResponse("<h3>ยังไม่ได้ใส่ App ID — ปิดหน้าต่างแล้วกรอกก่อน</h3>", status_code=400)
+    if kind == "pages":
+        scope = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_engagement,pages_manage_metadata"
+        state = "pages|x"
+    else:
+        scope = "ads_management,ads_read"
+        state = (slot or "") + "|x"
     params = {"response_type": "token", "client_id": app_id,
               "redirect_uri": _public_base(request) + "/oauth-ads/facebook/callback",
-              "scope": "ads_management,ads_read", "state": (slot or "") + "|x",
-              "auth_type": "reauthenticate"}
+              "scope": scope, "state": state, "auth_type": "reauthenticate"}
     return RedirectResponse("https://www.facebook.com/v19.0/dialog/oauth?" + urlencode(params))
 
 
@@ -2717,6 +2734,13 @@ async def fb_ads_oauth_callback():
   var m = document.getElementById('m'), pick = document.getElementById('pick');
   function done(t){ m.textContent=t; try{ if(window.opener) window.opener.postMessage('goffice-ads-connected','*'); }catch(e){} setTimeout(function(){ try{window.close();}catch(e){} },1800); }
   if(!token){ m.textContent='❌ ไม่ได้รับสิทธิ์ / ยกเลิก — ปิดหน้าต่างแล้วลองใหม่'; return; }
+  if(state.indexOf('pages')===0){
+    fetch('/api/fb/pages-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})})
+     .then(function(r){return r.json();}).then(function(d){
+       done(d.error?('❌ '+d.error):('✅ เชื่อมเพจ '+(d.count||0)+' เพจแล้ว — ปิดหน้าต่างนี้'));
+     }).catch(function(){ m.textContent='❌ เชื่อมเพจไม่สำเร็จ'; });
+    return;
+  }
   fetch('/api/ads/fb-sdk-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,slot:slot})})
    .then(function(r){return r.json();}).then(function(d){
      if(d.error){ m.textContent='❌ '+d.error; return; }
@@ -3078,6 +3102,135 @@ async def ads_library_imitate(p: dict) -> dict:
     except Exception as exc:
         return {"error": _friendly_err(exc)}
     return {"ok": True, "result": txt}
+
+
+# ============================== Auto Post Facebook (Pages) ===================
+@app.post("/api/fb/pages-connect")
+async def fb_pages_connect(p: dict) -> dict:
+    import asyncio
+    token = (p.get("token") or "").strip()
+    if not token:
+        return {"error": "ไม่ได้รับ token"}
+    try:
+        pages = await asyncio.to_thread(ads.meta_get_pages, token)
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    if not pages:
+        return {"error": "ไม่พบเพจที่คุณจัดการ (หรือยังไม่ได้ให้สิทธิ์เพจ)"}
+    for pg in pages:
+        if pg.get("id") and pg.get("access_token"):
+            db.fb_page_upsert(pg["id"], pg.get("name", ""), pg["access_token"])
+    return {"ok": True, "count": len(pages)}
+
+
+@app.get("/api/fb/pages")
+async def fb_pages() -> dict:
+    return {"pages": [{"page_id": p["page_id"], "name": p["name"],
+                       "autoreply": bool(p.get("autoreply"))} for p in db.fb_pages_list()]}
+
+
+@app.post("/api/fb/page/delete")
+async def fb_page_delete(p: dict) -> dict:
+    db.fb_page_delete(p.get("page_id"))
+    return {"ok": True}
+
+
+@app.post("/api/fb/post")
+async def fb_post(p: dict) -> dict:
+    import asyncio
+    pg = db.fb_page_get(p.get("page_id"))
+    if not pg:
+        return {"error": "ไม่พบเพจ"}
+    msg = (p.get("message") or "").strip()
+    if not msg:
+        return {"error": "ใส่ข้อความโพสต์ก่อน"}
+    try:
+        res = await asyncio.to_thread(ads.meta_page_post, pg["token"], pg["page_id"], msg, (p.get("link") or "").strip())
+    except Exception as exc:
+        return {"error": "โพสต์ไม่สำเร็จ: " + _friendly_err(exc)}
+    return {"ok": True, "message": "โพสต์ขึ้นเพจแล้ว ✅", "id": res.get("id") or res.get("post_id")}
+
+
+@app.post("/api/fb/write-post")
+async def fb_write_post(p: dict) -> dict:
+    """AI เขียนแคปชั่นโพสต์จากหัวข้อ."""
+    topic = (p.get("topic") or "").strip()
+    if not topic:
+        return {"error": "ใส่หัวข้อก่อน"}
+    try:
+        txt = await _claude_text("content", model_for_agent("content"),
+                                 f"เขียนแคปชั่นโพสต์ Facebook ภาษาไทย น่าสนใจ มี emoji + แฮชแท็ก สำหรับ: {topic}", 600)
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    return {"ok": True, "caption": txt.strip()}
+
+
+@app.post("/api/fb/comments")
+async def fb_comments(p: dict) -> dict:
+    import asyncio
+    pg = db.fb_page_get(p.get("page_id"))
+    if not pg:
+        return {"error": "ไม่พบเพจ", "comments": []}
+    try:
+        cs = await asyncio.to_thread(ads.meta_page_recent_comments, pg["token"], pg["page_id"])
+    except Exception as exc:
+        return {"error": _friendly_err(exc), "comments": []}
+    return {"comments": cs}
+
+
+@app.post("/api/fb/comment-reply")
+async def fb_comment_reply(p: dict) -> dict:
+    import asyncio
+    pg = db.fb_page_get(p.get("page_id"))
+    if not pg:
+        return {"error": "ไม่พบเพจ"}
+    cid = (p.get("comment_id") or "").strip()
+    reply = (p.get("reply") or "").strip()
+    if not reply:                            # ให้ AI ร่างถ้าไม่ส่งมา
+        try:
+            reply = (await _ai_reply(p.get("text") or "")).strip() or "ขอบคุณที่สนใจค่ะ 🙏"
+        except Exception:
+            reply = "ขอบคุณที่สนใจค่ะ 🙏"
+    try:
+        await asyncio.to_thread(ads.meta_reply_comment, pg["token"], cid, reply)
+    except Exception as exc:
+        return {"error": "ตอบไม่สำเร็จ: " + _friendly_err(exc)}
+    return {"ok": True, "reply": reply}
+
+
+@app.post("/api/fb/page/autoreply")
+async def fb_page_autoreply(p: dict) -> dict:
+    db.fb_page_set_autoreply(p.get("page_id"), bool(p.get("on")))
+    return {"ok": True}
+
+
+async def _fb_autoreply_loop() -> None:
+    """Auto-reply new comments on pages that turned autoreply on."""
+    import asyncio
+    await asyncio.sleep(90)
+    seen = set()
+    while True:
+        try:
+            for pg in db.fb_pages_list():
+                if not pg.get("autoreply"):
+                    continue
+                try:
+                    cs = await asyncio.to_thread(ads.meta_page_recent_comments, pg["token"], pg["page_id"])
+                except Exception:
+                    continue
+                for c in cs:
+                    cid = c.get("comment_id")
+                    if not cid or cid in seen:
+                        continue
+                    seen.add(cid)
+                    try:
+                        reply = (await _ai_reply(c.get("text") or "")).strip() or "ขอบคุณที่สนใจค่ะ 🙏"
+                        await asyncio.to_thread(ads.meta_reply_comment, pg["token"], cid, reply)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        await asyncio.sleep(300)     # check every 5 min
 
 
 @app.get("/api/ads/audiences")

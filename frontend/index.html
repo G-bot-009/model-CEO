@@ -424,6 +424,7 @@
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
       <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
       <div class="menu-item" data-view="adlibrary"><span class="ico">🔎</span><span class="label">Ad Library</span></div>
+      <div class="menu-item" data-view="autopost"><span class="ico">📲</span><span class="label">Auto Post Facebook</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="guide"><span class="ico">📖</span><span class="label">คู่มือใช้งาน</span></div>
@@ -618,6 +619,41 @@
         <div class="card" style="padding:14px"><div id="tasksBody" style="display:flex; flex-direction:column; gap:10px;"></div></div>
       </section>
 
+      <!-- AUTO POST FACEBOOK -->
+      <section class="view" id="view-autopost">
+        <div class="panel" style="background:linear-gradient(135deg,#1877F2,#0c4a9e);border:none">
+          <h3 style="color:#fff;margin:0">📲 Auto Post Facebook (เพจ)</h3>
+          <p style="color:#dbeafe;font-size:13px;margin:8px 0 0">โพสต์ลงเพจ + อ่าน/ตอบคอมเมนต์อัตโนมัติ (AI) — ใช้กับเพจที่คุณเป็นแอดมิน</p>
+        </div>
+        <div class="panel"><h3>🔗 เชื่อมเพจ Facebook</h3>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 8px">ล็อกอิน + อนุญาตสิทธิ์จัดการเพจ → ระบบดึงเพจที่คุณดูแลมา (ใช้ App ID เดียวกับ Ads)</p>
+          <button class="qbtn" id="apFbLogin" style="font-weight:700;background:#1877F2;color:#fff;border-color:#1877F2">🔵 เชื่อมเพจด้วย Facebook</button>
+          <div id="apPageList" style="display:flex;flex-direction:column;gap:8px;margin-top:10px"></div>
+        </div>
+        <div class="panel"><h3>✍️ โพสต์ลงเพจ</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <select id="apPageSel" class="numfld" style="min-width:180px;margin:0"></select>
+            <input id="apTopic" class="numfld" style="flex:1;min-width:160px;margin:0" placeholder="หัวข้อ (ให้ AI เขียนแคปชั่น)">
+            <button class="qbtn" id="apWrite" style="font-weight:700">✨ ให้ AI เขียน</button>
+          </div>
+          <textarea id="apMsg" class="numfld" style="width:100%;min-height:90px;margin:0 0 8px" placeholder="ข้อความโพสต์..."></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input id="apLink" class="numfld" style="flex:1;min-width:180px;margin:0" placeholder="ลิงก์แนบ (ไม่บังคับ)">
+            <button class="send" id="apPost" style="padding:10px 22px">📤 โพสต์ขึ้นเพจ</button>
+          </div>
+        </div>
+        <div class="panel"><h3>💬 คอมเมนต์ + ตอบอัตโนมัติ</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <button class="qbtn" id="apLoadComments" style="font-weight:700">🔄 โหลดคอมเมนต์ล่าสุด</button>
+            <label style="display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px"><input type="checkbox" id="apAutoReply" style="width:16px;height:16px"> ตอบคอมเมนต์อัตโนมัติ (AI ทุก 5 นาที)</label>
+          </div>
+          <div id="apComments" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+        <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
+          <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ <b>โพสต์/คอมเมนต์เพจ</b> ใช้ได้กับเพจของคุณเองในโหมดพัฒนา · ให้คนอื่น/ลูกค้าใช้ต้องผ่าน App Review (pages_manage_posts) · <b>ตอบแชต Messenger/IG</b> และ <b>IG/TikTok/YouTube</b> ต้องตั้งค่า webhook + สิทธิ์เพิ่ม (ยังไม่รวมในนี้)</p>
+        </div>
+      </section>
+
       <!-- AD LIBRARY -->
       <section class="view" id="view-adlibrary">
         <div class="panel" style="background:linear-gradient(135deg,#0ea5e9,#2563eb);border:none">
@@ -625,13 +661,25 @@
           <p style="color:#e0f2fe;font-size:13px;margin:8px 0 0">ค้นโฆษณาที่กำลังรันในคลังโฆษณา Facebook → เปรียบเทียบ + ให้ AI วิเคราะห์และเขียนเลียนแบบเป็นของคุณ</p>
         </div>
         <div class="panel">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
+            <div>
+              <label style="font-size:12px;color:#64748b;font-weight:700;display:block;margin-bottom:4px">ประเทศ</label>
+              <select id="alCountry" class="numfld" style="width:100%;margin:0"></select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:#64748b;font-weight:700;display:block;margin-bottom:4px">หมวดหมู่โฆษณา</label>
+              <select id="alAdType" class="numfld" style="width:100%;margin:0">
+                <option value="ALL">โฆษณาทั้งหมด</option>
+                <option value="POLITICAL_AND_ISSUE_ADS">ประเด็นปัญหา การเลือกตั้ง หรือการเมือง</option>
+              </select>
+            </div>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input id="alQuery" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="คำค้น เช่น ชื่อแบรนด์/สินค้า/คู่แข่ง">
-            <input id="alCountry" class="numfld" style="width:90px;margin:0" value="TH" title="ประเทศ">
+            <input id="alQuery" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="🔍 คำค้น เช่น ชื่อแบรนด์/สินค้า/คู่แข่ง หรือคำหลัก">
             <button class="send" id="alGo" style="padding:10px 20px">🔎 ค้นหา</button>
           </div>
           <input id="alBrief" class="numfld" style="width:100%;margin:8px 0 0" placeholder="โจทย์ธุรกิจของคุณ (ให้ AI เขียนเลียนแบบ) เช่น บ้านพูลวิลล่า หัวหิน">
-          <div style="font-size:11px;color:#64748b;margin-top:6px">⚠️ Meta คืนโฆษณาการเมือง/ประเด็นสังคมได้เต็ม · โฆษณาทั่วไปบางประเทศจำกัด อาจได้น้อย/ว่าง · ต้องเชื่อมบัญชี Facebook ก่อน (ใช้ token ค้น)</div>
+          <div style="font-size:11px;color:#64748b;margin-top:6px">⚠️ Meta คืนโฆษณาหมวด “ประเด็นปัญหา การเลือกตั้ง หรือการเมือง” ได้เต็ม · โฆษณาทั่วไปบางประเทศจำกัด อาจได้น้อย/ว่าง · ต้องเชื่อมบัญชี Facebook ก่อน (ใช้ token ค้น)</div>
         </div>
         <div id="alResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
       </section>
@@ -4008,6 +4056,7 @@ function showView(v) {
   if (v === "bio") loadBio();
   if (v === "ads") loadAds();
   if (v === "adlibrary") loadAdLibrary();
+  if (v === "autopost") loadAutoPost();
   if (v === "projects") loadProjects();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
@@ -4018,13 +4067,95 @@ function showView(v) {
   const cb = $("chatbar"); if (cb) cb.style.display = (v === "dashboard" || v === "console" || v === "jarvis") ? "" : "none";
 }
 
+/* ---------- Auto Post Facebook (เพจ) ---------- */
+async function loadAutoPost(){
+  let d; try { d = await (await fetch("/api/fb/pages")).json(); } catch(e){ return; }
+  const pages = d.pages || [];
+  $("apPageList").innerHTML = pages.length ? pages.map(p => `
+    <div class="wf-row" style="justify-content:space-between;align-items:center;gap:10px">
+      <div><b style="color:#fff">📘 ${escapeHtml(p.name)}</b> <span class="tag" style="background:#064e3b;color:#6ee7b7">เชื่อมแล้ว</span></div>
+      <button class="qbtn ap-pg-del" data-id="${p.page_id}" style="color:#f87171">🗑️</button>
+    </div>`).join("") : '<div style="color:#64748b">ยังไม่มีเพจ — กดปุ่ม “เชื่อมเพจด้วย Facebook” ด้านบน</div>';
+  $("apPageList").querySelectorAll(".ap-pg-del").forEach(x => x.onclick = async () => { await postJSON("/api/fb/page/delete",{page_id:x.dataset.id}); loadAutoPost(); });
+  $("apPageSel").innerHTML = pages.map(p => `<option value="${p.page_id}">${escapeHtml(p.name)}</option>`).join("") || '<option value="">— ยังไม่มีเพจ —</option>';
+  const cur = pages.find(p => p.page_id === $("apPageSel").value) || pages[0];
+  if (cur) $("apAutoReply").checked = !!cur.autoreply;
+}
+$("apFbLogin").addEventListener("click", async () => {
+  let s; try { s = (await (await fetch("/api/ads/fb-appid")).json()); } catch(e){ s={}; }
+  if (!s.app_id){ toastNote("ยังไม่ได้ตั้ง App ID — ไปตั้งที่เมนู Ads Manager (เชื่อม Facebook) ก่อน","#f59e0b"); return; }
+  const w = window.open("/oauth-ads/facebook/start?kind=pages","_blank","width=600,height=760");
+  if (!w) toastNote("เบราว์เซอร์บล็อก popup — อนุญาต popup ของ iamceo.ai","#f59e0b");
+  else toastNote("เปิดหน้า Facebook — อนุญาตสิทธิ์เพจ แล้วรีเฟรชหน้านี้","#1877F2");
+});
+$("apWrite").addEventListener("click", async () => {
+  const t = $("apTopic").value.trim(); if (!t){ toastNote("ใส่หัวข้อก่อน","#f59e0b"); return; }
+  const b=$("apWrite"),o=b.textContent; b.disabled=true; b.textContent="⏳…";
+  const r = await postJSON("/api/fb/write-post",{topic:t});
+  b.disabled=false; b.textContent=o;
+  if (r.error){ toastNote(r.error,"#f59e0b"); return; }
+  $("apMsg").value = r.caption;
+});
+$("apPost").addEventListener("click", async () => {
+  const pid = $("apPageSel").value; if (!pid){ toastNote("เลือกเพจก่อน (เชื่อมเพจ)","#f59e0b"); return; }
+  const b=$("apPost"),o=b.textContent; b.disabled=true; b.textContent="⏳ โพสต์…";
+  const r = await postJSON("/api/fb/post",{page_id:pid, message:$("apMsg").value.trim(), link:$("apLink").value.trim()});
+  b.disabled=false; b.textContent=o;
+  if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
+  toastNote("✅ "+r.message,"#22c55e"); $("apMsg").value=""; $("apLink").value="";
+});
+$("apLoadComments").addEventListener("click", async () => {
+  const pid = $("apPageSel").value; if (!pid){ toastNote("เลือกเพจก่อน","#f59e0b"); return; }
+  const box=$("apComments"); box.innerHTML='<div style="color:#64748b">⏳ กำลังโหลด…</div>';
+  const r = await postJSON("/api/fb/comments",{page_id:pid});
+  if (r.error){ box.innerHTML=`<div style="color:#f59e0b">${escapeHtml(r.error)}</div>`; return; }
+  if (!(r.comments||[]).length){ box.innerHTML='<div style="color:#64748b">ยังไม่มีคอมเมนต์</div>'; return; }
+  box.innerHTML = r.comments.map((c,i) => `
+    <div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="font-size:12px;color:#64748b">บนโพสต์: ${escapeHtml(c.post_msg||"")}</div>
+      <div><b style="color:#c7d2fe">${escapeHtml(c.from||"ลูกค้า")}:</b> <span style="color:#cbd5e1">${escapeHtml(c.text||"")}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input class="numfld ap-rep" data-cid="${c.comment_id}" data-i="${i}" style="flex:1;min-width:180px;margin:0;padding:7px 9px" placeholder="พิมพ์คำตอบ หรือเว้นว่างให้ AI ตอบ">
+        <button class="qbtn ap-reply" data-cid="${c.comment_id}" data-i="${i}" data-pid="${pid}" style="font-weight:700">↩ ตอบ</button>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll(".ap-reply").forEach(btn => btn.onclick = async () => {
+    const inp = box.querySelector(`.ap-rep[data-cid="${btn.dataset.cid}"]`);
+    const o=btn.textContent; btn.disabled=true; btn.textContent="⏳…";
+    const r2 = await postJSON("/api/fb/comment-reply",{page_id:btn.dataset.pid, comment_id:btn.dataset.cid, reply:inp.value.trim(), text:r.comments[+btn.dataset.i].text});
+    btn.disabled=false; btn.textContent=o;
+    toastNote(r2.error?("❌ "+r2.error):("✅ ตอบแล้ว: "+r2.reply), r2.error?"#f59e0b":"#22c55e");
+  });
+});
+$("apAutoReply").addEventListener("change", async (e) => {
+  const pid = $("apPageSel").value; if (!pid){ e.target.checked=false; toastNote("เลือกเพจก่อน","#f59e0b"); return; }
+  await postJSON("/api/fb/page/autoreply",{page_id:pid, on:e.target.checked});
+  toastNote(e.target.checked?"เปิดตอบคอมเมนต์อัตโนมัติแล้ว ✅":"ปิดแล้ว","#22c55e");
+});
+
 /* ---------- Ad Library (สอดส่องคู่แข่ง) ---------- */
-function loadAdLibrary(){ /* static page — search on demand */ }
+const AL_COUNTRIES = [
+  ["TH","ไทย"],["US","สหรัฐอเมริกา"],["GB","สหราชอาณาจักร"],["SG","สิงคโปร์"],
+  ["MY","มาเลเซีย"],["ID","อินโดนีเซีย"],["VN","เวียดนาม"],["PH","ฟิลิปปินส์"],
+  ["JP","ญี่ปุ่น"],["KR","เกาหลีใต้"],["CN","จีน"],["TW","ไต้หวัน"],["HK","ฮ่องกง"],
+  ["IN","อินเดีย"],["AU","ออสเตรเลีย"],["NZ","นิวซีแลนด์"],["DE","เยอรมนี"],
+  ["FR","ฝรั่งเศส"],["IT","อิตาลี"],["ES","สเปน"],["NL","เนเธอร์แลนด์"],
+  ["CA","แคนาดา"],["BR","บราซิล"],["MX","เม็กซิโก"],["AE","สหรัฐอาหรับเอมิเรตส์"],
+  ["SA","ซาอุดีอาระเบีย"],["ZA","แอฟริกาใต้"],["GR","กรีซ"],["GL","กรีนแลนด์"],
+];
+let _alCountriesReady = false;
+function loadAdLibrary(){
+  if (_alCountriesReady) return;
+  const sel = $("alCountry"); if (!sel) return;
+  sel.innerHTML = AL_COUNTRIES.map(([c,n]) => `<option value="${c}">${n}</option>`).join("");
+  sel.value = "TH";
+  _alCountriesReady = true;
+}
 async function alSearch(){
   const q = $("alQuery").value.trim();
   if (!q){ toastNote("ใส่คำค้นก่อน","#f59e0b"); return; }
   const b=$("alGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ ค้นหา…";
-  const r = await postJSON("/api/ads/library/search", { query:q, country:$("alCountry").value.trim()||"TH" });
+  const r = await postJSON("/api/ads/library/search", { query:q, country:($("alCountry").value||"TH"), ad_type:($("alAdType").value||"ALL") });
   b.disabled=false; b.textContent=o;
   const box = $("alResults");
   if (r.error){ box.innerHTML = `<div style="color:#f59e0b;grid-column:1/-1">${escapeHtml(r.error)}</div>`; return; }

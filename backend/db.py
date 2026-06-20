@@ -226,6 +226,10 @@ def init() -> None:
                 prompt TEXT, provider TEXT, model TEXT,
                 mime TEXT, image_ref TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS fb_pages (
+                page_id TEXT PRIMARY KEY, name TEXT, token TEXT,
+                autoreply INTEGER DEFAULT 0, last_seen TEXT, created_at TEXT
+            );
             """
         )
         # migrate older DBs that predate the skills columns
@@ -1471,3 +1475,32 @@ def image_list(limit=40) -> list[dict]:
 def image_delete(tid) -> None:
     with _conn() as c:
         c.execute("DELETE FROM image_tracks WHERE id=?", (tid,))
+
+
+# --- Facebook Pages (Auto Post) ---------------------------------------------
+def fb_page_upsert(page_id, name, token) -> None:
+    with _conn() as c:
+        c.execute("INSERT INTO fb_pages (page_id, name, token, created_at) VALUES (?,?,?,?) "
+                  "ON CONFLICT(page_id) DO UPDATE SET name=excluded.name, token=excluded.token",
+                  (page_id, name, token, _now()))
+
+def fb_pages_list() -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM fb_pages ORDER BY rowid").fetchall()]
+
+def fb_page_get(page_id) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM fb_pages WHERE page_id=?", (page_id,)).fetchone()
+    return dict(r) if r else None
+
+def fb_page_delete(page_id) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM fb_pages WHERE page_id=?", (page_id,))
+
+def fb_page_set_autoreply(page_id, on: bool) -> None:
+    with _conn() as c:
+        c.execute("UPDATE fb_pages SET autoreply=? WHERE page_id=?", (1 if on else 0, page_id))
+
+def fb_page_set_seen(page_id, ts) -> None:
+    with _conn() as c:
+        c.execute("UPDATE fb_pages SET last_seen=? WHERE page_id=?", (ts, page_id))
