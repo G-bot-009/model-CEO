@@ -2669,15 +2669,16 @@ async def ads_fb_oauth_status(request: Request) -> dict:
 
 @app.get("/oauth-ads/facebook/start")
 async def fb_ads_oauth_start(request: Request, slot: str = ""):
+    """Implicit flow (response_type=token): token returns in the URL fragment so
+    NO App Secret is needed — only App ID. Opens facebook.com (not blocked by ad blockers)."""
     from urllib.parse import urlencode
     app_id, _ = _fb_ads_creds()
     if not app_id:
-        return HTMLResponse("<h3>ยังไม่ได้ใส่ App ID/Secret — ปิดหน้าต่างแล้วกรอกก่อน</h3>", status_code=400)
-    state = secrets.token_urlsafe(16)
-    _oauth_state[state] = ("facebook_ads", slot or "")
-    params = {"response_type": "code", "client_id": app_id,
+        return HTMLResponse("<h3>ยังไม่ได้ใส่ App ID — ปิดหน้าต่างแล้วกรอกก่อน</h3>", status_code=400)
+    params = {"response_type": "token", "client_id": app_id,
               "redirect_uri": _public_base(request) + "/oauth-ads/facebook/callback",
-              "scope": "ads_management,ads_read", "state": state, "auth_type": "reauthenticate"}
+              "scope": "ads_management,ads_read", "state": (slot or "") + "|x",
+              "auth_type": "reauthenticate"}
     return RedirectResponse("https://www.facebook.com/v19.0/dialog/oauth?" + urlencode(params))
 
 
@@ -2700,51 +2701,34 @@ def _fb_ads_assign(slot: str, token: str, acc: dict) -> str:
 
 
 @app.get("/oauth-ads/facebook/callback")
-async def fb_ads_oauth_callback(request: Request, code: str = "", state: str = ""):
-    import httpx
-    saved = _oauth_state.pop(state or "", None)
-    app_id, app_secret = _fb_ads_creds()
-    if not code or not saved or saved[0] != "facebook_ads" or not (app_id and app_secret):
-        return HTMLResponse(_ADS_PAGE + "<h3>เชื่อมไม่สำเร็จ — ปิดหน้าต่างแล้วลองใหม่</h3>", status_code=400)
-    slot = saved[1] or ""
-    redirect = _public_base(request) + "/oauth-ads/facebook/callback"
-    try:
-        async with httpx.AsyncClient(timeout=25) as c:
-            r = await c.get("https://graph.facebook.com/v19.0/oauth/access_token",
-                            params={"client_id": app_id, "client_secret": app_secret,
-                                    "redirect_uri": redirect, "code": code})
-            tok = r.json().get("access_token")
-            if not tok:
-                return HTMLResponse(_ADS_PAGE + f"<h3>ไม่ได้รับ token: {_esc(r.text[:200])}</h3>", status_code=400)
-            r2 = await c.get("https://graph.facebook.com/v19.0/oauth/access_token",
-                             params={"grant_type": "fb_exchange_token", "client_id": app_id,
-                                     "client_secret": app_secret, "fb_exchange_token": tok})
-            long_tok = r2.json().get("access_token") or tok
-            r3 = await c.get("https://graph.facebook.com/v19.0/me/adaccounts",
-                             params={"fields": "name,account_id", "access_token": long_tok, "limit": 50})
-            accts = r3.json().get("data", [])
-    except Exception as exc:
-        return HTMLResponse(_ADS_PAGE + f"<h3>เชื่อมไม่สำเร็จ: {_esc(_friendly_err(exc))}</h3>", status_code=400)
-    slot_txt = f"ตัวที่ {_esc(slot)}" if slot else "บัญชีนี้"
-    if not accts:
-        return HTMLResponse(_ADS_PAGE + f"<h2>⚠️ ไม่พบบัญชีโฆษณา</h2><p>บัญชี Facebook นี้ไม่มีสิทธิ์ ads — ปิดหน้าต่างแล้วลองบัญชีอื่น</p>"
-                            "<script>setTimeout(function(){window.close()},3000)</script>")
-    if len(accts) == 1:                      # หนึ่งบัญชี → ผูกเข้าช่องนั้นเลย (ตัวต่อตัว)
-        err = _fb_ads_assign(slot, long_tok, accts[0])
-        msg = (f"❌ {err}" if err else f"✅ เชื่อม {slot_txt} สำเร็จ — {_esc(accts[0].get('name') or '')}")
-        return HTMLResponse(_ADS_PAGE + f"<h2>{msg}</h2><p>ปิดหน้าต่างนี้แล้วกลับไป G Office (รีเฟรช)</p>"
-                            "<script>setTimeout(function(){window.close()},2500)</script>")
-    # หลายบัญชี → ให้เลือก 1 บัญชีสำหรับช่องนี้
-    pid = secrets.token_urlsafe(12)
-    _FB_ADS_PICK[pid] = {"slot": slot, "token": long_tok, "accounts": accts, "ts": time.time()}
-    rows = "".join(
-        f"<a href='/oauth-ads/facebook/pick?pid={pid}&acc={_esc(a.get('account_id'))}' "
-        "style='display:block;max-width:420px;margin:8px auto;padding:14px;background:#1e293b;"
-        "border:1px solid #334155;border-radius:10px;color:#e2e8f0;text-decoration:none;font-weight:700'>"
-        f"📘 {_esc(a.get('name') or 'Ad Account')} <span style='color:#94a3b8;font-weight:400'>· act_{_esc(a.get('account_id'))}</span></a>"
-        for a in accts)
-    return HTMLResponse(_ADS_PAGE + f"<h2>เลือกบัญชีโฆษณาสำหรับ {slot_txt}</h2>"
-                        "<p style='color:#94a3b8'>1 ช่อง = 1 บัญชี — คลิกบัญชีที่จะผูกกับช่องนี้</p>" + rows + "</body>")
+async def fb_ads_oauth_callback():
+    """Implicit-flow callback: the token is in the URL fragment (#access_token=…),
+    which the server can't read — so return a page whose JS extracts it, sends it to
+    the server to fetch ad accounts (no App Secret needed), and handles picking."""
+    return HTMLResponse(_ADS_PAGE + """
+<h2 id="m">⏳ กำลังเชื่อม…</h2><div id="pick" style="margin-top:14px"></div>
+<script>
+(function(){
+  var h = new URLSearchParams((location.hash||'').replace(/^#/,''));
+  var token = h.get('access_token'); var state = h.get('state')||''; var slot = (state.split('|')[0]||'');
+  var m = document.getElementById('m'), pick = document.getElementById('pick');
+  function done(t){ m.textContent=t; setTimeout(function(){ try{window.close();}catch(e){} },2500); }
+  if(!token){ m.textContent='❌ ไม่ได้รับสิทธิ์ / ยกเลิก — ปิดหน้าต่างแล้วลองใหม่'; return; }
+  fetch('/api/ads/fb-sdk-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,slot:slot})})
+   .then(function(r){return r.json();}).then(function(d){
+     if(d.error){ m.textContent='❌ '+d.error; return; }
+     if(d.added){ done('✅ เชื่อม '+d.added+' แล้ว — ปิดหน้าต่างนี้ กลับไปรีเฟรช G Office'); return; }
+     m.textContent='เลือกบัญชีโฆษณา 1 บัญชี สำหรับตัวที่ '+slot;
+     (d.accounts||[]).forEach(function(a){
+       var b=document.createElement('button');
+       b.textContent='📘 '+(a.name||'Ad Account')+' · act_'+a.account_id;
+       b.style.cssText='display:block;width:100%;max-width:420px;margin:8px auto;padding:12px;border-radius:10px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer;font-weight:700';
+       b.onclick=function(){ fetch('/api/ads/fb-sdk-pick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pick_id:d.pick_id,account_id:a.account_id})}).then(function(r){return r.json();}).then(function(p){ pick.innerHTML=''; done(p.error?('❌ '+p.error):('✅ เชื่อม '+(p.added||'')+' แล้ว — ปิดหน้าต่างนี้')); }); };
+       pick.appendChild(b);
+     });
+   }).catch(function(){ m.textContent='❌ เชื่อมไม่สำเร็จ ลองใหม่'; });
+})();
+</script>""")
 
 
 @app.get("/oauth-ads/facebook/pick")
