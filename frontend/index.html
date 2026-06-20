@@ -3044,10 +3044,37 @@ function jarvisSend(goal){
   $("jarvisGoal").value = "";
 }
 function jarvisStripForSpeech(s){ return (s||"").replace(/[#*`>_~|-]/g, " ").replace(/\s+/g, " ").trim(); }
+let _jarvisVoice = null;
+function pickJarvisVoice(){
+  if (!("speechSynthesis" in window)) return null;
+  const vs = speechSynthesis.getVoices() || [];
+  if (!vs.length) return null;
+  const th = vs.filter(v => /^th/i.test(v.lang));
+  const maleHints = /(niwat|male|ชาย|orson|kritsada|achara|prabhat)/i;
+  // 1) a Thai voice that looks male  2) any Thai voice (pitch lowered to sound male)
+  let pick = th.find(v => maleHints.test(v.name)) || th[0];
+  // 3) last resort: an explicit male voice in any language
+  if (!pick) pick = vs.find(v => /\bmale\b/i.test(v.name) && !/female/i.test(v.name)) || vs[0];
+  return pick;
+}
+function ensureJarvisVoice(){
+  if (!_jarvisVoice) _jarvisVoice = pickJarvisVoice();
+  return _jarvisVoice;
+}
+if ("speechSynthesis" in window){
+  speechSynthesis.onvoiceschanged = () => { _jarvisVoice = pickJarvisVoice(); };
+  try { speechSynthesis.getVoices(); } catch(e){}
+}
 function jarvisSpeakText(text){
   try { if (!("speechSynthesis" in window)) return;
     const u = new SpeechSynthesisUtterance(jarvisStripForSpeech(text).slice(0, 600));
-    u.lang = "th-TH"; u.rate = 1; speechSynthesis.cancel(); speechSynthesis.speak(u);
+    u.lang = "th-TH";
+    const v = ensureJarvisVoice();
+    if (v) u.voice = v;
+    u.rate = 1.05;     // พูดคล่อง ไม่ช้า
+    u.pitch = 0.75;    // โทนต่ำ = เสียงผู้ชาย
+    u.volume = 1;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
   } catch(e){}
 }
 function jarvisToggleVoice(){
