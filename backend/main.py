@@ -2029,6 +2029,45 @@ async def content_run(p: dict) -> dict:
         return {"error": _friendly_err(exc)}
 
 
+@app.get("/api/tts")
+async def tts(text: str = "", lang: str = "th"):
+    """Server-side text-to-speech (returns MP3). Reliable audio playback on mobile.
+    Uses the public Google Translate TTS endpoint; chunks long text to stay within limits."""
+    import httpx
+    import urllib.parse
+    from fastapi import Response
+    txt = (text or "").strip()[:900]
+    if not txt:
+        return Response(b"", media_type="audio/mpeg")
+    # split into <=180-char chunks on word boundaries
+    chunks, cur = [], ""
+    for w in txt.split(" "):
+        if len(cur) + len(w) + 1 > 180:
+            if cur:
+                chunks.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w).strip()
+    if cur:
+        chunks.append(cur)
+    audio = b""
+    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36"}
+    try:
+        async with httpx.AsyncClient(timeout=20, headers=headers, follow_redirects=True) as client:
+            for ch in chunks[:6]:
+                q = urllib.parse.urlencode({"ie": "UTF-8", "tl": lang, "client": "tw-ob", "q": ch})
+                r = await client.get("https://translate.google.com/translate_tts?" + q)
+                if r.status_code < 400 and r.content:
+                    audio += r.content
+    except Exception:
+        pass
+    if not audio:
+        # signal the client to fall back to the browser's built-in voice
+        return Response(b"", media_type="audio/mpeg", status_code=204)
+    return Response(audio, media_type="audio/mpeg",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.post("/api/content/post/approve")
 async def content_approve(p: dict) -> dict:
     db.set_planned_status(int(p.get("id")), "queued")

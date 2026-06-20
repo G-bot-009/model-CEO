@@ -3040,13 +3040,12 @@ async function loadJarvis(){
    "Prime" the engine inside the first gesture so later auto-speech is allowed. */
 let _ttsPrimed = false;
 function primeTTS(){
-  if (_ttsPrimed || !("speechSynthesis" in window)) return;
-  try {
-    const u = new SpeechSynthesisUtterance(" ");
-    u.volume = 0; speechSynthesis.speak(u);
-    _ttsPrimed = true;
-    if (!_jarvisVoice) _jarvisVoice = pickJarvisVoice();
-  } catch(e){}
+  if (_ttsPrimed) return;
+  _ttsPrimed = true;
+  // unlock the <audio> element (lets us play server MP3 later on mobile)
+  try { const a = getJAudio(); a.src = SILENT_WAV; const p = a.play(); if (p && p.catch) p.catch(()=>{}); } catch(e){}
+  // also warm up the browser speech engine as a fallback
+  try { if ("speechSynthesis" in window){ const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); if (!_jarvisVoice) _jarvisVoice = pickJarvisVoice(); } } catch(e){}
 }
 document.addEventListener("touchend", primeTTS, { once:true, passive:true });
 document.addEventListener("click", primeTTS, { once:true });
@@ -3080,15 +3079,37 @@ if ("speechSynthesis" in window){
   speechSynthesis.onvoiceschanged = () => { _jarvisVoice = pickJarvisVoice(); };
   try { speechSynthesis.getVoices(); } catch(e){}
 }
+/* Reliable mobile audio: play server-generated MP3 through one unlocked <audio>;
+   fall back to the browser's built-in voice if the server has no audio. */
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+let _jaudio = null;
+function getJAudio(){
+  if (!_jaudio){
+    _jaudio = new Audio(); _jaudio.preload = "auto";
+    try { _jaudio.preservesPitch = false; _jaudio.mozPreservesPitch = false; _jaudio.webkitPreservesPitch = false; } catch(e){}
+  }
+  return _jaudio;
+}
 function jarvisSpeakText(text){
+  const clean = jarvisStripForSpeech(text).slice(0, 900);
+  if (!clean) return;
+  const a = getJAudio();
+  let fell = false;
+  const fallback = () => { if (!fell){ fell = true; jarvisSpeakBrowser(text); } };
+  a.onerror = fallback;
+  a.onstalled = fallback;
+  a.src = "/api/tts?lang=th&text=" + encodeURIComponent(clean);
+  a.playbackRate = 0.9;   // ทุ้มลงให้เป็นผู้ชายขึ้น (preservesPitch=false)
+  const p = a.play();
+  if (p && p.catch) p.catch(fallback);
+}
+function jarvisSpeakBrowser(text){
   try { if (!("speechSynthesis" in window)) return;
     const u = new SpeechSynthesisUtterance(jarvisStripForSpeech(text).slice(0, 600));
     u.lang = "th-TH";
     const v = ensureJarvisVoice();
     if (v) u.voice = v;
-    u.rate = 1.05;     // พูดคล่อง ไม่ช้า
-    u.pitch = 0.75;    // โทนต่ำ = เสียงผู้ชาย
-    u.volume = 1;
+    u.rate = 1.05; u.pitch = 0.75; u.volume = 1;
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
     try { speechSynthesis.resume(); } catch(e){}   // iOS sometimes starts paused
