@@ -2604,6 +2604,62 @@ async def ads_fb_oauth_creds(p: dict) -> dict:
     return {"ok": True}
 
 
+@app.get("/api/ads/fb-appid")
+async def ads_fb_appid() -> dict:
+    """App ID for the JS SDK login button (App ID is not secret)."""
+    app_id, _ = _fb_ads_creds()
+    return {"app_id": app_id}
+
+
+@app.post("/api/ads/fb-sdk-connect")
+async def ads_fb_sdk_connect(p: dict) -> dict:
+    """Receive a token from the in-page FB JS SDK login → fetch ad accounts → add/pick."""
+    import httpx
+    token = (p.get("token") or "").strip()
+    slot = str(p.get("slot") or "")
+    if not token:
+        return {"error": "ไม่ได้รับ token จาก Facebook"}
+    app_id, app_secret = _fb_ads_creds()
+    long_tok = token
+    try:
+        async with httpx.AsyncClient(timeout=25) as c:
+            if app_id and app_secret:        # exchange to long-lived if we have the secret
+                r = await c.get("https://graph.facebook.com/v19.0/oauth/access_token",
+                                params={"grant_type": "fb_exchange_token", "client_id": app_id,
+                                        "client_secret": app_secret, "fb_exchange_token": token})
+                long_tok = r.json().get("access_token") or token
+            r3 = await c.get("https://graph.facebook.com/v19.0/me/adaccounts",
+                             params={"fields": "name,account_id", "access_token": long_tok, "limit": 50})
+            accts = r3.json().get("data", [])
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    if not accts:
+        return {"error": "บัญชี Facebook นี้ไม่มีสิทธิ์ ads / ไม่มีบัญชีโฆษณา"}
+    existing = {a["ad_account_id"] for a in db.ads_list_accounts("meta")}
+    fresh = [a for a in accts if a.get("account_id") and a.get("account_id") not in existing]
+    if not fresh:
+        return {"error": "บัญชีโฆษณาทั้งหมดของบัญชีนี้เชื่อมไว้แล้ว"}
+    if len(fresh) == 1:
+        err = _fb_ads_assign(slot, long_tok, fresh[0])
+        return {"error": err} if err else {"ok": True, "added": fresh[0].get("name")}
+    pid = secrets.token_urlsafe(12)
+    _FB_ADS_PICK[pid] = {"slot": slot, "token": long_tok, "accounts": fresh, "ts": time.time()}
+    return {"ok": True, "pick_id": pid,
+            "accounts": [{"name": a.get("name"), "account_id": a.get("account_id")} for a in fresh]}
+
+
+@app.post("/api/ads/fb-sdk-pick")
+async def ads_fb_sdk_pick(p: dict) -> dict:
+    d = _FB_ADS_PICK.pop(p.get("pick_id") or "", None)
+    if not d:
+        return {"error": "หมดเวลาเลือก — ล็อกอินใหม่"}
+    a = next((x for x in d["accounts"] if str(x.get("account_id")) == str(p.get("account_id"))), None)
+    if not a:
+        return {"error": "ไม่พบบัญชีที่เลือก"}
+    err = _fb_ads_assign(d["slot"], d["token"], a)
+    return {"error": err} if err else {"ok": True, "added": a.get("name")}
+
+
 @app.get("/api/ads/fb-oauth-status")
 async def ads_fb_oauth_status(request: Request) -> dict:
     app_id, app_secret = _fb_ads_creds()
