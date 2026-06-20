@@ -1650,6 +1650,11 @@ def _tick_bot(bot: dict) -> None:
                 e["text"] += f" · ⚠️ ส่งออเดอร์จริงไม่สำเร็จ: {type(exc).__name__}"
                 new_state["halted"] = True
         db.add_trade_log(bot["id"], e["kind"], e["text"], e.get("pnl", 0.0))
+    # paper mode: realized P&L flows into the demo wallet
+    if bot["mode"] == "paper":
+        realized = sum(e.get("pnl", 0.0) for e in events)
+        if realized:
+            db.paper_balance_adjust(realized)
     db.set_bot_state(bot["id"], new_state)
 
 
@@ -1667,7 +1672,40 @@ async def _trading_loop() -> None:
 
 @app.get("/api/trading/bots")
 async def trading_bots() -> dict:
-    return {"bots": db.list_bots(), "default_config": trading.DEFAULT_CONFIG}
+    return {"bots": db.list_bots(), "default_config": trading.DEFAULT_CONFIG,
+            "paper_balance": db.paper_balance_get()}
+
+
+@app.get("/api/trading/wallet")
+async def trading_wallet() -> dict:
+    # today's realized P&L summed across paper bots (for display)
+    today = trading._today()
+    pnl_today = 0.0
+    for b in db.list_bots():
+        if b["mode"] != "paper":
+            continue
+        st = b.get("state") or {}
+        if st.get("day") == today:
+            pnl_today += float(st.get("daily_pnl") or 0.0)
+    return {"balance": db.paper_balance_get(), "pnl_today": round(pnl_today, 2)}
+
+
+@app.post("/api/trading/wallet")
+async def trading_wallet_set(p: dict) -> dict:
+    action = (p.get("action") or "set").lower()
+    try:
+        amount = float(p.get("amount") or 0)
+    except Exception:
+        return {"error": "จำนวนเงินไม่ถูกต้อง"}
+    if action == "reset":
+        bal = db.paper_balance_set(db.PAPER_DEFAULT)
+    elif action == "add":
+        bal = db.paper_balance_adjust(abs(amount))
+    elif action == "sub":
+        bal = db.paper_balance_adjust(-abs(amount))
+    else:  # set
+        bal = db.paper_balance_set(amount)
+    return {"ok": True, "balance": bal}
 
 
 @app.post("/api/trading/bot")

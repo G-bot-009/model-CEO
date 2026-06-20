@@ -916,6 +916,28 @@ def set_settings(d: dict) -> None:
                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(k), str(v)))
 
 
+# --- Paper (demo) wallet ----------------------------------------------------
+PAPER_DEFAULT = 1000.0
+
+def paper_balance_get() -> float:
+    s = get_settings()
+    if "paper_balance" not in s:
+        set_settings({"paper_balance": str(PAPER_DEFAULT)})
+        return PAPER_DEFAULT
+    try:
+        return float(s.get("paper_balance"))
+    except Exception:
+        return PAPER_DEFAULT
+
+def paper_balance_set(v) -> float:
+    nv = round(max(0.0, float(v)), 2)
+    set_settings({"paper_balance": str(nv)})
+    return nv
+
+def paper_balance_adjust(delta) -> float:
+    return paper_balance_set(paper_balance_get() + float(delta))
+
+
 # --- Pause / resume (per-agent + whole company) -----------------------------
 def pause_state() -> dict:
     s = get_settings()
