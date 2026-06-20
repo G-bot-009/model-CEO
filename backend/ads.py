@@ -33,6 +33,35 @@ def _post(url: str, data: dict, timeout: int = 20) -> dict:
         return json.loads(r.read().decode())
 
 
+def _post_multipart(url: str, fields: dict, file_field: str,
+                    filename: str, file_bytes: bytes, timeout: int = 60) -> dict:
+    """POST multipart/form-data — needed for uploading raw image bytes to Graph."""
+    import uuid
+    boundary = "----GOffice" + uuid.uuid4().hex
+    parts = []
+    for k, v in fields.items():
+        parts.append(("--" + boundary).encode())
+        parts.append(f'Content-Disposition: form-data; name="{k}"'.encode())
+        parts.append(b"")
+        parts.append(str(v).encode())
+    parts.append(("--" + boundary).encode())
+    parts.append(
+        f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"'.encode())
+    parts.append(b"Content-Type: application/octet-stream")
+    parts.append(b"")
+    parts.append(file_bytes)
+    parts.append(("--" + boundary + "--").encode())
+    parts.append(b"")
+    body = b"\r\n".join(parts)
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"User-Agent": _UA,
+                 "Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+
 def _acct(ad_account_id: str) -> str:
     a = (ad_account_id or "").strip()
     return a if a.startswith("act_") else "act_" + a
@@ -194,10 +223,19 @@ def meta_page_post(page_token: str, page_id: str, message: str, link: str = "") 
     return _post(f"{GRAPH}/{page_id}/feed", data)
 
 
-def meta_page_photo(page_token: str, page_id: str, image_b64: str, message: str) -> dict:
-    # post a photo with caption (image as base64 bytes)
+def meta_page_photo(page_token: str, page_id: str, image_bytes: bytes,
+                    message: str, filename: str = "image.png") -> dict:
+    """Post a photo with caption to a page by uploading the raw image bytes (multipart)."""
+    return _post_multipart(
+        f"{GRAPH}/{page_id}/photos",
+        {"caption": message or "", "access_token": page_token, "published": "true"},
+        "source", filename, image_bytes)
+
+
+def meta_page_photo_url(page_token: str, page_id: str, image_url: str, message: str) -> dict:
+    """Post a photo by giving Facebook a publicly-reachable image URL (no upload)."""
     return _post(f"{GRAPH}/{page_id}/photos",
-                 {"caption": message or "", "source_bytes": image_b64, "access_token": page_token})
+                 {"caption": message or "", "url": image_url, "access_token": page_token})
 
 
 def meta_page_recent_comments(page_token: str, page_id: str, limit: int = 5) -> list:

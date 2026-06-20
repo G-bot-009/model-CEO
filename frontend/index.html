@@ -637,8 +637,16 @@
             <button class="qbtn" id="apWrite" style="font-weight:700">✨ ให้ AI เขียน</button>
           </div>
           <textarea id="apMsg" class="numfld" style="width:100%;min-height:90px;margin:0 0 8px" placeholder="ข้อความโพสต์..."></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <label class="qbtn" style="font-weight:700;cursor:pointer">🖼️ แนบรูปจากเครื่อง
+              <input id="apImageFile" type="file" accept="image/*" style="display:none">
+            </label>
+            <select id="apImagePick" class="numfld" style="min-width:180px;margin:0"><option value="">— หรือเลือกรูปจาก Image AI —</option></select>
+            <button class="qbtn" id="apImageClear" style="display:none;color:#f87171">✕ เอารูปออก</button>
+          </div>
+          <div id="apImagePrev" style="display:none;margin-bottom:8px"><img id="apImagePrevImg" style="max-height:120px;border-radius:10px;border:1px solid #1e293b"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input id="apLink" class="numfld" style="flex:1;min-width:180px;margin:0" placeholder="ลิงก์แนบ (ไม่บังคับ)">
+            <input id="apLink" class="numfld" style="flex:1;min-width:180px;margin:0" placeholder="ลิงก์แนบ (ไม่บังคับ — ใช้เมื่อไม่มีรูป)">
             <button class="send" id="apPost" style="padding:10px 22px">📤 โพสต์ขึ้นเพจ</button>
           </div>
         </div>
@@ -650,7 +658,7 @@
           <div id="apComments" style="display:flex;flex-direction:column;gap:8px"></div>
         </div>
         <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
-          <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ <b>โพสต์/คอมเมนต์เพจ</b> ใช้ได้กับเพจของคุณเองในโหมดพัฒนา · ให้คนอื่น/ลูกค้าใช้ต้องผ่าน App Review (pages_manage_posts) · <b>ตอบแชต Messenger/IG</b> และ <b>IG/TikTok/YouTube</b> ต้องตั้งค่า webhook + สิทธิ์เพิ่ม (ยังไม่รวมในนี้)</p>
+          <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ <b>โพสต์ข้อความ/รูป + คอมเมนต์เพจ</b> ใช้ได้กับเพจของคุณเองในโหมดพัฒนา (รูปแนบจากเครื่อง หรือเลือกจาก Image AI ได้แล้ว) · ให้คนอื่น/ลูกค้าใช้ต้องผ่าน App Review (pages_manage_posts) · <b>ตอบแชต Messenger/IG</b> และ <b>IG/TikTok/YouTube</b> ต้องตั้งค่า webhook + สิทธิ์เพิ่ม (ยังไม่รวมในนี้)</p>
         </div>
       </section>
 
@@ -4080,7 +4088,22 @@ async function loadAutoPost(){
   $("apPageSel").innerHTML = pages.map(p => `<option value="${p.page_id}">${escapeHtml(p.name)}</option>`).join("") || '<option value="">— ยังไม่มีเพจ —</option>';
   const cur = pages.find(p => p.page_id === $("apPageSel").value) || pages[0];
   if (cur) $("apAutoReply").checked = !!cur.autoreply;
+  // populate Image AI picker
+  try {
+    const ib = await (await fetch("/api/imageai/board")).json();
+    _apImages = ib.images || [];
+    $("apImagePick").innerHTML = '<option value="">— หรือเลือกรูปจาก Image AI —</option>' +
+      _apImages.map(t => `<option value="${t.id}">${escapeHtml((t.prompt||"ภาพ").slice(0,40))}</option>`).join("");
+  } catch(e){}
 }
+let _apImages = [];
+let _apImageData = null;   // data URI from device file
+let _apImageId = null;     // id from Image AI board
+function _apSetPreview(src){
+  if (src){ $("apImagePrevImg").src = src; $("apImagePrev").style.display="block"; $("apImageClear").style.display="inline-block"; }
+  else { $("apImagePrev").style.display="none"; $("apImageClear").style.display="none"; }
+}
+function _apClearImage(){ _apImageData=null; _apImageId=null; $("apImageFile").value=""; $("apImagePick").value=""; _apSetPreview(null); }
 $("apFbLogin").addEventListener("click", async () => {
   let s; try { s = (await (await fetch("/api/ads/fb-appid")).json()); } catch(e){ s={}; }
   if (!s.app_id){ toastNote("ยังไม่ได้ตั้ง App ID — ไปตั้งที่เมนู Ads Manager (เชื่อม Facebook) ก่อน","#f59e0b"); return; }
@@ -4096,13 +4119,32 @@ $("apWrite").addEventListener("click", async () => {
   if (r.error){ toastNote(r.error,"#f59e0b"); return; }
   $("apMsg").value = r.caption;
 });
+$("apImageFile").addEventListener("change", (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  $("apImagePick").value="";  _apImageId=null;
+  const rd = new FileReader();
+  rd.onload = () => { _apImageData = rd.result; _apSetPreview(rd.result); };
+  rd.readAsDataURL(f);
+});
+$("apImagePick").addEventListener("change", (e) => {
+  const id = e.target.value;
+  if (!id){ _apClearImage(); return; }
+  _apImageData=null; $("apImageFile").value="";
+  _apImageId = id;
+  const t = _apImages.find(x => String(x.id) === String(id));
+  _apSetPreview(t ? t.ref : null);
+});
+$("apImageClear").addEventListener("click", _apClearImage);
 $("apPost").addEventListener("click", async () => {
   const pid = $("apPageSel").value; if (!pid){ toastNote("เลือกเพจก่อน (เชื่อมเพจ)","#f59e0b"); return; }
   const b=$("apPost"),o=b.textContent; b.disabled=true; b.textContent="⏳ โพสต์…";
-  const r = await postJSON("/api/fb/post",{page_id:pid, message:$("apMsg").value.trim(), link:$("apLink").value.trim()});
+  const payload = {page_id:pid, message:$("apMsg").value.trim(), link:$("apLink").value.trim()};
+  if (_apImageData) payload.image = _apImageData;
+  else if (_apImageId) payload.image_id = _apImageId;
+  const r = await postJSON("/api/fb/post", payload);
   b.disabled=false; b.textContent=o;
   if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
-  toastNote("✅ "+r.message,"#22c55e"); $("apMsg").value=""; $("apLink").value="";
+  toastNote("✅ "+r.message,"#22c55e"); $("apMsg").value=""; $("apLink").value=""; _apClearImage();
 });
 $("apLoadComments").addEventListener("click", async () => {
   const pid = $("apPageSel").value; if (!pid){ toastNote("เลือกเพจก่อน","#f59e0b"); return; }

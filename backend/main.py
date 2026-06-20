@@ -3135,6 +3135,35 @@ async def fb_page_delete(p: dict) -> dict:
     return {"ok": True}
 
 
+def _decode_image_arg(p: dict):
+    """Resolve an image from the request into (bytes, mime) or (None, None).
+    Accepts: image_id (from Image AI board), image (data URI / raw base64), image_url."""
+    import base64
+    # 1) pick from Image AI board
+    iid = p.get("image_id")
+    ref = None
+    if iid:
+        try:
+            ref = next((t.get("ref") for t in db.image_list() if t["id"] == int(iid)), None)
+        except Exception:
+            ref = None
+    # 2) explicit data URI / base64
+    ref = ref or p.get("image")
+    if ref and ref.startswith("data:"):
+        try:
+            head, b64 = ref.split(",", 1)
+            mime = head.split(":", 1)[1].split(";", 1)[0] or "image/png"
+            return base64.b64decode(b64), mime
+        except Exception:
+            return None, None
+    if ref:  # raw base64 with no header
+        try:
+            return base64.b64decode(ref), "image/png"
+        except Exception:
+            return None, None
+    return None, None
+
+
 @app.post("/api/fb/post")
 async def fb_post(p: dict) -> dict:
     import asyncio
@@ -3142,13 +3171,25 @@ async def fb_post(p: dict) -> dict:
     if not pg:
         return {"error": "ไม่พบเพจ"}
     msg = (p.get("message") or "").strip()
-    if not msg:
-        return {"error": "ใส่ข้อความโพสต์ก่อน"}
+    img_bytes, mime = _decode_image_arg(p)
+    img_url = (p.get("image_url") or "").strip()
+    if not msg and not img_bytes and not img_url:
+        return {"error": "ใส่ข้อความโพสต์ หรือแนบรูปก่อน"}
     try:
-        res = await asyncio.to_thread(ads.meta_page_post, pg["token"], pg["page_id"], msg, (p.get("link") or "").strip())
+        if img_bytes:
+            ext = "jpg" if "jpeg" in (mime or "") else "png"
+            res = await asyncio.to_thread(ads.meta_page_photo, pg["token"], pg["page_id"],
+                                          img_bytes, msg, f"image.{ext}")
+        elif img_url:
+            res = await asyncio.to_thread(ads.meta_page_photo_url, pg["token"], pg["page_id"],
+                                          img_url, msg)
+        else:
+            res = await asyncio.to_thread(ads.meta_page_post, pg["token"], pg["page_id"],
+                                          msg, (p.get("link") or "").strip())
     except Exception as exc:
         return {"error": "โพสต์ไม่สำเร็จ: " + _friendly_err(exc)}
-    return {"ok": True, "message": "โพสต์ขึ้นเพจแล้ว ✅", "id": res.get("id") or res.get("post_id")}
+    return {"ok": True, "message": "โพสต์ขึ้นเพจแล้ว ✅",
+            "id": res.get("id") or res.get("post_id")}
 
 
 @app.post("/api/fb/write-post")
