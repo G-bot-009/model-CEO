@@ -77,6 +77,7 @@ def step(cfg: dict, state: dict, price: float) -> tuple:
 
     long = cfg["side"] == "long"
     sign = 1 if long else -1
+    sidew = "ขาขึ้น (Long)" if long else "ขาลง (Short)"
 
     # --- manage an open position ------------------------------------------
     pos = st.get("pos")
@@ -90,10 +91,17 @@ def step(cfg: dict, state: dict, price: float) -> tuple:
                 leg["filled"] = True
                 pnl = leg["qty"] * (leg["tp"] - e) * sign
                 st["daily_pnl"] += pnl
-                ev.append({"kind": "tp", "text": f"TP{leg['i']} @ {leg['tp']:.4f}", "pnl": pnl})
+                pct = cfg["tp_legs_pct"][leg["i"] - 1] if leg["i"] - 1 < len(cfg["tp_legs_pct"]) else 0
+                ev.append({"kind": "tp", "price": leg["tp"], "pnl": pnl,
+                           "text": (f"🎯 TP{leg['i']} สำเร็จ @ {leg['tp']:.2f} — ราคาวิ่งถึงเป้ากำไร "
+                                    f"+{pct}% จากจุดเข้า {e:.2f} จึงปิดทำกำไรไม้ที่ {leg['i']} "
+                                    f"(กำไร {pnl:+.2f})")})
                 if leg["i"] >= cfg["move_sl_to_be_after_leg"]:
                     pos["sl"] = e          # move stop to breakeven
-                    ev.append({"kind": "sl_move", "text": "เลื่อน SL มาที่ทุน (breakeven)", "pnl": 0.0})
+                    ev.append({"kind": "sl_move", "price": e, "pnl": 0.0,
+                               "text": (f"🛡️ เลื่อน SL มาที่ทุน {e:.2f} — เพราะ TP ไม้ที่ "
+                                        f"{cfg['move_sl_to_be_after_leg']} สำเร็จแล้ว ล็อกกำไร "
+                                        f"ไม่ให้ไม้ที่เหลือกลับมาขาดทุน")})
         # stop-loss / all legs done
         rem = [l for l in pos["legs"] if not l["filled"]]
         stop_hit = (price <= pos["sl"]) if long else (price >= pos["sl"])
@@ -101,8 +109,15 @@ def step(cfg: dict, state: dict, price: float) -> tuple:
             qty = sum(l["qty"] for l in rem)
             pnl = qty * (pos["sl"] - e) * sign
             st["daily_pnl"] += pnl
-            kind = "be" if abs(pos["sl"] - e) < 1e-9 else "sl"
-            ev.append({"kind": kind, "text": f"ปิดส่วนที่เหลือ @ {pos['sl']:.4f}", "pnl": pnl})
+            be = abs(pos["sl"] - e) < 1e-9
+            kind = "be" if be else "sl"
+            if be:
+                txt = (f"↩️ ปิดที่ทุน (breakeven) @ {pos['sl']:.2f} — ราคาย้อนกลับมาจุดเข้า "
+                       f"จึงตัดจบไม้ที่เหลือ ไม่ให้กลายเป็นขาดทุน")
+            else:
+                txt = (f"🛑 ตัดขาดทุน (SL) @ {pos['sl']:.2f} — ราคาหลุดแนวกันขาดทุนที่ตั้งไว้ "
+                       f"{cfg['sl_pct']}% จึงปิดส่วนที่เหลือเพื่อจำกัดความเสียหาย ({pnl:+.2f})")
+            ev.append({"kind": kind, "price": pos["sl"], "pnl": pnl, "text": txt})
             rem = []
         if not rem:
             st["pos"] = None
@@ -112,10 +127,16 @@ def step(cfg: dict, state: dict, price: float) -> tuple:
     if not st.get("halted"):
         if cfg["daily_target_usd"] and st["daily_pnl"] >= cfg["daily_target_usd"]:
             st["halted"] = True
-            ev.append({"kind": "halt", "text": f"ถึงเป้ากำไร/วัน (+{st['daily_pnl']:.2f}) — หยุดถึงพรุ่งนี้", "pnl": 0.0})
+            ev.append({"kind": "halt", "price": price, "pnl": 0.0,
+                       "text": (f"🏁 หยุดเทรดวันนี้ — ทำกำไรถึงเป้า/วันที่ตั้งไว้แล้ว "
+                                f"(+{st['daily_pnl']:.2f} ≥ {cfg['daily_target_usd']:.0f}) "
+                                f"ปิดความเสี่ยง รอเริ่มใหม่พรุ่งนี้")})
         elif cfg["daily_loss_limit_usd"] and st["daily_pnl"] <= -cfg["daily_loss_limit_usd"]:
             st["halted"] = True
-            ev.append({"kind": "halt", "text": f"ถึงลิมิตขาดทุน/วัน ({st['daily_pnl']:.2f}) — หยุด", "pnl": 0.0})
+            ev.append({"kind": "halt", "price": price, "pnl": 0.0,
+                       "text": (f"🛑 หยุดเทรดวันนี้ — ขาดทุนถึงลิมิต/วันที่ตั้งไว้ "
+                                f"({st['daily_pnl']:.2f} ≤ -{cfg['daily_loss_limit_usd']:.0f}) "
+                                f"ตัดจบกันเจ็บหนัก รอเริ่มใหม่พรุ่งนี้")})
 
     # --- open a new position when flat ------------------------------------
     if st.get("pos") is None and not st.get("halted"):
@@ -129,7 +150,11 @@ def step(cfg: dict, state: dict, price: float) -> tuple:
         sl = e * (1 - sign * cfg["sl_pct"] / 100.0)
         st["pos"] = {"entry": e, "qty": qty, "sl": sl, "legs": legs,
                      "side": cfg["side"], "opened_at": int(time.time())}
-        ev.append({"kind": "open", "text": f"เปิด {cfg['side'].upper()} {cfg['symbol']} @ {e:.4f} (SL {sl:.4f})", "pnl": 0.0})
+        tps = " / ".join(f"{l['tp']:.2f}" for l in legs)
+        ev.append({"kind": "open", "price": e, "pnl": 0.0,
+                   "text": (f"📈 เข้าไม้ {sidew} {cfg['symbol']} @ {e:.2f} — เพราะไม่มีไม้ค้างอยู่ "
+                            f"และยังไม่ถึงเป้า/ลิมิตของวันนี้ จึงเปิดไม้ใหม่ตามกฎ · "
+                            f"ตั้ง SL {sl:.2f} ({cfg['sl_pct']}%) · เป้า TP {tps}")})
 
     return st, ev
 
@@ -161,6 +186,29 @@ def fetch_price(exchange: str, symbol: str, creds: dict | None = None) -> float:
     # default: binance futures public ticker
     d = _http(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={sym}")
     return float(d["price"])
+
+
+_TF_BINANCE = {"1": "1m", "5": "5m", "15": "15m", "60": "1h", "240": "4h", "D": "1d"}
+_TF_BYBIT = {"1": "1", "5": "5", "15": "15", "60": "60", "240": "240", "D": "D"}
+
+
+def fetch_klines(exchange: str, symbol: str, interval: str = "5", limit: int = 200) -> list:
+    """Public OHLC candles for charting. Returns [{time(sec),open,high,low,close}] oldest→newest."""
+    ex = (exchange or "").lower()
+    sym = symbol.upper()
+    if ex == "bybit":
+        tf = _TF_BYBIT.get(str(interval), "5")
+        d = _http(f"https://api.bybit.com/v5/market/kline?category=linear&symbol={sym}&interval={tf}&limit={int(limit)}")
+        rows = d.get("result", {}).get("list", []) or []
+        out = [{"time": int(int(r[0]) / 1000), "open": float(r[1]), "high": float(r[2]),
+                "low": float(r[3]), "close": float(r[4])} for r in rows]
+        return sorted(out, key=lambda x: x["time"])
+    if ex == "mt5":
+        raise RuntimeError("MT5 ต้องใช้ MetaApi — ยังดึงแท่งเทียนสาธารณะไม่ได้")
+    tf = _TF_BINANCE.get(str(interval), "5m")
+    d = _http(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}&interval={tf}&limit={int(limit)}")
+    return [{"time": int(r[0] / 1000), "open": float(r[1]), "high": float(r[2]),
+             "low": float(r[3]), "close": float(r[4])} for r in d]
 
 
 def _binance_order(creds: dict, symbol: str, side: str, qty: float) -> dict:

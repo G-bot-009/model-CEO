@@ -265,6 +265,12 @@ def init() -> None:
         pscols = {r[1] for r in c.execute("PRAGMA table_info(project_stages)").fetchall()}
         if "key_id" not in pscols:
             c.execute("ALTER TABLE project_stages ADD COLUMN key_id INTEGER")
+        # trade log: price + epoch for chart markers
+        tlcols = {r[1] for r in c.execute("PRAGMA table_info(trade_log)").fetchall()}
+        if "price" not in tlcols:
+            c.execute("ALTER TABLE trade_log ADD COLUMN price REAL")
+        if "epoch" not in tlcols:
+            c.execute("ALTER TABLE trade_log ADD COLUMN epoch INTEGER")
         # multi-account ads recommendations
         arcols = {r[1] for r in c.execute("PRAGMA table_info(ads_reco)").fetchall()}
         if "account_id" not in arcols:
@@ -1084,15 +1090,25 @@ def delete_bot(bot_id) -> None:
         c.execute("DELETE FROM trade_bots WHERE id=?", (bot_id,))
         c.execute("DELETE FROM trade_log WHERE bot_id=?", (bot_id,))
 
-def add_trade_log(bot_id, kind, text, pnl=0.0) -> None:
+def add_trade_log(bot_id, kind, text, pnl=0.0, price=None, epoch=None) -> None:
+    import time as _t
     with _conn() as c:
-        c.execute("INSERT INTO trade_log (bot_id, ts, kind, text, pnl) VALUES (?,?,?,?,?)",
-                  (bot_id, _now(), kind, text, pnl))
+        c.execute("INSERT INTO trade_log (bot_id, ts, kind, text, pnl, price, epoch) VALUES (?,?,?,?,?,?,?)",
+                  (bot_id, _now(), kind, text, pnl, price, epoch if epoch is not None else int(_t.time())))
 
 def list_trade_log(bot_id, limit=50) -> list[dict]:
     with _conn() as c:
-        rows = c.execute("SELECT ts, kind, text, pnl FROM trade_log WHERE bot_id=? ORDER BY id DESC LIMIT ?",
+        rows = c.execute("SELECT ts, kind, text, pnl, price, epoch FROM trade_log WHERE bot_id=? ORDER BY id DESC LIMIT ?",
                          (bot_id, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+def trade_markers(bot_id, limit=300) -> list[dict]:
+    """Entry/exit events with price+time for plotting chart markers."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT epoch, kind, text, pnl, price FROM trade_log "
+            "WHERE bot_id=? AND kind IN ('open','tp','sl','be','sl_move') AND epoch IS NOT NULL "
+            "ORDER BY id ASC LIMIT ?", (bot_id, limit)).fetchall()
     return [dict(r) for r in rows]
 
 

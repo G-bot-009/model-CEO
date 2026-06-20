@@ -3176,12 +3176,14 @@ async function loadTradeBots(){
                    :`<button class="qbtn tb-start" data-id="${b.id}" style="font-weight:700">▶ เริ่ม</button>`}
           <button class="qbtn tb-tick" data-id="${b.id}" title="เดินบอท 1 จังหวะ (ทดสอบ)">⏭️ tick</button>
           <button class="qbtn tb-chart" data-id="${b.id}" data-ex="${b.exchange}" data-sym="${b.symbol}">📈 กราฟ</button>
+          <button class="qbtn tb-marks" data-id="${b.id}" data-ex="${b.exchange}" data-sym="${b.symbol}" style="font-weight:700;color:#a78bfa">🎯 จังหวะ+เหตุผล</button>
           <button class="qbtn tb-edit" data-id="${b.id}">✏️ แก้</button>
           <button class="qbtn tb-log" data-id="${b.id}">📜 log</button>
           <button class="qbtn tb-del" data-id="${b.id}" style="color:#f87171">🗑️</button>
         </div>
       </div>
       <div class="tb-chartbox" id="tbChart${b.id}" style="display:none;margin-top:6px"></div>
+      <div class="tb-marksbox" id="tbMarks${b.id}" style="display:none;margin-top:6px"></div>
       <div class="tb-logbox" id="tbLog${b.id}" style="display:none;font-size:12px;color:#cbd5e1;background:#0b1220;border-radius:8px;padding:8px;max-height:200px;overflow:auto"></div>
     </div>`;
   }).join("");
@@ -3202,9 +3204,72 @@ async function loadTradeBots(){
     if (el.style.display === "block"){ el.style.display = "none"; el.innerHTML = ""; return; }
     el.style.display = "block"; mountTV("tbChart"+x.dataset.id, tvSymbol(x.dataset.ex, x.dataset.sym));
   });
+  box.querySelectorAll(".tb-marks").forEach(x => x.onclick = () => toggleBotMarks(x.dataset.id, x.dataset.ex, x.dataset.sym));
   // auto-open the live chart for bots that are running
   d.bots.forEach(b => { if (b.status === "running"){ const el = $("tbChart"+b.id);
     if (el){ el.style.display = "block"; mountTV("tbChart"+b.id, tvSymbol(b.exchange, b.symbol)); } } });
+}
+
+/* ---------- Trade markers chart (จังหวะเข้าไม้ + เหตุผล) ---------- */
+let _lwcLoading = null;
+function ensureLWC(){
+  if (window.LightweightCharts) return Promise.resolve();
+  if (_lwcLoading) return _lwcLoading;
+  _lwcLoading = new Promise(res => { const s = document.createElement("script");
+    s.src = "https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js";
+    s.onload = res; s.onerror = res; document.head.appendChild(s); });
+  return _lwcLoading;
+}
+const _SECPC = { "1":60, "5":300, "15":900, "60":3600, "240":14400, "D":86400 };
+async function toggleBotMarks(id, ex, sym){
+  const el = $("tbMarks"+id);
+  if (el.style.display === "block"){ el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "block";
+  el.innerHTML = '<div style="color:#64748b;font-size:12px">⏳ กำลังโหลดกราฟ + จังหวะเข้าไม้…</div>';
+  await ensureLWC();
+  if (!window.LightweightCharts){ el.innerHTML = '<div style="color:#f59e0b;font-size:12px">โหลดไลบรารีกราฟไม่ได้ (ต้องต่ออินเทอร์เน็ต)</div>'; return; }
+  const iv = ($("tbChartInt") && $("tbChartInt").value) || "5";
+  let kd, md;
+  try {
+    [kd, md] = await Promise.all([
+      (await fetch(`/api/trading/klines?exchange=${ex}&symbol=${encodeURIComponent(sym)}&interval=${iv}`)).json(),
+      (await fetch(`/api/trading/bot/${id}/markers`)).json(),
+    ]);
+  } catch(e){ el.innerHTML = '<div style="color:#f59e0b;font-size:12px">โหลดข้อมูลไม่ได้</div>'; return; }
+  if (kd.error){ el.innerHTML = `<div style="color:#f59e0b;font-size:12px">${escapeHtml(kd.error)}</div>`; return; }
+  el.innerHTML = '<div class="lwc" style="height:320px"></div><div style="font-size:11px;color:#64748b;margin-top:6px">🔵 จุดเข้า · 🟢 TP (ทำกำไร) · 🔴 SL (ตัดขาดทุน) · 🟠 ปิดที่ทุน · เส้นประ = แนวเข้า/SL/TP ของไม้ที่ถืออยู่</div><div class="marks-list" style="margin-top:8px;display:flex;flex-direction:column;gap:6px"></div>';
+  const cdiv = el.querySelector(".lwc");
+  const chart = LightweightCharts.createChart(cdiv, { autoSize:true, height:320,
+    layout:{ background:{color:"#0b1220"}, textColor:"#cbd5e1" },
+    grid:{ vertLines:{color:"#1e293b"}, horzLines:{color:"#1e293b"} },
+    timeScale:{ timeVisible:true, secondsVisible:false, borderColor:"#1e293b" },
+    rightPriceScale:{ borderColor:"#1e293b" } });
+  const series = chart.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444",
+    wickUpColor:"#22c55e", wickDownColor:"#ef4444", borderVisible:false });
+  series.setData(kd.candles || []);
+  (md.lines || []).forEach(l => series.createPriceLine({ price:l.price, color:l.color,
+    lineWidth:1, lineStyle:2, axisLabelVisible:true, title:l.title }));
+  const sec = _SECPC[iv] || 300;
+  const mk = (md.markers || []).map(m => {
+    const t = Math.floor((m.epoch||0)/sec)*sec;
+    let c;
+    if (m.kind==="open") c={position:"belowBar",color:"#3b82f6",shape:"arrowUp",text:"เข้า"};
+    else if (m.kind==="tp") c={position:"aboveBar",color:"#22c55e",shape:"arrowDown",text:"TP"};
+    else if (m.kind==="sl") c={position:"belowBar",color:"#ef4444",shape:"arrowDown",text:"SL"};
+    else if (m.kind==="be") c={position:"belowBar",color:"#f59e0b",shape:"circle",text:"ทุน"};
+    else c={position:"aboveBar",color:"#a78bfa",shape:"circle",text:"SL→ทุน"};
+    return { time:t, ...c };
+  }).sort((a,b)=>a.time-b.time);
+  try { series.setMarkers(mk); } catch(e){}
+  chart.timeScale().fitContent();
+  const list = el.querySelector(".marks-list");
+  const ms = (md.markers || []).slice().reverse();
+  list.innerHTML = ms.length ? ms.map(m => {
+    const c = m.pnl>0?"#22c55e":(m.pnl<0?"#f87171":"#94a3b8");
+    const tm = new Date((m.epoch||0)*1000).toLocaleString("th-TH",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    return `<div style="background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:8px;font-size:12px;color:#cbd5e1;line-height:1.5">
+      <span style="color:#64748b">🕒 ${tm}</span><br>${escapeHtml(m.text||"")} ${m.pnl?`<b style="color:${c}">(${m.pnl>=0?'+':''}${m.pnl.toFixed(2)})</b>`:""}</div>`;
+  }).join("") : '<div style="color:#64748b;font-size:12px">ยังไม่มีจังหวะเข้าไม้ — เริ่มบอท หรือกด ⏭️ tick เพื่อให้บอทเดินจังหวะ แล้วเปิดดูใหม่</div>';
 }
 
 /* ---------- Content factory ---------- */

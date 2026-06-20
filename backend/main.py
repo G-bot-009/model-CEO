@@ -1649,7 +1649,8 @@ def _tick_bot(bot: dict) -> None:
             except Exception as exc:
                 e["text"] += f" · ⚠️ ส่งออเดอร์จริงไม่สำเร็จ: {type(exc).__name__}"
                 new_state["halted"] = True
-        db.add_trade_log(bot["id"], e["kind"], e["text"], e.get("pnl", 0.0))
+        db.add_trade_log(bot["id"], e["kind"], e["text"], e.get("pnl", 0.0),
+                         price=e.get("price"), epoch=int(time.time()))
     # paper mode: realized P&L flows into the demo wallet
     if bot["mode"] == "paper":
         realized = sum(e.get("pnl", 0.0) for e in events)
@@ -1762,6 +1763,36 @@ async def trading_bot_tick(p: dict) -> dict:
 @app.get("/api/trading/bot/{bot_id}/log")
 async def trading_bot_log(bot_id: int) -> dict:
     return {"log": db.list_trade_log(bot_id, 60)}
+
+
+@app.get("/api/trading/klines")
+async def trading_klines(exchange: str = "binance", symbol: str = "BTCUSDT",
+                         interval: str = "5") -> dict:
+    import asyncio
+    try:
+        candles = await asyncio.to_thread(trading.fetch_klines, exchange, symbol, interval, 200)
+    except Exception as exc:
+        return {"error": _friendly_err(exc), "candles": []}
+    return {"candles": candles}
+
+
+@app.get("/api/trading/bot/{bot_id}/markers")
+async def trading_bot_markers(bot_id: int) -> dict:
+    """Entry/exit markers (time, price, kind, reason) for the chart + current position lines."""
+    bot = db.get_bot(bot_id)
+    if not bot:
+        return {"error": "ไม่พบบอท", "markers": []}
+    marks = db.trade_markers(bot_id)
+    pos = (bot.get("state") or {}).get("pos")
+    lines = []
+    if pos:
+        lines.append({"price": pos["entry"], "color": "#3b82f6", "title": "จุดเข้า"})
+        lines.append({"price": pos["sl"], "color": "#ef4444", "title": "SL"})
+        for leg in pos.get("legs", []):
+            lines.append({"price": leg["tp"], "color": "#22c55e",
+                          "title": f"TP{leg['i']}" + (" ✓" if leg.get("filled") else "")})
+    return {"markers": marks, "lines": lines, "side": bot["config"].get("side"),
+            "exchange": bot["exchange"], "symbol": bot["symbol"]}
 
 
 @app.post("/api/trading/strategy/ai")
