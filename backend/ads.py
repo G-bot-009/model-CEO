@@ -113,12 +113,42 @@ _GOAL_OBJECTIVE = {
 }
 
 
+def meta_upload_image(token: str, ad_account_id: str, image_b64: str) -> str:
+    """Upload an image (base64) to the ad account → return its image_hash."""
+    acct = _acct(ad_account_id)
+    d = _post(f"{GRAPH}/{acct}/adimages", {"bytes": image_b64, "access_token": token})
+    imgs = d.get("images") or {}
+    for v in imgs.values():
+        if v.get("hash"):
+            return v["hash"]
+    raise RuntimeError("อัปโหลดรูปไม่สำเร็จ")
+
+
+def meta_duplicate_campaign(token: str, campaign_id: str) -> dict:
+    """Duplicate an existing (winning) campaign — created PAUSED."""
+    return _post(f"{GRAPH}/{campaign_id}/copies",
+                 {"deep_copy": "true", "status_option": "PAUSED", "access_token": token})
+
+
+def _make_creative(acct, token, name, page_id, link, message, headline, image_hash):
+    link_data = {"link": link, "message": message or "", "name": headline or ""}
+    if image_hash:
+        link_data["image_hash"] = image_hash
+    story = json.dumps({"page_id": page_id, "link_data": link_data})
+    cr = _post(f"{GRAPH}/{acct}/adcreatives",
+               {"name": name, "object_story_spec": story, "access_token": token})
+    if not cr.get("id"):
+        raise RuntimeError(f"สร้างชิ้นงานไม่สำเร็จ: {str(cr)[:160]}")
+    return cr["id"]
+
+
 def meta_create_campaign(token: str, ad_account_id: str, name: str, goal: str,
                          daily_budget_thb: float, page_id: str, link: str,
-                         message: str, headline: str) -> dict:
+                         message: str, headline: str, targeting: dict = None,
+                         image_hash: str = "", variant_b: dict = None) -> dict:
     """Create a PAUSED campaign (campaign→ad set→creative→ad) for review.
-    Uses a safe LINK_CLICKS/IMPRESSIONS ad set so it doesn't require a pixel/lead form.
-    Sales/Leads optimization may need manual adjustment in Ads Manager afterwards."""
+    targeting: {age_min,age_max,genders:[1|2],countries:[..]}. variant_b: {message,headline}
+    creates a 2nd ad for A/B testing. image_hash attaches an uploaded image."""
     if not (token and ad_account_id):
         raise RuntimeError("ต้องมี token + Ad Account ID")
     if not page_id:
@@ -136,30 +166,34 @@ def meta_create_campaign(token: str, ad_account_id: str, name: str, goal: str,
     if not cid:
         raise RuntimeError(f"สร้างแคมเปญไม่สำเร็จ: {str(camp)[:160]}")
 
-    targeting = json.dumps({"geo_locations": {"countries": ["TH"]}, "age_min": 18, "age_max": 65})
+    t = targeting or {}
+    tgt = {"geo_locations": {"countries": t.get("countries") or ["TH"]},
+           "age_min": int(t.get("age_min") or 18), "age_max": int(t.get("age_max") or 65)}
+    if t.get("genders"):
+        tgt["genders"] = t["genders"]
     adset = _post(f"{GRAPH}/{acct}/adsets", {
         "name": (name or "Autopilot") + " — Ad set", "campaign_id": cid,
         "daily_budget": cents, "billing_event": "IMPRESSIONS",
         "optimization_goal": "LINK_CLICKS", "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
-        "targeting": targeting, "status": "PAUSED", "access_token": token})
+        "targeting": json.dumps(tgt), "status": "PAUSED", "access_token": token})
     asid = adset.get("id")
     if not asid:
         raise RuntimeError(f"สร้าง ad set ไม่สำเร็จ: {str(adset)[:160]}")
 
-    story = json.dumps({"page_id": page_id, "link_data": {
-        "link": link, "message": message or "", "name": headline or ""}})
-    creative = _post(f"{GRAPH}/{acct}/adcreatives", {
-        "name": (name or "Autopilot") + " — Creative",
-        "object_story_spec": story, "access_token": token})
-    crid = creative.get("id")
-    if not crid:
-        raise RuntimeError(f"สร้างชิ้นงานไม่สำเร็จ: {str(creative)[:160]}")
-
+    crid = _make_creative(acct, token, (name or "Autopilot") + " — A", page_id, link, message, headline, image_hash)
     ad = _post(f"{GRAPH}/{acct}/ads", {
-        "name": (name or "Autopilot") + " — Ad", "adset_id": asid,
+        "name": (name or "Autopilot") + " — Ad A", "adset_id": asid,
         "creative": json.dumps({"creative_id": crid}), "status": "PAUSED", "access_token": token})
-    return {"campaign_id": cid, "adset_id": asid, "creative_id": crid, "ad_id": ad.get("id"),
-            "objective": objective, "status": "PAUSED"}
+    out = {"campaign_id": cid, "adset_id": asid, "creative_id": crid, "ad_id": ad.get("id"),
+           "objective": objective, "status": "PAUSED"}
+    if variant_b and (variant_b.get("message") or variant_b.get("headline")):   # A/B: 2nd ad
+        cr2 = _make_creative(acct, token, (name or "Autopilot") + " — B", page_id, link,
+                             variant_b.get("message"), variant_b.get("headline"), image_hash)
+        ad2 = _post(f"{GRAPH}/{acct}/ads", {
+            "name": (name or "Autopilot") + " — Ad B", "adset_id": asid,
+            "creative": json.dumps({"creative_id": cr2}), "status": "PAUSED", "access_token": token})
+        out["ad_b_id"] = ad2.get("id")
+    return out
 
 
 # ---------------------------------------------------------------------------

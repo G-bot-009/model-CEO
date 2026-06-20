@@ -3564,25 +3564,33 @@ function apBody(id, mode, ap){
   const goalOpts = [["traffic","เข้าเว็บ/คลิก"],["sales","ยอดขาย"],["messages","ทักแชท"],["leads","เก็บลีด"]]
     .map(([v,l])=>`<option value="${v}" ${(ap.goal||'traffic')===v?'selected':''}>${l}</option>`).join("");
   const common = `<label style="font-size:11px;color:#94a3b8">เป้าหมาย</label><select class="numfld ap-goal" data-id="${id}" style="width:100%;margin:0 0 8px">${goalOpts}</select>`;
-  const btns = (run) => `<div style="display:flex;gap:6px"><button class="qbtn ap-save" data-id="${id}" style="flex:1">💾 บันทึก</button><button class="qbtn ap-run" data-id="${id}" style="flex:1;font-weight:700;background:#22c55e;color:#0b1220;border-color:#22c55e">${run}</button></div>`;
+  const cb = (cls,label,on) => `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;margin:4px 0"><input type="checkbox" class="ap-${cls}" data-id="${id}" ${on?'checked':''} style="width:15px;height:15px"> ${label}</label>`;
+  const repOpts = ["","LINE OA","Telegram","Slack","Discord","Email"].map(v=>`<option value="${v}" ${(ap.report_to||'')===v?'selected':''}>${v||'— ไม่ส่งรายงาน —'}</option>`).join("");
+  const report = `<label style="font-size:11px;color:#94a3b8">ส่งรายงานเข้า</label><select class="numfld ap-report" data-id="${id}" style="width:100%;margin:0 0 6px">${repOpts}</select>`;
+  const auto = cb("auto","รันอัตโนมัติทุกวัน (Autopilot เต็ม)",ap.auto_daily);
+  const btns = (run) => `<div style="display:flex;gap:6px;margin-top:4px"><button class="qbtn ap-save" data-id="${id}" style="flex:1">💾 บันทึก</button><button class="qbtn ap-run" data-id="${id}" style="flex:1;font-weight:700;background:#22c55e;color:#0b1220;border-color:#22c55e">${run}</button></div>`;
   if (mode === "manage"){
     return common + `
       <label style="font-size:11px;color:#94a3b8">เพดานงบรวม/วัน (บาท)</label>
-      <input class="numfld ap-cap" data-id="${id}" style="width:100%;margin:0 0 8px" value="${q(ap.daily_cap)}" placeholder="เช่น 500">
-      ${btns("▶ รันเดี๋ยวนี้")}
-      <div style="font-size:11px;color:#64748b;margin-top:6px">AI หยุดตัวแย่ + ย้ายงบไปตัวเวิร์ค ไม่เกินเพดาน</div>`;
+      <input class="numfld ap-cap" data-id="${id}" style="width:100%;margin:0 0 6px" value="${q(ap.daily_cap)}" placeholder="เช่น 500">
+      <label style="font-size:11px;color:#94a3b8">🛑 Kill-switch: ใช้งบวันนี้ถึง (บาท) → หยุดทุกแคมเปญ (0=ปิด)</label>
+      <input class="numfld ap-kill" data-id="${id}" style="width:100%;margin:0 0 6px" value="${q(ap.kill_spend)}" placeholder="เช่น 1000">
+      ${auto}${report}${btns("▶ รันเดี๋ยวนี้")}
+      <div style="font-size:11px;color:#64748b;margin-top:6px">AI หยุดตัวแย่ + ย้ายงบไปตัวเวิร์ค ไม่เกินเพดาน · เกิน Kill-switch หยุดหมด</div>`;
   }
   return common + `
     <label style="font-size:11px;color:#94a3b8">งบ/วัน (บาท)</label>
-    <input class="numfld ap-cap" data-id="${id}" style="width:100%;margin:0 0 8px" value="${q(ap.daily_cap)}" placeholder="เช่น 200">
+    <input class="numfld ap-cap" data-id="${id}" style="width:100%;margin:0 0 6px" value="${q(ap.daily_cap)}" placeholder="เช่น 200">
     <label style="font-size:11px;color:#94a3b8">Facebook Page ID</label>
-    <input class="numfld ap-page" data-id="${id}" style="width:100%;margin:0 0 8px" value="${q(ap.page_id)}" placeholder="เลขเพจ">
+    <input class="numfld ap-page" data-id="${id}" style="width:100%;margin:0 0 6px" value="${q(ap.page_id)}" placeholder="เลขเพจ">
     <label style="font-size:11px;color:#94a3b8">ลิงก์ปลายทาง</label>
-    <input class="numfld ap-link" data-id="${id}" style="width:100%;margin:0 0 8px" value="${q(ap.link)}" placeholder="https://...">
-    <label style="font-size:11px;color:#94a3b8">โจทย์/สินค้า (ให้ AI เขียนโฆษณา)</label>
-    <input class="numfld ap-brief" data-id="${id}" style="width:100%;margin:0 0 8px" value="${q(ap.brief)}" placeholder="เช่น บ้านพูลวิลล่า หัวหิน">
-    ${btns("▶ สร้างแคมเปญ")}
-    <div style="font-size:11px;color:#64748b;margin-top:6px">AI เขียนแคมเปญ+คำโฆษณา แล้วสร้างแบบ PAUSED ให้ตรวจก่อนเปิด</div>`;
+    <input class="numfld ap-link" data-id="${id}" style="width:100%;margin:0 0 6px" value="${q(ap.link)}" placeholder="https://...">
+    <label style="font-size:11px;color:#94a3b8">โจทย์/สินค้า (ให้ AI เขียนโฆษณา + เลือกกลุ่มเป้าหมาย)</label>
+    <input class="numfld ap-brief" data-id="${id}" style="width:100%;margin:0 0 6px" value="${q(ap.brief)}" placeholder="เช่น บ้านพูลวิลล่า หัวหิน กลุ่มคนมีกำลังซื้อ">
+    ${cb("ab","A/B test — สร้างโฆษณา 2 แบบ",ap.ab_test)}
+    ${cb("img","แนบรูปจาก Image AI อัตโนมัติ",ap.use_image)}
+    ${report}${btns("▶ สร้างแคมเปญ")}
+    <div style="font-size:11px;color:#64748b;margin-top:6px">AI เขียนแคมเปญ+คำโฆษณา+เลือกกลุ่มเป้าหมาย สร้างแบบ PAUSED ให้ตรวจก่อนเปิด</div>`;
 }
 async function renderFbOauth(){
   let s; try { s = await (await fetch("/api/ads/fb-oauth-status")).json(); } catch(e){ return; }
@@ -3682,6 +3690,7 @@ async function loadAds(){
         <div style="display:flex;gap:6px">
           ${pending?`<button class="qbtn ads-apply" data-id="${r.id}" style="font-weight:700;color:${col}">✅ อนุมัติ</button>
                      <button class="qbtn ads-dismiss" data-id="${r.id}" style="color:#94a3b8">ข้าม</button>`:''}
+          <button class="qbtn ads-dup" data-id="${r.id}" title="ก๊อปแคมเปญนี้ (PAUSED)">📑 ก๊อป</button>
         </div>
       </div>
       <div style="font-size:12px;color:#94a3b8">ใช้งบ ฿${(mx.spend||0).toLocaleString()} · ROAS ${mx.roas||0} · คลิก ${mx.clicks||0} · คอนเวอร์ชัน ${mx.conversions||0}${r.action==='scale'?` · แนะนำงบ ฿${r.suggested_budget}/วัน`:''}</div>
@@ -3728,13 +3737,22 @@ async function loadAds(){
     toastNote(r.error||r.message||"ทำแล้ว", r.error?"#f59e0b":"#22c55e"); loadAds();
   });
   box.querySelectorAll(".ads-dismiss").forEach(x => x.onclick = async () => { await postJSON("/api/ads/dismiss",{id:+x.dataset.id}); loadAds(); });
+  box.querySelectorAll(".ads-dup").forEach(x => x.onclick = async () => {
+    const o=x.textContent; x.disabled=true; x.textContent="⏳";
+    const r = await postJSON("/api/ads/duplicate",{id:+x.dataset.id});
+    x.disabled=false; x.textContent=o;
+    toastNote(r.error?("❌ "+r.error):("✅ "+(r.message||"ก๊อปแล้ว")), r.error?"#f59e0b":"#22c55e");
+  });
   // ---- Autopilot per account ----
   const apMap = {}; accs.forEach(a => apMap[a.id] = a.autopilot || {});
   const apField = (id, cls) => { const el = box.querySelector(`.${cls}[data-id="${id}"]`); return el ? el.value.trim() : ""; };
+  const apChk = (id, cls) => { const el = box.querySelector(`.${cls}[data-id="${id}"]`); return el ? el.checked : false; };
   const apMode = id => box.querySelector(`.ap-page[data-id="${id}"]`) ? "create"
                      : (box.querySelector(`.ap-cap[data-id="${id}"]`) ? "manage" : "off");
   const apCollect = id => ({ account_id:+id, mode:apMode(id), goal:apField(id,"ap-goal"),
-    daily_cap:apField(id,"ap-cap"), page_id:apField(id,"ap-page"), link:apField(id,"ap-link"), brief:apField(id,"ap-brief") });
+    daily_cap:apField(id,"ap-cap"), page_id:apField(id,"ap-page"), link:apField(id,"ap-link"), brief:apField(id,"ap-brief"),
+    kill_spend:apField(id,"ap-kill"), report_to:apField(id,"ap-report"),
+    auto_daily:apChk(id,"ap-auto"), ab_test:apChk(id,"ap-ab"), use_image:apChk(id,"ap-img") });
   box.querySelectorAll(".ap-mode").forEach(b => b.onclick = async () => {
     const id = b.dataset.id, ap = apMap[id] || {};
     await postJSON("/api/ads/autopilot", { account_id:+id, mode:b.dataset.m, goal:ap.goal,

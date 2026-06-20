@@ -213,6 +213,7 @@ async def _startup() -> None:
     import asyncio
     asyncio.create_task(_trading_loop())        # ticks active trading bots
     asyncio.create_task(_content_loop())        # autonomous content factory
+    asyncio.create_task(_ads_autopilot_loop())  # daily ads autopilot + kill-switch
 
 
 LOGIN_USER = os.getenv("LOGIN_USER", "admin")
@@ -2857,10 +2858,13 @@ _AUTOPILOT_MANAGE_PROMPT = (
 )
 
 _AUTOPILOT_CREATE_PROMPT = (
-    "เขียนแผนโฆษณา Facebook 1 แคมเปญ (ภาษาไทย) จากโจทย์ลูกค้า ให้ครีเอทีฟดึงดูด ปลอดภัยตามนโยบาย Meta.\n"
+    "เขียนแผนโฆษณา Facebook 1 แคมเปญ (ภาษาไทย) จากโจทย์ลูกค้า ให้ครีเอทีฟดึงดูด ปลอดภัยตามนโยบาย Meta "
+    "และเขียนคำโฆษณา 2 แบบ (A/B) + แนะนำกลุ่มเป้าหมาย.\n"
     "ธุรกิจ/โจทย์: {brief}\nเป้าหมาย: {goal}\n\n"
-    "ตอบ JSON อย่างเดียว: {{\"campaign_name\":\"...\",\"headline\":\"พาดหัวสั้น\","
-    "\"primary_text\":\"ข้อความโฆษณา 1-3 บรรทัด มี CTA\"}}"
+    "ตอบ JSON อย่างเดียว: {{\"campaign_name\":\"...\",\"headline\":\"พาดหัว A\","
+    "\"primary_text\":\"ข้อความ A 1-3 บรรทัด มี CTA\",\"headline_b\":\"พาดหัว B\","
+    "\"primary_text_b\":\"ข้อความ B\",\"image_prompt\":\"คำอธิบายภาพโฆษณา\","
+    "\"age_min\":18,\"age_max\":65,\"gender\":\"all|male|female\"}}"
 )
 
 
@@ -2869,74 +2873,185 @@ async def ads_autopilot_save(p: dict) -> dict:
     acc = db.ads_get_account(int(p.get("account_id")))
     if not acc:
         return {"error": "ไม่พบบัญชี"}
+    def _num(v):
+        try: return float(v)
+        except (TypeError, ValueError): return 0
     cfg = {
         "mode": p.get("mode") if p.get("mode") in ("off", "manage", "create") else "off",
-        "daily_cap": float(p.get("daily_cap") or 0),
+        "daily_cap": _num(p.get("daily_cap")),
         "goal": (p.get("goal") or "traffic").strip(),
         "page_id": (p.get("page_id") or "").strip(),
         "link": (p.get("link") or "").strip(),
         "brief": (p.get("brief") or "").strip(),
+        "auto_daily": bool(p.get("auto_daily")),
+        "kill_spend": _num(p.get("kill_spend")),
+        "report_to": (p.get("report_to") or "").strip(),
+        "ab_test": bool(p.get("ab_test")),
+        "use_image": bool(p.get("use_image")),
     }
     db.ads_set_autopilot(acc["id"], cfg)
     return {"ok": True, "autopilot": cfg}
 
 
-@app.post("/api/ads/autopilot/run")
-async def ads_autopilot_run(p: dict) -> dict:
+def _gender_codes(g: str):
+    return [1] if g == "male" else ([2] if g == "female" else None)
+
+
+async def _ads_report(report_to: str, text: str):
+    """Send an autopilot summary to a connected channel (LINE/Telegram/Slack/Discord/Email)."""
+    if not report_to:
+        return
+    row = db.get_connector(report_to)
+    if not row or row.get("status") != "connected":
+        return
+    try:
+        await _send_to_connector(report_to, row.get("config") or "", text)
+    except Exception:
+        pass
+
+
+async def _run_autopilot(acc: dict) -> dict:
+    """Run the account's chosen Autopilot mode. Returns {ok/error, message, actions}."""
     import asyncio
-    acc = db.ads_get_account(int(p.get("account_id")))
-    if not acc:
-        return {"error": "ไม่พบบัญชี"}
     cfg = _autopilot_cfg(acc)
     mode = cfg.get("mode")
     model = model_for_agent("analyst")
+    tok, acct_id = acc["token"], acc.get("ad_account_id", "")
     if mode == "manage":
         cap = cfg.get("daily_cap") or 0
         if cap <= 0:
             return {"error": "ตั้งเพดานงบ/วัน ก่อน (โหมดจัดการงบ)"}
         try:
-            rows = await asyncio.to_thread(ads.meta_campaigns, acc["token"], acc.get("ad_account_id", ""))
+            rows = await asyncio.to_thread(ads.meta_campaigns, tok, acct_id)
         except Exception as exc:
             return {"error": "ดึงแคมเปญไม่สำเร็จ: " + _friendly_err(exc)}
         if not rows:
-            return {"ok": True, "message": "ยังไม่มีแคมเปญให้จัดการ"}
+            return {"ok": True, "message": "ยังไม่มีแคมเปญให้จัดการ", "actions": []}
+        done = []
+        # Kill-switch: ถ้าใช้งบวันนี้เกินที่ตั้ง → หยุดทุกแคมเปญ
+        kill = cfg.get("kill_spend") or 0
+        if kill > 0:
+            try:
+                today = await asyncio.to_thread(ads.meta_campaigns, tok, acct_id, "today")
+                spent = sum(float(r.get("spend") or 0) for r in today)
+                if spent >= kill:
+                    for r in today:
+                        if (r.get("status") or "").upper() == "ACTIVE":
+                            try: await asyncio.to_thread(ads.meta_pause, tok, r["id"])
+                            except Exception: pass
+                    msg = f"🛑 Kill-switch: ใช้งบวันนี้ ฿{spent:.0f} ≥ ฿{kill:.0f} — หยุดทุกแคมเปญแล้ว"
+                    await _ads_report(cfg.get("report_to"), f"[{acc['label']}] {msg}")
+                    return {"ok": True, "message": msg, "actions": []}
+            except Exception:
+                pass
         data = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
         raw = await _claude_text("analyst", model,
                                  _AUTOPILOT_MANAGE_PROMPT.format(goal=cfg.get("goal"), cap=cap,
                                  data=json.dumps(data, ensure_ascii=False)), 2000)
         recos = {r.get("campaign_id"): r for r in _parse_json(raw).get("recos", [])}
-        done = []
         for r in rows:
             rc = recos.get(r["id"], {})
             act = rc.get("action")
             try:
                 if act == "pause":
-                    await asyncio.to_thread(ads.meta_pause, acc["token"], r["id"]); done.append(f"⏸️ {r['name']}")
+                    await asyncio.to_thread(ads.meta_pause, tok, r["id"]); done.append(f"⏸️ {r['name']}")
                 elif act == "scale":
                     b = float(rc.get("suggested_budget") or r.get("daily_budget") or 0)
                     if b > 0:
-                        await asyncio.to_thread(ads.meta_set_budget, acc["token"], r["id"], b); done.append(f"🔼 {r['name']} → ฿{b}/วัน")
+                        await asyncio.to_thread(ads.meta_set_budget, tok, r["id"], b); done.append(f"🔼 {r['name']} → ฿{b}/วัน")
             except Exception as exc:
                 done.append(f"⚠️ {r['name']}: {type(exc).__name__}")
-        return {"ok": True, "message": "จัดการงบอัตโนมัติแล้ว (ภายใต้เพดาน ฿%s/วัน)" % cap, "actions": done}
+        msg = "จัดการงบอัตโนมัติแล้ว (เพดาน ฿%s/วัน)" % cap
+        await _ads_report(cfg.get("report_to"), f"[{acc['label']}] {msg}\n" + ("\n".join(done) or "ไม่มีการเปลี่ยนแปลง"))
+        return {"ok": True, "message": msg, "actions": done}
     if mode == "create":
         if not cfg.get("page_id") or not cfg.get("link"):
             return {"error": "โหมดสร้างแคมเปญ ต้องใส่ Page ID + ลิงก์ปลายทาง ก่อน"}
         raw = await _claude_text("marketing", model,
                                  _AUTOPILOT_CREATE_PROMPT.format(brief=cfg.get("brief") or acc["label"],
-                                 goal=cfg.get("goal")), 1200)
+                                 goal=cfg.get("goal")), 1500)
         plan = _parse_json(raw)
+        image_hash = ""
+        if cfg.get("use_image"):
+            img = _media_cfg("image")
+            if img["key"]:
+                try:
+                    im = await asyncio.to_thread(media.generate_image, img["provider"], img["model"],
+                                                 img["key"], plan.get("image_prompt") or cfg.get("brief") or "ad creative")
+                    if im.get("b64"):
+                        image_hash = await asyncio.to_thread(ads.meta_upload_image, tok, acct_id, im["b64"])
+                except Exception:
+                    image_hash = ""
+        targeting = {"age_min": plan.get("age_min") or 18, "age_max": plan.get("age_max") or 65,
+                     "genders": _gender_codes(plan.get("gender") or "all"), "countries": ["TH"]}
+        variant_b = {"message": plan.get("primary_text_b"), "headline": plan.get("headline_b")} if cfg.get("ab_test") else None
         try:
             res = await asyncio.to_thread(
-                ads.meta_create_campaign, acc["token"], acc.get("ad_account_id", ""),
+                ads.meta_create_campaign, tok, acct_id,
                 plan.get("campaign_name") or "G Office Autopilot", cfg.get("goal"),
                 cfg.get("daily_cap") or 100, cfg.get("page_id"), cfg.get("link"),
-                plan.get("primary_text") or "", plan.get("headline") or "")
+                plan.get("primary_text") or "", plan.get("headline") or "",
+                targeting, image_hash, variant_b)
         except Exception as exc:
             return {"error": "สร้างแคมเปญไม่สำเร็จ: " + _friendly_err(exc)}
-        return {"ok": True, "message": "สร้างแคมเปญใหม่แล้ว (สถานะ PAUSED — ตรวจแล้วค่อยเปิดใน Ads Manager)",
-                "plan": plan, "result": res}
+        extras = []
+        if image_hash: extras.append("แนบรูป")
+        if res.get("ad_b_id"): extras.append("A/B 2 แบบ")
+        msg = "สร้างแคมเปญใหม่ (PAUSED — ตรวจก่อนเปิด)" + (" · " + ", ".join(extras) if extras else "")
+        await _ads_report(cfg.get("report_to"), f"[{acc['label']}] {msg}\nแคมเปญ: {plan.get('campaign_name','')}")
+        return {"ok": True, "message": msg, "plan": plan, "result": res}
     return {"error": "ยังไม่ได้เลือกโหมด Autopilot ของบัญชีนี้"}
+
+
+@app.post("/api/ads/autopilot/run")
+async def ads_autopilot_run(p: dict) -> dict:
+    acc = db.ads_get_account(int(p.get("account_id")))
+    if not acc:
+        return {"error": "ไม่พบบัญชี"}
+    return await _run_autopilot(acc)
+
+
+@app.post("/api/ads/duplicate")
+async def ads_duplicate(p: dict) -> dict:
+    """Duplicate a winning campaign (created PAUSED)."""
+    import asyncio
+    reco = db.ads_get_reco(int(p.get("id"))) if p.get("id") else None
+    cid = (p.get("campaign_id") or (reco or {}).get("campaign_id") or "").strip()
+    acc_id = (reco or {}).get("account_id") or p.get("account_id")
+    acc = db.ads_get_account(int(acc_id)) if acc_id else None
+    if not acc or not cid:
+        return {"error": "ไม่พบบัญชี/แคมเปญ"}
+    try:
+        res = await asyncio.to_thread(ads.meta_duplicate_campaign, acc["token"], cid)
+    except Exception as exc:
+        return {"error": "ก๊อปแคมเปญไม่สำเร็จ: " + _friendly_err(exc)}
+    return {"ok": True, "message": "ก๊อปแคมเปญแล้ว (PAUSED — ตรวจก่อนเปิด)", "result": res}
+
+
+async def _ads_autopilot_loop() -> None:
+    """Once a day, run Autopilot for accounts that turned on auto-run (and kill-switch)."""
+    import asyncio
+    await asyncio.sleep(60)
+    while True:
+        try:
+            today = db._now()[:10]
+            for acc in db.ads_list_accounts("meta"):
+                cfg = _autopilot_cfg(acc)
+                if cfg.get("mode") not in ("manage", "create"):
+                    continue
+                if not cfg.get("auto_daily"):
+                    continue
+                if cfg.get("last_run") == today:
+                    continue
+                try:
+                    await _run_autopilot(acc)
+                except Exception:
+                    pass
+                cfg["last_run"] = today
+                db.ads_set_autopilot(acc["id"], cfg)
+        except Exception:
+            pass
+        await asyncio.sleep(3600)     # check hourly; runs each account once/day
 
 
 @app.post("/api/ads/settings")
