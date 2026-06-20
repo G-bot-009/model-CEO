@@ -215,6 +215,7 @@ async def _startup() -> None:
     asyncio.create_task(_content_loop())        # autonomous content factory
     asyncio.create_task(_ads_autopilot_loop())  # daily ads autopilot + kill-switch
     asyncio.create_task(_fb_autoreply_loop())   # auto-reply page comments
+    asyncio.create_task(_telegram_loop())       # mirror + AI-assistant over Telegram
 
 
 LOGIN_USER = os.getenv("LOGIN_USER", "admin")
@@ -3287,15 +3288,21 @@ def _telegram_creds():
     return data.get("bot_token", ""), str(data.get("chat_id", "") or "").strip()
 
 
-async def _telegram_pull(tok: str) -> int:
-    """Fetch new updates via getUpdates and store incoming messages. Returns count added."""
+def _tg_now() -> str:
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(tz=timezone(timedelta(hours=7))).strftime("%Y-%m-%d %H:%M")
+
+
+async def _telegram_pull(tok: str, long_poll: bool = False) -> list:
+    """Fetch new updates via getUpdates and store incoming. Returns the new incoming messages."""
     import httpx
+    from datetime import datetime, timezone, timedelta
     offset = db.chat_last_update_id("telegram")
-    params = {"limit": 100, "timeout": 0}
+    params = {"limit": 100, "timeout": 25 if long_poll else 0}
     if offset:
         params["offset"] = offset + 1
-    added = 0
-    async with httpx.AsyncClient(timeout=25) as client:
+    new_msgs = []
+    async with httpx.AsyncClient(timeout=(35 if long_poll else 25)) as client:
         r = await client.get(f"https://api.telegram.org/bot{tok}/getUpdates", params=params)
     if r.status_code >= 400:
         raise RuntimeError(f"Telegram {r.status_code}: {r.text[:160]}")
@@ -3306,6 +3313,8 @@ async def _telegram_pull(tok: str) -> int:
         uid = u.get("update_id")
         msg = u.get("message") or u.get("edited_message") or u.get("channel_post") or {}
         if not msg:
+            # still advance the offset so we don't loop on non-message updates
+            db.chat_msg_add("telegram", None, "sys", "", "", _tg_now(), update_id=uid)
             continue
         frm = msg.get("from") or {}
         name = (frm.get("first_name", "") + " " + frm.get("last_name", "")).strip() \
@@ -3313,12 +3322,63 @@ async def _telegram_pull(tok: str) -> int:
         text = msg.get("text") or msg.get("caption") or ("[" + (
             "รูปภาพ" if msg.get("photo") else "ไฟล์/สื่อ") + "]")
         chat = (msg.get("chat") or {}).get("id")
-        from datetime import datetime, timezone, timedelta
         ts = datetime.fromtimestamp(msg.get("date", 0), tz=timezone(timedelta(hours=7))) \
-            .strftime("%Y-%m-%d %H:%M") if msg.get("date") else ""
+            .strftime("%Y-%m-%d %H:%M") if msg.get("date") else _tg_now()
         if db.chat_msg_add("telegram", chat, "in", name, text, ts, update_id=uid):
-            added += 1
-    return added
+            new_msgs.append({"chat_id": chat, "name": name, "text": text})
+    return new_msgs
+
+
+async def _telegram_send(tok: str, chat_id, text: str) -> None:
+    import httpx
+    async with httpx.AsyncClient(timeout=20) as client:
+        await client.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+                          json={"chat_id": chat_id, "text": text})
+
+
+async def _telegram_assistant_reply(incoming: str) -> str:
+    """G Office personal assistant reply (concise Thai summary) using recent context."""
+    history = [m for m in db.chat_msgs_list("telegram", 14) if m.get("direction") in ("in", "out")]
+    msgs = []
+    for m in history[-12:]:
+        role = "user" if m["direction"] == "in" else "assistant"
+        if m.get("text"):
+            msgs.append({"role": role, "content": m["text"]})
+    if not msgs or msgs[-1]["role"] != "user":
+        msgs.append({"role": "user", "content": incoming})
+    try:
+        resp = await _client.messages.create(
+            model=get_model(), max_tokens=700, **thinking_kwargs(),
+            system=("คุณคือผู้ช่วย AI ของ G Office (ออฟฟิศ AI ของผู้ใช้) คุยกับเจ้าของผ่าน Telegram "
+                    "ตอบเป็นภาษาไทย กระชับ ตรงประเด็น สรุปเป็นข้อ ๆ เมื่อเหมาะสม ใช้ emoji พอประมาณ "
+                    "ถ้าถูกถามเรื่องงาน/การตลาด/เทรด/คอนเทนต์ ให้คำแนะนำที่ทำได้จริง ไม่เกิน 6 บรรทัด"),
+            messages=msgs)
+        return next((b.text for b in resp.content if b.type == "text"), "").strip()
+    except Exception:
+        return ""
+
+
+async def _telegram_loop() -> None:
+    """Single poller: mirror Telegram chat into DB; auto-reply via AI when assistant is on."""
+    import asyncio
+    await asyncio.sleep(20)
+    while True:
+        tok, _ = _telegram_creds()
+        if not tok:
+            await asyncio.sleep(30)
+            continue
+        try:
+            new_msgs = await _telegram_pull(tok, long_poll=True)
+            assistant_on = db.get_settings().get("telegram_assistant") == "true"
+            if assistant_on:
+                for nm in new_msgs:
+                    reply = (await _telegram_assistant_reply(nm["text"])).strip()
+                    if not reply:
+                        continue
+                    await _telegram_send(tok, nm["chat_id"], reply)
+                    db.chat_msg_add("telegram", nm["chat_id"], "out", "ผู้ช่วย AI", reply, _tg_now())
+        except Exception:
+            await asyncio.sleep(15)
 
 
 @app.get("/api/chatbot/messages")
@@ -3327,13 +3387,15 @@ async def chatbot_messages() -> dict:
     if not tok:
         return {"error": "ยังไม่ได้เชื่อม Telegram — ไปที่เมนู “การเชื่อมต่อ” แล้วเชื่อม Telegram ก่อน",
                 "messages": [], "connected": False}
-    warn = ""
-    try:
-        await _telegram_pull(tok)
-    except Exception as exc:
-        warn = _friendly_err(exc)
-    return {"messages": db.chat_msgs_list("telegram"), "connected": True,
-            "chat_id": chat, "warn": warn}
+    msgs = [m for m in db.chat_msgs_list("telegram") if m.get("direction") != "sys"]
+    return {"messages": msgs, "connected": True, "chat_id": chat,
+            "assistant": db.get_settings().get("telegram_assistant") == "true"}
+
+
+@app.post("/api/chatbot/assistant")
+async def chatbot_assistant(p: dict) -> dict:
+    db.set_settings({"telegram_assistant": "true" if p.get("on") else "false"})
+    return {"ok": True, "on": bool(p.get("on"))}
 
 
 @app.post("/api/chatbot/send")
