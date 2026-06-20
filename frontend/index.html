@@ -3480,11 +3480,15 @@ async function loadAds(){
       <button class="qbtn ads-acc-del" data-id="${a.id}" style="color:#f87171">🗑️</button>
     </div>`).join("") || '<div style="color:#64748b">ยังไม่มีบัญชี — กดปุ่ม “เชื่อม Facebook ตัวที่ N” ด้านล่าง</div>';
   $("adsAccList").querySelectorAll(".ads-acc-del").forEach(x => x.onclick = async () => { await postJSON("/api/ads/account/delete",{id:+x.dataset.id}); loadAds(); });
-  // separate connect button per empty slot
+  // connected slots stay visible as green ✅, empty slots get a connect button
   let slots = "";
+  accs.forEach((a,i) => {
+    slots += `<button class="qbtn ads-slot-on" data-id="${a.id}" style="border:1px solid #22c55e;color:#22c55e;font-weight:700">✅ ตัวที่ ${i+1} · เชื่อมแล้ว</button>`;
+  });
   for (let n = accs.length + 1; n <= ac.max; n++)
     slots += `<button class="qbtn ads-slot" data-n="${n}" style="border:1px dashed #6366f1;color:#a5b4fc">➕ เชื่อม Facebook ตัวที่ ${n}</button>`;
   $("adsSlots").innerHTML = slots;
+  $("adsSlots").querySelectorAll(".ads-slot-on").forEach(b => b.onclick = () => { adsFilter = b.dataset.id; loadAds(); });
   $("adsSlots").querySelectorAll(".ads-slot").forEach(b => b.onclick = () => {
     $("adsAccLabel").value = "Ads Facebook ตัวที่ " + b.dataset.n;
     $("adsAccToken").focus(); $("adsAccLabel").scrollIntoView({behavior:"smooth"});
@@ -3494,15 +3498,15 @@ async function loadAds(){
   const tabBtn = (f,label) => `<button class="qbtn ads-tab" data-f="${f}" style="${String(adsFilter)===String(f)?'background:#6366f1;color:#fff;border-color:#6366f1':''}">${label}</button>`;
   $("adsTabs").innerHTML = tabBtn("all","ทั้งหมด") + accs.map((a,i) => tabBtn(a.id, `📘 ตัวที่ ${i+1}`)).join("");
   $("adsTabs").querySelectorAll(".ads-tab").forEach(t => t.onclick = () => { adsFilter = t.dataset.f; loadAds(); });
-  const recos = (d.recommendations||[]).filter(r => adsFilter === "all" || String(r.account_id) === String(adsFilter));
+  const allRecos = d.recommendations || [];
   const box = $("adsRecos");
-  box.innerHTML = recos.length ? recos.map(r => {
+  const recoCard = (r) => {
     const [col,ic,lab] = ADS_ACT[r.action] || ["#94a3b8","•",r.action];
     const mx = r.metrics || {};
     const pending = r.status === "pending";
     return `<div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px;border-left:4px solid ${col}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div>${r.account_label?`<span class="tag" style="background:#312e81;color:#c7d2fe">📘 ${escapeHtml(r.account_label)}</span> `:''}<b style="color:#fff">${ic} ${escapeHtml(r.name)}</b>
+        <div><b style="color:#fff">${ic} ${escapeHtml(r.name)}</b>
           <span class="tag" style="background:${col}33;color:${col}">${lab}</span>
           ${r.status!=='pending'?`<span class="tag" style="background:#1e293b;color:#94a3b8">${r.status==='applied'?'ทำแล้ว':'ข้ามแล้ว'}</span>`:''}</div>
         <div style="display:flex;gap:6px">
@@ -3513,7 +3517,23 @@ async function loadAds(){
       <div style="font-size:12px;color:#94a3b8">ใช้งบ ฿${(mx.spend||0).toLocaleString()} · ROAS ${mx.roas||0} · คลิก ${mx.clicks||0} · คอนเวอร์ชัน ${mx.conversions||0}${r.action==='scale'?` · แนะนำงบ ฿${r.suggested_budget}/วัน`:''}</div>
       <div style="font-size:13px;color:#cbd5e1">${escapeHtml(r.reason||"")}</div>
     </div>`;
-  }).join("") : '<div style="color:#64748b">ยังไม่มีคำแนะนำ — เชื่อมโฆษณาแล้วกด “ตรวจวันนี้”</div>';
+  };
+  // คอลัมน์แยกตามบัญชี — แสดงทุกบัญชีที่เชื่อม (มีคำแนะนำหรือยังไม่มีก็ขึ้น)
+  const showAccs = adsFilter === "all" ? accs : accs.filter(a => String(a.id) === String(adsFilter));
+  let html = "";
+  showAccs.forEach((a) => {
+    const i = accs.findIndex(x => x.id === a.id);
+    const accRecos = allRecos.filter(r => String(r.account_id) === String(a.id));
+    html += `<div style="border:1px solid #1e293b;border-radius:12px;padding:12px;background:#0b1220">
+      <div style="font-weight:800;color:#c7d2fe;margin-bottom:8px">📘 Ads Facebook ตัวที่ ${i+1} · ${escapeHtml(a.label)} <span style="font-size:11px;color:#64748b">act_${escapeHtml(a.ad_account_id)}</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${accRecos.length ? accRecos.map(recoCard).join("") : '<div style="color:#64748b;font-size:13px">ยังไม่มีคำแนะนำ — กด “🔍 ตรวจวันนี้” ด้านบน เพื่อให้ AI ดึงแคมเปญมาวิเคราะห์ (บัญชีใหม่ที่ยังไม่มีแคมเปญจะว่างไว้ก่อน)</div>'}
+      </div>
+    </div>`;
+  });
+  box.style.display = "grid";
+  box.style.gridTemplateColumns = showAccs.length > 1 ? "repeat(auto-fit,minmax(300px,1fr))" : "1fr";
+  box.innerHTML = html || '<div style="color:#64748b">ยังไม่มีบัญชี — เชื่อม Facebook ด้านบนก่อน</div>';
   box.querySelectorAll(".ads-apply").forEach(x => x.onclick = async () => {
     const r = await postJSON("/api/ads/apply",{id:+x.dataset.id});
     toastNote(r.error||r.message||"ทำแล้ว", r.error?"#f59e0b":"#22c55e"); loadAds();
