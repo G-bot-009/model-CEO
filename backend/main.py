@@ -2549,6 +2549,14 @@ async def ads_status() -> dict:
 
 
 # --- One-click Facebook Ads OAuth (no manual token / no System User) ---------
+def _fb_ads_creds() -> tuple:
+    """App ID/Secret for the ads OAuth — from settings (UI) else env (operator)."""
+    s = db.get_settings()
+    app_id = (s.get("fb_ads_app_id") or os.getenv("FB_ADS_APP_ID", "")).strip()
+    app_secret = (s.get("fb_ads_app_secret") or os.getenv("FB_ADS_APP_SECRET", "")).strip()
+    return app_id, app_secret
+
+
 @app.post("/api/ads/fb-oauth-creds")
 async def ads_fb_oauth_creds(p: dict) -> dict:
     upd = {}
@@ -2563,34 +2571,51 @@ async def ads_fb_oauth_creds(p: dict) -> dict:
 
 @app.get("/api/ads/fb-oauth-status")
 async def ads_fb_oauth_status(request: Request) -> dict:
-    s = db.get_settings()
-    return {"has": bool(s.get("fb_ads_app_id") and s.get("fb_ads_app_secret")),
+    app_id, app_secret = _fb_ads_creds()
+    return {"has": bool(app_id and app_secret),
             "redirect_uri": _public_base(request) + "/oauth-ads/facebook/callback"}
 
 
 @app.get("/oauth-ads/facebook/start")
-async def fb_ads_oauth_start(request: Request):
+async def fb_ads_oauth_start(request: Request, slot: str = ""):
     from urllib.parse import urlencode
-    s = db.get_settings()
-    app_id = s.get("fb_ads_app_id")
+    app_id, _ = _fb_ads_creds()
     if not app_id:
         return HTMLResponse("<h3>ยังไม่ได้ใส่ App ID/Secret — ปิดหน้าต่างแล้วกรอกก่อน</h3>", status_code=400)
     state = secrets.token_urlsafe(16)
-    _oauth_state[state] = ("facebook_ads", "")
+    _oauth_state[state] = ("facebook_ads", slot or "")
     params = {"response_type": "code", "client_id": app_id,
               "redirect_uri": _public_base(request) + "/oauth-ads/facebook/callback",
-              "scope": "ads_management,ads_read", "state": state}
+              "scope": "ads_management,ads_read", "state": state, "auth_type": "reauthenticate"}
     return RedirectResponse("https://www.facebook.com/v19.0/dialog/oauth?" + urlencode(params))
+
+
+_FB_ADS_PICK: dict = {}   # pick_id -> {slot, token, accounts, ts}
+_ADS_PAGE = ("<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;background:#0f172a;"
+             "color:#e2e8f0;text-align:center;padding:40px 20px'>")
+
+
+def _fb_ads_assign(slot: str, token: str, acc: dict) -> str:
+    acc_id = acc.get("account_id")
+    if not acc_id:
+        return "ไม่พบบัญชีโฆษณา"
+    if acc_id in {a["ad_account_id"] for a in db.ads_list_accounts("meta")}:
+        return "บัญชีนี้เชื่อมไว้แล้ว"
+    if len(db.ads_list_accounts("meta")) >= 10:
+        return "ครบ 10 บัญชีแล้ว"
+    label = f"Ads Facebook ตัวที่ {slot}" if slot else (acc.get("name") or "Ads Facebook")
+    db.ads_add_account("meta", label, token, acc_id)
+    return ""
 
 
 @app.get("/oauth-ads/facebook/callback")
 async def fb_ads_oauth_callback(request: Request, code: str = "", state: str = ""):
     import httpx
     saved = _oauth_state.pop(state or "", None)
-    s = db.get_settings()
-    app_id, app_secret = s.get("fb_ads_app_id"), s.get("fb_ads_app_secret")
+    app_id, app_secret = _fb_ads_creds()
     if not code or not saved or saved[0] != "facebook_ads" or not (app_id and app_secret):
-        return HTMLResponse("<h3>เชื่อมไม่สำเร็จ — ปิดหน้าต่างแล้วลองใหม่</h3>", status_code=400)
+        return HTMLResponse(_ADS_PAGE + "<h3>เชื่อมไม่สำเร็จ — ปิดหน้าต่างแล้วลองใหม่</h3>", status_code=400)
+    slot = saved[1] or ""
     redirect = _public_base(request) + "/oauth-ads/facebook/callback"
     try:
         async with httpx.AsyncClient(timeout=25) as c:
@@ -2599,7 +2624,7 @@ async def fb_ads_oauth_callback(request: Request, code: str = "", state: str = "
                                     "redirect_uri": redirect, "code": code})
             tok = r.json().get("access_token")
             if not tok:
-                return HTMLResponse(f"<h3>ไม่ได้รับ token: {_esc(r.text[:200])}</h3>", status_code=400)
+                return HTMLResponse(_ADS_PAGE + f"<h3>ไม่ได้รับ token: {_esc(r.text[:200])}</h3>", status_code=400)
             r2 = await c.get("https://graph.facebook.com/v19.0/oauth/access_token",
                              params={"grant_type": "fb_exchange_token", "client_id": app_id,
                                      "client_secret": app_secret, "fb_exchange_token": tok})
@@ -2608,22 +2633,43 @@ async def fb_ads_oauth_callback(request: Request, code: str = "", state: str = "
                              params={"fields": "name,account_id", "access_token": long_tok, "limit": 50})
             accts = r3.json().get("data", [])
     except Exception as exc:
-        return HTMLResponse(f"<h3>เชื่อมไม่สำเร็จ: {_esc(_friendly_err(exc))}</h3>", status_code=400)
-    existing = {a["ad_account_id"] for a in db.ads_list_accounts("meta")}
-    cur = len(db.ads_list_accounts("meta"))
-    added = 0
-    for a in accts:
-        acc_id = a.get("account_id")
-        if not acc_id or acc_id in existing or cur >= 10:
-            continue
-        cur += 1
-        db.ads_add_account("meta", a.get("name") or f"Ads Facebook ตัวที่ {cur}", long_tok, acc_id)
-        added += 1
-    msg = (f"เชื่อม Facebook สำเร็จ — ดึงมา {added} บัญชี" if added else
-           "เชื่อมสำเร็จ แต่ไม่พบบัญชีโฆษณาใหม่ (อาจเชื่อมไว้แล้ว หรือบัญชีนี้ไม่มีสิทธิ์ ads)")
-    return HTMLResponse(f"<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;background:#0f172a;color:#e2e8f0;text-align:center;padding:60px'>"
-                        f"<h2>✅ {_esc(msg)}</h2><p>ปิดหน้าต่างนี้แล้วกลับไปที่ G Office → Ads Manager (รีเฟรช)</p>"
-                        f"<script>setTimeout(function(){{window.close()}},2500)</script></body>")
+        return HTMLResponse(_ADS_PAGE + f"<h3>เชื่อมไม่สำเร็จ: {_esc(_friendly_err(exc))}</h3>", status_code=400)
+    slot_txt = f"ตัวที่ {_esc(slot)}" if slot else "บัญชีนี้"
+    if not accts:
+        return HTMLResponse(_ADS_PAGE + f"<h2>⚠️ ไม่พบบัญชีโฆษณา</h2><p>บัญชี Facebook นี้ไม่มีสิทธิ์ ads — ปิดหน้าต่างแล้วลองบัญชีอื่น</p>"
+                            "<script>setTimeout(function(){window.close()},3000)</script>")
+    if len(accts) == 1:                      # หนึ่งบัญชี → ผูกเข้าช่องนั้นเลย (ตัวต่อตัว)
+        err = _fb_ads_assign(slot, long_tok, accts[0])
+        msg = (f"❌ {err}" if err else f"✅ เชื่อม {slot_txt} สำเร็จ — {_esc(accts[0].get('name') or '')}")
+        return HTMLResponse(_ADS_PAGE + f"<h2>{msg}</h2><p>ปิดหน้าต่างนี้แล้วกลับไป G Office (รีเฟรช)</p>"
+                            "<script>setTimeout(function(){window.close()},2500)</script>")
+    # หลายบัญชี → ให้เลือก 1 บัญชีสำหรับช่องนี้
+    pid = secrets.token_urlsafe(12)
+    _FB_ADS_PICK[pid] = {"slot": slot, "token": long_tok, "accounts": accts, "ts": time.time()}
+    rows = "".join(
+        f"<a href='/oauth-ads/facebook/pick?pid={pid}&acc={_esc(a.get('account_id'))}' "
+        "style='display:block;max-width:420px;margin:8px auto;padding:14px;background:#1e293b;"
+        "border:1px solid #334155;border-radius:10px;color:#e2e8f0;text-decoration:none;font-weight:700'>"
+        f"📘 {_esc(a.get('name') or 'Ad Account')} <span style='color:#94a3b8;font-weight:400'>· act_{_esc(a.get('account_id'))}</span></a>"
+        for a in accts)
+    return HTMLResponse(_ADS_PAGE + f"<h2>เลือกบัญชีโฆษณาสำหรับ {slot_txt}</h2>"
+                        "<p style='color:#94a3b8'>1 ช่อง = 1 บัญชี — คลิกบัญชีที่จะผูกกับช่องนี้</p>" + rows + "</body>")
+
+
+@app.get("/oauth-ads/facebook/pick")
+async def fb_ads_pick(pid: str = "", acc: str = ""):
+    d = _FB_ADS_PICK.pop(pid or "", None)
+    if not d:
+        return HTMLResponse(_ADS_PAGE + "<h3>หมดเวลาเลือก — ปิดแล้วล็อกอินใหม่</h3>"
+                            "<script>setTimeout(function(){window.close()},2500)</script>")
+    a = next((x for x in d["accounts"] if str(x.get("account_id")) == str(acc)), None)
+    if not a:
+        return HTMLResponse(_ADS_PAGE + "<h3>ไม่พบบัญชีที่เลือก</h3>")
+    err = _fb_ads_assign(d["slot"], d["token"], a)
+    slot_txt = f"ตัวที่ {_esc(d['slot'])}" if d["slot"] else "ช่องนี้"
+    msg = (f"❌ {err}" if err else f"✅ ผูก {slot_txt} กับ {_esc(a.get('name') or '')} แล้ว")
+    return HTMLResponse(_ADS_PAGE + f"<h2>{msg}</h2><p>ปิดหน้าต่างนี้แล้วกลับไป G Office (รีเฟรช)</p>"
+                        "<script>setTimeout(function(){window.close()},2200)</script>")
 
 
 @app.get("/api/ads/accounts")
