@@ -37,6 +37,12 @@
   .gear-item { display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:8px; color:#cbd5e1; cursor:pointer; font-size:14px; }
   .gear-item:hover { background:#1b2742; color:#fff; }
   .menu-item .ico { font-size:18px; width:22px; text-align:center; }
+  .menu-item .caret { margin-left:auto; font-size:11px; transition:transform .18s; opacity:.7; }
+  .menu-group.open .ads-parent .caret { transform:rotate(90deg); }
+  .submenu { overflow:hidden; max-height:0; transition:max-height .22s ease; }
+  .menu-group.open .submenu { max-height:140px; }
+  .submenu-item { padding-left:30px; font-size:13px; }
+  .submenu-item .ico { font-size:15px; }
   .side-title { padding:14px 16px 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
   .agent-list { padding:0 8px 12px; }
   .agent-row { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:10px; font-size:13px; }
@@ -422,9 +428,16 @@
       <div class="menu-item" data-view="music"><span class="ico">🎵</span><span class="label">Music AI</span></div>
       <div class="menu-item" data-view="imageai"><span class="ico">🖼️</span><span class="label">Image AI</span></div>
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
-      <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
-      <div class="menu-item" data-view="adlibrary"><span class="ico">🔎</span><span class="label">Ad Library</span></div>
-      <div class="menu-item" data-view="autopost"><span class="ico">📲</span><span class="label">Auto Post Facebook</span></div>
+      <div class="menu-group" id="adsGroup">
+        <div class="menu-item ads-parent" id="adsParent" data-view="ads">
+          <span class="ico">📣</span><span class="label">Ads Manager</span>
+          <span class="caret" id="adsCaret">▸</span>
+        </div>
+        <div class="submenu" id="adsSub">
+          <div class="menu-item submenu-item" data-view="adlibrary"><span class="ico">🔎</span><span class="label">Ad Library</span></div>
+          <div class="menu-item submenu-item" data-view="autopost"><span class="ico">📲</span><span class="label">Auto Post Facebook</span></div>
+        </div>
+      </div>
       <div class="menu-item" data-view="chatbot"><span class="ico">💬</span><span class="label">Chat Bot</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
@@ -4199,6 +4212,7 @@ async function biOpen(pid){
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
+  if (["ads","adlibrary","autopost"].includes(v)) $("adsGroup") && $("adsGroup").classList.add("open");
   $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", music:"Music AI", imageai:"Image AI", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
@@ -5148,7 +5162,12 @@ async function checkSchedule(){
 async function saveSettings(partial){ try { await postJSON("/api/settings", partial); } catch(e){} }
 
 /* ---------- wire up ---------- */
-$("menu").addEventListener("click", e => { const it=e.target.closest(".menu-item"); if(it) showView(it.dataset.view); });
+$("menu").addEventListener("click", e => {
+  // clicking the caret only toggles the Ads dropdown (no navigation)
+  if (e.target.id === "adsCaret"){ e.stopPropagation(); $("adsGroup").classList.toggle("open"); return; }
+  const it=e.target.closest(".menu-item");
+  if (it){ if (it.id === "adsParent") $("adsGroup").classList.add("open"); showView(it.dataset.view); }
+});
 // gear = dropdown (Admin Usage + Settings)
 $("gear").addEventListener("click", (e) => { e.stopPropagation(); $("gearMenu").hidden = !$("gearMenu").hidden; });
 $("gearMenu").addEventListener("click", async (e) => {
