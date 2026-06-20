@@ -11,6 +11,7 @@ All calls use stdlib urllib. Live calls can't be exercised in the sandbox
 
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.parse
 import urllib.request
@@ -128,6 +129,55 @@ def meta_duplicate_campaign(token: str, campaign_id: str) -> dict:
     """Duplicate an existing (winning) campaign — created PAUSED."""
     return _post(f"{GRAPH}/{campaign_id}/copies",
                  {"deep_copy": "true", "status_option": "PAUSED", "access_token": token})
+
+
+def _sha(s: str) -> str:
+    return hashlib.sha256((s or "").strip().lower().encode()).hexdigest()
+
+
+def meta_create_custom_audience(token: str, ad_account_id: str, name: str) -> str:
+    """Create an empty Custom Audience (customer list). Returns its id."""
+    acct = _acct(ad_account_id)
+    d = _post(f"{GRAPH}/{acct}/customaudiences", {
+        "name": name or "G Office Custom", "subtype": "CUSTOM",
+        "customer_file_source": "USER_PROVIDED_ONLY",
+        "description": "Created by G Office", "access_token": token})
+    if not d.get("id"):
+        raise RuntimeError(f"สร้าง Custom Audience ไม่สำเร็จ: {str(d)[:160]}")
+    return d["id"]
+
+
+def meta_add_audience_users(token: str, audience_id: str, emails: list, phones: list) -> int:
+    """Add hashed customer data (SHA256) to a Custom Audience. Returns count added."""
+    added = 0
+    for schema, vals in (("EMAIL_SHA256", emails), ("PHONE_SHA256", phones)):
+        vals = [v for v in (vals or []) if v]
+        if not vals:
+            continue
+        payload = json.dumps({"schema": schema, "data": [_sha(v) for v in vals]})
+        _post(f"{GRAPH}/{audience_id}/users", {"payload": payload, "access_token": token})
+        added += len(vals)
+    return added
+
+
+def meta_create_lookalike(token: str, ad_account_id: str, name: str,
+                          source_id: str, country: str = "TH", ratio: float = 0.01) -> str:
+    """Create a Lookalike Audience from a source Custom Audience. Returns its id."""
+    acct = _acct(ad_account_id)
+    spec = json.dumps({"type": "similarity", "country": country or "TH", "ratio": ratio or 0.01})
+    d = _post(f"{GRAPH}/{acct}/customaudiences", {
+        "name": name or "G Office Lookalike", "subtype": "LOOKALIKE",
+        "origin_audience_id": source_id, "lookalike_spec": spec, "access_token": token})
+    if not d.get("id"):
+        raise RuntimeError(f"สร้าง Lookalike ไม่สำเร็จ: {str(d)[:160]}")
+    return d["id"]
+
+
+def meta_list_audiences(token: str, ad_account_id: str) -> list:
+    acct = _acct(ad_account_id)
+    d = _get(f"{GRAPH}/{acct}/customaudiences?fields=name,subtype,approximate_count_lower_bound"
+             f"&limit=200&access_token={token}")
+    return d.get("data", [])
 
 
 def _make_creative(acct, token, name, page_id, link, message, headline, image_hash):

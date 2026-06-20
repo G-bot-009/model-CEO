@@ -3028,6 +3028,74 @@ async def ads_duplicate(p: dict) -> dict:
     return {"ok": True, "message": "ก๊อปแคมเปญแล้ว (PAUSED — ตรวจก่อนเปิด)", "result": res}
 
 
+@app.get("/api/ads/audiences")
+async def ads_audiences(account_id: int) -> dict:
+    import asyncio
+    acc = db.ads_get_account(int(account_id))
+    if not acc:
+        return {"error": "ไม่พบบัญชี", "audiences": []}
+    try:
+        auds = await asyncio.to_thread(ads.meta_list_audiences, acc["token"], acc["ad_account_id"])
+    except Exception as exc:
+        return {"error": _friendly_err(exc), "audiences": []}
+    return {"audiences": [{"id": a.get("id"), "name": a.get("name"), "subtype": a.get("subtype"),
+                           "count": a.get("approximate_count_lower_bound")} for a in auds]}
+
+
+@app.post("/api/ads/audience/custom")
+async def ads_audience_custom(p: dict) -> dict:
+    """Create a Custom Audience from a pasted customer list (emails/phones are
+    SHA256-hashed server-side — raw data is never stored)."""
+    import asyncio
+    acc = db.ads_get_account(int(p.get("account_id")))
+    if not acc:
+        return {"error": "ไม่พบบัญชี"}
+    emails, phones = [], []
+    for line in (p.get("data") or "").replace(",", "\n").splitlines():
+        v = line.strip()
+        if not v:
+            continue
+        if "@" in v:
+            emails.append(v.lower())
+        else:
+            dig = "".join(c for c in v if c.isdigit())
+            if dig.startswith("0"):
+                dig = "66" + dig[1:]          # TH local → country code
+            if dig:
+                phones.append(dig)
+    if not emails and not phones:
+        return {"error": "ใส่อีเมลหรือเบอร์โทรอย่างน้อย 1 รายการ"}
+    name = (p.get("name") or "G Office Custom").strip()
+    try:
+        aid = await asyncio.to_thread(ads.meta_create_custom_audience, acc["token"], acc["ad_account_id"], name)
+        n = await asyncio.to_thread(ads.meta_add_audience_users, acc["token"], aid, emails, phones)
+    except Exception as exc:
+        return {"error": "สร้างไม่สำเร็จ: " + _friendly_err(exc)}
+    return {"ok": True, "id": aid, "message": f"สร้าง Custom Audience “{name}” + เพิ่ม {n} รายชื่อแล้ว"}
+
+
+@app.post("/api/ads/audience/lookalike")
+async def ads_audience_lookalike(p: dict) -> dict:
+    import asyncio
+    acc = db.ads_get_account(int(p.get("account_id")))
+    if not acc:
+        return {"error": "ไม่พบบัญชี"}
+    source = (p.get("source_id") or "").strip()
+    if not source:
+        return {"error": "เลือกกลุ่มต้นทาง (Custom Audience) ก่อน"}
+    try:
+        ratio = float(p.get("ratio") or 0.01)
+    except (TypeError, ValueError):
+        ratio = 0.01
+    name = (p.get("name") or "G Office Lookalike").strip()
+    try:
+        aid = await asyncio.to_thread(ads.meta_create_lookalike, acc["token"], acc["ad_account_id"],
+                                      name, source, (p.get("country") or "TH").strip(), ratio)
+    except Exception as exc:
+        return {"error": "สร้าง Lookalike ไม่สำเร็จ: " + _friendly_err(exc)}
+    return {"ok": True, "id": aid, "message": f"สร้าง Lookalike “{name}” แล้ว (Meta กำลังประมวลผล ~ไม่กี่ชม.)"}
+
+
 async def _ads_autopilot_loop() -> None:
     """Once a day, run Autopilot for accounts that turned on auto-run (and kill-switch)."""
     import asyncio

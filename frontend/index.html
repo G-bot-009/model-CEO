@@ -3737,6 +3737,25 @@ async function loadAds(){
         </div>
         <div class="ap-body" data-id="${a.id}">${apBody(a.id, mode, ap)}</div>
       </div>
+      <details style="border:1px solid #1e293b;border-radius:10px;padding:8px 10px;margin-bottom:10px">
+        <summary style="cursor:pointer;color:#a5b4fc;font-weight:700;font-size:13px;list-style:none">👥 กลุ่มเป้าหมาย (Custom / Lookalike) ▾</summary>
+        <div style="margin-top:8px">
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">รายชื่อลูกค้า (อีเมล/เบอร์ บรรทัดละ 1 — เข้ารหัสก่อนส่ง ไม่เก็บข้อมูลดิบ)</div>
+          <textarea class="numfld aud-data" data-id="${a.id}" style="width:100%;min-height:54px;margin:0 0 6px" placeholder="somchai@email.com, 0812345678 (บรรทัดละ 1 หรือคั่นด้วย ,)"></textarea>
+          <input class="numfld aud-name" data-id="${a.id}" style="width:100%;margin:0 0 6px" placeholder="ชื่อกลุ่ม เช่น ลูกค้าเก่า">
+          <button class="qbtn aud-custom" data-id="${a.id}" style="width:100%;font-weight:700">➕ สร้าง Custom Audience</button>
+          <div style="border-top:1px solid #1e293b;margin:10px 0"></div>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Lookalike (หาคนคล้ายลูกค้าเดิม)</div>
+          <select class="numfld aud-src" data-id="${a.id}" style="width:100%;margin:0 0 6px"><option value="">— เลือกกลุ่มต้นทาง — (กดโหลด)</option></select>
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input class="numfld aud-ratio" data-id="${a.id}" style="width:90px;margin:0" value="1" title="% ความคล้าย (1-10)">
+            <input class="numfld aud-country" data-id="${a.id}" style="flex:1;margin:0" value="TH" title="ประเทศ">
+          </div>
+          <button class="qbtn aud-look" data-id="${a.id}" style="width:100%;font-weight:700">➕ สร้าง Lookalike</button>
+          <button class="qbtn aud-list" data-id="${a.id}" style="width:100%;margin-top:6px;font-size:12px">🔄 โหลดกลุ่มที่มี</button>
+          <div class="aud-box" data-id="${a.id}" style="font-size:12px;color:#94a3b8;margin-top:6px"></div>
+        </div>
+      </details>
       <div style="display:flex;flex-direction:column;gap:8px">
         ${accRecos.length ? accRecos.map(recoCard).join("") : '<div style="color:#64748b;font-size:13px">ยังไม่มีคำแนะนำ — กด “🔍 ตรวจวันนี้” ในคอลัมน์นี้ เพื่อให้ AI ดึงแคมเปญของบัญชีนี้มาวิเคราะห์ (บัญชีใหม่ที่ยังไม่มีแคมเปญจะว่างไว้ก่อน)</div>'}
       </div>
@@ -3789,6 +3808,31 @@ async function loadAds(){
     b.disabled = false; b.textContent = o;
     if (r.error) toastNote("❌ "+r.error, "#ef4444");
     else { toastNote("✅ "+(r.message||"ทำงานแล้ว"), "#22c55e"); if(r.actions&&r.actions.length) toastNote(r.actions.join(" · "), "#6366f1"); loadAds(); }
+  });
+  // ---- Custom / Lookalike Audience ----
+  const audVal = (id,cls) => { const e=box.querySelector(`.${cls}[data-id="${id}"]`); return e?e.value.trim():""; };
+  box.querySelectorAll(".aud-custom").forEach(b => b.onclick = async () => {
+    const o=b.textContent; b.disabled=true; b.textContent="⏳…";
+    const r = await postJSON("/api/ads/audience/custom", { account_id:+b.dataset.id, name:audVal(b.dataset.id,"aud-name"), data:audVal(b.dataset.id,"aud-data") });
+    b.disabled=false; b.textContent=o;
+    toastNote(r.error?("❌ "+r.error):("✅ "+r.message), r.error?"#f59e0b":"#22c55e");
+  });
+  box.querySelectorAll(".aud-list").forEach(b => b.onclick = async () => {
+    const id=b.dataset.id, bx=box.querySelector(`.aud-box[data-id="${id}"]`); bx.textContent="⏳ กำลังโหลด…";
+    const r = await (await fetch("/api/ads/audiences?account_id="+id)).json();
+    if (r.error){ bx.textContent="❌ "+r.error; return; }
+    const sel = box.querySelector(`.aud-src[data-id="${id}"]`);
+    const customs = (r.audiences||[]).filter(a=>a.subtype==="CUSTOM");
+    sel.innerHTML = '<option value="">— เลือกกลุ่มต้นทาง —</option>' + customs.map(a=>`<option value="${a.id}">${escapeHtml(a.name)} (${a.count||0})</option>`).join("");
+    bx.innerHTML = (r.audiences||[]).length ? r.audiences.map(a=>`• ${escapeHtml(a.name)} <span style="color:#64748b">[${a.subtype}] ~${a.count||0}</span>`).join("<br>") : "ยังไม่มีกลุ่ม";
+  });
+  box.querySelectorAll(".aud-look").forEach(b => b.onclick = async () => {
+    const id=b.dataset.id, src=box.querySelector(`.aud-src[data-id="${id}"]`).value;
+    if(!src){ toastNote("เลือกกลุ่มต้นทางก่อน (กด 🔄 โหลดกลุ่มที่มี)","#f59e0b"); return; }
+    const o=b.textContent; b.disabled=true; b.textContent="⏳…";
+    const r = await postJSON("/api/ads/audience/lookalike", { account_id:+id, source_id:src, name:audVal(id,"aud-name")||"Lookalike", ratio:(parseFloat(audVal(id,"aud-ratio"))||1)/100, country:audVal(id,"aud-country")||"TH" });
+    b.disabled=false; b.textContent=o;
+    toastNote(r.error?("❌ "+r.error):("✅ "+r.message), r.error?"#f59e0b":"#22c55e");
   });
 }
 
