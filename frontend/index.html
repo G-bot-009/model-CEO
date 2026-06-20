@@ -622,8 +622,8 @@
             <button class="qbtn" id="jarvisMute" title="เปิด/ปิดเสียง" style="font-weight:700">🔊 เสียงเปิด</button>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1;flex:1;min-width:160px">
               🔊 ระดับเสียง
-              <input id="jarvisVol" type="range" min="0" max="1" step="0.05" value="1" style="flex:1;accent-color:#22d3ee">
-              <span id="jarvisVolVal" style="width:38px;text-align:right;color:#94a3b8">100%</span>
+              <input id="jarvisVol" type="range" min="0" max="1.5" step="0.05" value="1" style="flex:1;accent-color:#22d3ee">
+              <span id="jarvisVolVal" style="width:42px;text-align:right;color:#94a3b8">100%</span>
             </label>
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1;flex:1;min-width:160px">
               ⚡ ความเร็ว
@@ -3059,6 +3059,8 @@ function primeTTS(){
   _ttsPrimed = true;
   // unlock the <audio> element (lets us play server MP3 later on mobile)
   try { const a = getJAudio(); a.src = SILENT_WAV; const p = a.play(); if (p && p.catch) p.catch(()=>{}); } catch(e){}
+  // build + resume the Web Audio graph inside the gesture (so volume control works on iOS)
+  ensureAudioGraph();
   // also warm up the browser speech engine as a fallback
   try { if ("speechSynthesis" in window){ const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); if (!_jarvisVoice) _jarvisVoice = pickJarvisVoice(); } } catch(e){}
 }
@@ -3105,23 +3107,43 @@ function getJAudio(){
   }
   return _jaudio;
 }
+/* iOS ignores audio.volume — route through Web Audio GainNode so volume works on mobile */
+let _actx = null, _gain = null, _srcNode = null;
+function ensureAudioGraph(){
+  if (_actx) { try { if (_actx.state === "suspended") _actx.resume(); } catch(e){} return; }
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    _actx = new AC();
+    _srcNode = _actx.createMediaElementSource(getJAudio());
+    _gain = _actx.createGain();
+    _gain.gain.value = jarvisVol;
+    _srcNode.connect(_gain); _gain.connect(_actx.destination);
+  } catch(e){ _actx = null; }
+}
 /* user-adjustable voice settings (persisted) */
 let jarvisVol = parseFloat(localStorage.getItem("jarvisVol"));
 if (isNaN(jarvisVol)) jarvisVol = 1;
 let jarvisRate = parseFloat(localStorage.getItem("jarvisRate"));
 if (isNaN(jarvisRate)) jarvisRate = 1.35;
+function setJarvisVolume(v){
+  jarvisVol = v;
+  if (_gain){ try { _gain.gain.value = v; } catch(e){} }        // works on iOS
+  if (_jaudio){ try { _jaudio.volume = Math.min(1, v); } catch(e){} }  // desktop fallback
+}
 function jarvisSpeakText(text){
   if (!jarvisSpeak || jarvisVol <= 0) return;
   const clean = jarvisStripForSpeech(text).slice(0, 900);
   if (!clean) return;
   const a = getJAudio();
+  ensureAudioGraph();
   let fell = false;
   const fallback = () => { if (!fell){ fell = true; jarvisSpeakBrowser(text); } };
   a.onerror = fallback;
   a.onstalled = fallback;
   a.src = "/api/tts?lang=th&text=" + encodeURIComponent(clean);
-  a.volume = jarvisVol;
-  a.playbackRate = jarvisRate;   // ความเร็วตามที่ตั้ง (มีผลกับโทนด้วยเพราะ preservesPitch=false)
+  if (_gain){ try { _gain.gain.value = jarvisVol; } catch(e){} } else { a.volume = Math.min(1, jarvisVol); }
+  a.playbackRate = jarvisRate;   // ความเร็วตามที่ตั้ง
   const p = a.play();
   if (p && p.catch) p.catch(fallback);
 }
@@ -5790,9 +5812,8 @@ function jarvisApplyVoiceUI(){
 if ($("jarvisVol")){
   jarvisApplyVoiceUI();
   $("jarvisVol").addEventListener("input", e => {
-    jarvisVol = parseFloat(e.target.value); localStorage.setItem("jarvisVol", jarvisVol);
+    setJarvisVolume(parseFloat(e.target.value)); localStorage.setItem("jarvisVol", jarvisVol);
     $("jarvisVolVal").textContent = Math.round(jarvisVol*100) + "%";
-    if (_jaudio) _jaudio.volume = jarvisVol;
   });
   $("jarvisRate").addEventListener("input", e => {
     jarvisRate = parseFloat(e.target.value); localStorage.setItem("jarvisRate", jarvisRate);
