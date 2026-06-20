@@ -423,6 +423,7 @@
       <div class="menu-item" data-view="imageai"><span class="ico">🖼️</span><span class="label">Image AI</span></div>
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
       <div class="menu-item" data-view="ads"><span class="ico">📣</span><span class="label">Ads Manager</span></div>
+      <div class="menu-item" data-view="adlibrary"><span class="ico">🔎</span><span class="label">Ad Library</span></div>
       <div class="menu-item" data-view="n8n"><span class="ico">🔄</span><span class="label">n8n Automations</span></div>
       <div class="menu-item" data-view="history"><span class="ico">🕘</span><span class="label">History</span></div>
       <div class="menu-item" data-view="guide"><span class="ico">📖</span><span class="label">คู่มือใช้งาน</span></div>
@@ -615,6 +616,24 @@
           <button class="qbtn" id="clearTasks">🗑️ ล้างงานทั้งหมด</button>
         </div>
         <div class="card" style="padding:14px"><div id="tasksBody" style="display:flex; flex-direction:column; gap:10px;"></div></div>
+      </section>
+
+      <!-- AD LIBRARY -->
+      <section class="view" id="view-adlibrary">
+        <div class="panel" style="background:linear-gradient(135deg,#0ea5e9,#2563eb);border:none">
+          <h3 style="color:#fff;margin:0">🔎 Ad Library — คลังโฆษณา (สอดส่องคู่แข่ง)</h3>
+          <p style="color:#e0f2fe;font-size:13px;margin:8px 0 0">ค้นโฆษณาที่กำลังรันในคลังโฆษณา Facebook → เปรียบเทียบ + ให้ AI วิเคราะห์และเขียนเลียนแบบเป็นของคุณ</p>
+        </div>
+        <div class="panel">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input id="alQuery" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="คำค้น เช่น ชื่อแบรนด์/สินค้า/คู่แข่ง">
+            <input id="alCountry" class="numfld" style="width:90px;margin:0" value="TH" title="ประเทศ">
+            <button class="send" id="alGo" style="padding:10px 20px">🔎 ค้นหา</button>
+          </div>
+          <input id="alBrief" class="numfld" style="width:100%;margin:8px 0 0" placeholder="โจทย์ธุรกิจของคุณ (ให้ AI เขียนเลียนแบบ) เช่น บ้านพูลวิลล่า หัวหิน">
+          <div style="font-size:11px;color:#64748b;margin-top:6px">⚠️ Meta คืนโฆษณาการเมือง/ประเด็นสังคมได้เต็ม · โฆษณาทั่วไปบางประเทศจำกัด อาจได้น้อย/ว่าง · ต้องเชื่อมบัญชี Facebook ก่อน (ใช้ token ค้น)</div>
+        </div>
+        <div id="alResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
       </section>
 
       <!-- GUIDE / คู่มือใช้งาน -->
@@ -3988,6 +4007,7 @@ function showView(v) {
   if (v === "imageai") loadImageAI();
   if (v === "bio") loadBio();
   if (v === "ads") loadAds();
+  if (v === "adlibrary") loadAdLibrary();
   if (v === "projects") loadProjects();
   if (v === "tokens") loadTokensRange();
   if (v === "admin") loadAdmin();
@@ -3997,6 +4017,43 @@ function showView(v) {
   // ช่องส่งคำสั่งถึง CEO โผล่ที่ Dashboard, CEO Console และ Jarvis
   const cb = $("chatbar"); if (cb) cb.style.display = (v === "dashboard" || v === "console" || v === "jarvis") ? "" : "none";
 }
+
+/* ---------- Ad Library (สอดส่องคู่แข่ง) ---------- */
+function loadAdLibrary(){ /* static page — search on demand */ }
+async function alSearch(){
+  const q = $("alQuery").value.trim();
+  if (!q){ toastNote("ใส่คำค้นก่อน","#f59e0b"); return; }
+  const b=$("alGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ ค้นหา…";
+  const r = await postJSON("/api/ads/library/search", { query:q, country:$("alCountry").value.trim()||"TH" });
+  b.disabled=false; b.textContent=o;
+  const box = $("alResults");
+  if (r.error){ box.innerHTML = `<div style="color:#f59e0b;grid-column:1/-1">${escapeHtml(r.error)}</div>`; return; }
+  if (!(r.ads||[]).length){ box.innerHTML = '<div style="color:#64748b;grid-column:1/-1">ไม่พบโฆษณา — ลองคำค้นอื่น หรือโฆษณาประเภทนี้ Meta อาจไม่เปิด API ในประเทศนี้</div>'; return; }
+  box.innerHTML = r.ads.map((a,i) => `
+    <div style="background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:14px">
+      <div style="font-weight:800;color:#fff">📘 ${escapeHtml(a.page||"(ไม่ทราบเพจ)")}</div>
+      <div style="font-size:11px;color:#64748b;margin:2px 0 8px">เริ่ม ${escapeHtml(a.since||"-")} · ${(a.platforms||[]).join(", ")}</div>
+      ${a.title?`<div style="font-weight:700;color:#c7d2fe;font-size:13px">${escapeHtml(a.title)}</div>`:""}
+      <div style="font-size:13px;color:#cbd5e1;white-space:pre-wrap;max-height:140px;overflow:auto;margin-top:4px">${escapeHtml(a.body||"(ไม่มีข้อความ)")}</div>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+        ${a.snapshot?`<a class="qbtn" href="${a.snapshot}" target="_blank" rel="noopener" style="font-size:12px">↗ ดูตัวจริง</a>`:""}
+        <button class="qbtn al-imitate" data-i="${i}" style="font-size:12px;font-weight:700;background:#2563eb;color:#fff;border-color:#2563eb">✨ วิเคราะห์ + เลียนแบบ</button>
+      </div>
+      <div class="al-out" data-i="${i}" style="font-size:13px;color:#cbd5e1;margin-top:8px;line-height:1.6"></div>
+    </div>`).join("");
+  box.querySelectorAll(".al-imitate").forEach(btn => btn.onclick = async () => {
+    const brief = $("alBrief").value.trim();
+    if (!brief){ toastNote("ใส่โจทย์ธุรกิจของคุณก่อน (ช่องล่างกล่องค้นหา)","#f59e0b"); return; }
+    const ad = r.ads[+btn.dataset.i]; const out = box.querySelector(`.al-out[data-i="${btn.dataset.i}"]`);
+    const o=btn.textContent; btn.disabled=true; btn.textContent="⏳ AI กำลังคิด…"; out.innerHTML="";
+    const rr = await postJSON("/api/ads/library/imitate", { ad: (ad.title?ad.title+"\n":"")+(ad.body||""), brief });
+    btn.disabled=false; btn.textContent=o;
+    if (rr.error){ out.innerHTML = `<span style="color:#ef4444">${escapeHtml(rr.error)}</span>`; return; }
+    out.innerHTML = mdLite(rr.result||"");
+  });
+}
+$("alGo").addEventListener("click", alSearch);
+$("alQuery").addEventListener("keydown", e => { if (e.key==="Enter") alSearch(); });
 
 /* ---------- คู่มือใช้งาน ---------- */
 const GUIDE = [

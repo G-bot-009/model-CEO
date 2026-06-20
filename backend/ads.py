@@ -180,6 +180,23 @@ def meta_list_audiences(token: str, ad_account_id: str) -> list:
     return d.get("data", [])
 
 
+def meta_ad_library(token: str, search_terms: str, countries=None,
+                    ad_type: str = "ALL", limit: int = 24) -> list:
+    """Search the public Ad Library (ads_archive). Note: Meta returns full data
+    for political/issue ads; general commercial ads may be limited per region."""
+    params = urllib.parse.urlencode({
+        "search_terms": search_terms or "",
+        "ad_reached_countries": json.dumps(countries or ["TH"]),
+        "ad_type": ad_type or "ALL",
+        "ad_active_status": "ALL",
+        "fields": "id,page_name,ad_creative_bodies,ad_creative_link_titles,"
+                  "ad_snapshot_url,ad_delivery_start_time,publisher_platforms",
+        "limit": int(limit), "access_token": token,
+    })
+    d = _get(f"{GRAPH}/ads_archive?{params}", timeout=25)
+    return d.get("data", [])
+
+
 def _make_creative(acct, token, name, page_id, link, message, headline, image_hash):
     link_data = {"link": link, "message": message or "", "name": headline or ""}
     if image_hash:

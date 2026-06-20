@@ -3028,6 +3028,58 @@ async def ads_duplicate(p: dict) -> dict:
     return {"ok": True, "message": "ก๊อปแคมเปญแล้ว (PAUSED — ตรวจก่อนเปิด)", "result": res}
 
 
+@app.post("/api/ads/library/search")
+async def ads_library_search(p: dict) -> dict:
+    """Search Facebook Ad Library for competitor ads."""
+    import asyncio
+    token = _ads_shared_token()      # use a connected account's user token to query the library
+    if not token:
+        return {"error": "ต้องเชื่อมบัญชี Facebook อย่างน้อย 1 บัญชีก่อน (ใช้ token ของคุณค้นคลังโฆษณา)", "ads": []}
+    q = (p.get("query") or "").strip()
+    if not q:
+        return {"error": "ใส่คำค้น (ชื่อแบรนด์/สินค้า/คู่แข่ง)", "ads": []}
+    country = (p.get("country") or "TH").strip()
+    ad_type = p.get("ad_type") if p.get("ad_type") in ("ALL", "POLITICAL_AND_ISSUE_ADS") else "ALL"
+    try:
+        rows = await asyncio.to_thread(ads.meta_ad_library, token, q, [country], ad_type, 24)
+    except Exception as exc:
+        return {"error": "ดึงคลังโฆษณาไม่สำเร็จ: " + _friendly_err(exc) +
+                " (โฆษณาทั่วไปบางประเทศ Meta จำกัดการเข้าถึง API)", "ads": []}
+    out = []
+    for r in rows:
+        bodies = r.get("ad_creative_bodies") or []
+        titles = r.get("ad_creative_link_titles") or []
+        out.append({"id": r.get("id"), "page": r.get("page_name", ""),
+                    "body": bodies[0] if bodies else "", "title": titles[0] if titles else "",
+                    "snapshot": r.get("ad_snapshot_url", ""),
+                    "since": (r.get("ad_delivery_start_time") or "")[:10],
+                    "platforms": r.get("publisher_platforms") or []})
+    return {"ads": out, "count": len(out)}
+
+
+_AD_IMITATE_PROMPT = (
+    "นี่คือโฆษณา Facebook ของคู่แข่ง:\n«{ad}»\n\n"
+    "งาน: วิเคราะห์ว่าโฆษณานี้ใช้กลยุทธ์/จุดขาย/อารมณ์อะไร แล้วเขียนโฆษณาใหม่สไตล์คล้ายกัน "
+    "สำหรับธุรกิจของผู้ใช้: {brief}\n"
+    "ตอบเป็นภาษาไทย: (1) วิเคราะห์สั้นๆ 2-3 ข้อ (2) โฆษณาใหม่ 2 แบบ (พาดหัว+เนื้อหา+CTA) "
+    "ห้ามลอกคำต่อคำ ให้ดัดแปลงให้เป็นของเราเอง ปลอดภัยตามนโยบาย Meta"
+)
+
+
+@app.post("/api/ads/library/imitate")
+async def ads_library_imitate(p: dict) -> dict:
+    ad = (p.get("ad") or "").strip()
+    brief = (p.get("brief") or "").strip()
+    if not ad or not brief:
+        return {"error": "ต้องมีข้อความโฆษณา + โจทย์ธุรกิจของคุณ"}
+    try:
+        txt = await _claude_text("marketing", model_for_agent("marketing"),
+                                 _AD_IMITATE_PROMPT.format(ad=ad[:1500], brief=brief), 1500)
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    return {"ok": True, "result": txt}
+
+
 @app.get("/api/ads/audiences")
 async def ads_audiences(account_id: int) -> dict:
     import asyncio
