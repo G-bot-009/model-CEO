@@ -406,10 +406,82 @@
   body.light [style*="background:#0b1220"], body.light [style*="background:#0f172a"], body.light [style*="background:#10182b"], body.light [style*="background:#0f1b33"] { background:#fff !important; }
   body.light [style*="background:#1b2742"], body.light [style*="background:#1e293b"], body.light [style*="background:#18233c"], body.light [style*="background:#27355a"] { background:var(--surf2) !important; }
   body.light [style*="border:1px solid #1e293b"], body.light [style*="border:1px solid #334155"], body.light [style*="border:1px solid #27355a"] { border-color:var(--bd) !important; }
+
+  /* ===================== MOBILE (≤ 768px) — drawer nav, bigger taps, single column ===================== */
+  .nav-backdrop { position:fixed; inset:0; background:rgba(2,6,18,.55); z-index:110; opacity:0;
+                  transition:opacity .25s ease; }
+  .nav-backdrop[hidden] { display:none; }
+  @media (max-width:768px){
+    html, body { overflow-x:hidden; }
+    /* page scrolls naturally instead of inner flex scroll */
+    .app { display:block; height:auto; overflow:visible; }
+    .main { min-height:100vh; }
+    .content { padding:12px; overflow:visible; -webkit-overflow-scrolling:touch; }
+
+    /* sidebar becomes an off-canvas drawer */
+    .sidebar { position:fixed; top:0; left:0; bottom:0; height:100vh; z-index:120;
+               width:84vw; max-width:310px; flex-basis:auto;
+               transform:translateX(-100%); transition:transform .26s ease;
+               box-shadow:0 0 40px rgba(0,0,0,.5); }
+    .sidebar.open { transform:translateX(0); }
+    /* never shrink-to-icons on mobile; always show full labels in the drawer */
+    .sidebar.collapsed { width:84vw; max-width:310px; flex-basis:auto; }
+    .sidebar.collapsed .label, .sidebar.collapsed .side-title { display:block; }
+    .nav-backdrop { opacity:1; }
+
+    /* topbar sticky + tighter */
+    .topbar { position:sticky; top:0; z-index:80; height:56px; flex:0 0 56px; padding:0 10px; gap:7px; }
+    .top-title { font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:42vw; }
+    .burger { font-size:24px; padding:6px 8px; }
+    .pill { padding:6px 10px; font-size:12px; }
+    .icon-btn { font-size:18px; padding:9px; }
+
+    /* readable, tappable controls (≥44px touch targets) */
+    .menu { padding:8px; gap:6px; }
+    .menu-item { padding:14px 14px; font-size:15px; border-radius:12px; }
+    .submenu-item { padding-left:34px; font-size:14px; }
+    .menu-group.open .submenu { max-height:200px; }
+    .qbtn { padding:10px 14px; font-size:13px; }
+    .send { padding:0 18px; min-height:46px; }
+    .numfld, .chat-input input { padding:12px 13px; font-size:16px; }   /* 16px = no iOS zoom */
+    input, select, textarea { font-size:16px; }
+
+    /* panels & spacing */
+    .panel { padding:13px; margin-bottom:13px; border-radius:14px; }
+    .wf-row { padding:11px; }
+
+    /* collapse any inline 3-col grids to single column */
+    .floor { grid-template-columns:repeat(2,1fr); gap:10px 6px; }
+    [style*="grid-template-columns:repeat(3"], [style*="grid-template-columns: repeat(3"],
+    [style*="grid-template-columns:repeat(4"], [style*="grid-template-columns: repeat(4"],
+    [style*="grid-template-columns:1fr 1fr"], [style*="grid-template-columns: 1fr 1fr"] {
+      grid-template-columns:1fr !important; }
+
+    /* office characters scale down to fit two columns */
+    .office { padding:18px 10px 30px; }
+    .char-stage { width:auto; height:150px; }
+    .character { width:92px; margin-bottom:26px; }
+    .desk3d { width:96px; }
+
+    /* drawers / toasts fit screen */
+    .drawer { width:88vw; max-width:340px; }
+    #toasts { right:10px; left:10px; bottom:80px; }
+    .toast { width:auto; }
+    .modal { width:94vw; }
+    .modal .mb { padding:15px; }
+
+    /* the gendered character popup / progress popups fit screen */
+    .gear-menu { right:6px; min-width:200px; }
+  }
+  @media (max-width:768px){
+    /* horizontal scroll for wide flex button-rows so nothing gets cut off */
+    .topbar .pill small { display:none; }   /* hide the "วันนี้" sublabels to save room */
+  }
 </style>
 </head>
 <body>
 <div class="app">
+  <div class="nav-backdrop" id="navBackdrop" hidden></div>
   <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
     <div class="brand"><span style="font-size:22px">🏢</span><span class="label" id="brandName">ToonOffice</span></div>
@@ -5318,7 +5390,19 @@ function applyTheme(t){
 }
 $("themeToggle").addEventListener("click", () => applyTheme(document.body.classList.contains("light") ? "dark" : "light"));
 applyTheme((function(){ try { return localStorage.getItem("theme") || "light"; } catch(_){ return "light"; } })());
-$("burger").addEventListener("click", () => $("sidebar").classList.toggle("collapsed"));
+/* responsive nav: drawer on mobile, collapse-to-icons on desktop */
+function isMobile(){ return window.innerWidth <= 768; }
+function openMobileNav(){ $("sidebar").classList.add("open"); $("navBackdrop").hidden = false; }
+function closeMobileNav(){ $("sidebar").classList.remove("open"); $("navBackdrop").hidden = true; }
+$("burger").addEventListener("click", () => {
+  if (isMobile()){ $("sidebar").classList.contains("open") ? closeMobileNav() : openMobileNav(); }
+  else { $("sidebar").classList.toggle("collapsed"); }
+});
+$("navBackdrop").addEventListener("click", closeMobileNav);
+// tapping a menu item closes the drawer on mobile
+$("menu").addEventListener("click", () => { if (isMobile()) closeMobileNav(); });
+$("agentList").addEventListener("click", () => { if (isMobile()) closeMobileNav(); });
+window.addEventListener("resize", () => { if (!isMobile()) closeMobileNav(); });
 $("send").addEventListener("click", () => send());
 $("goal").addEventListener("keydown", e => { if(e.key==="Enter") send(); });
 document.querySelectorAll(".qbtn[data-q]").forEach(b => b.addEventListener("click", () => send(b.dataset.q)));
