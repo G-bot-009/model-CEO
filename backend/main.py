@@ -218,6 +218,19 @@ async def _startup() -> None:
 LOGIN_USER = os.getenv("LOGIN_USER", "admin")
 LOGIN_PASS = os.getenv("LOGIN_PASS", "admin")
 
+
+def _hash_pw(p: str) -> str:
+    return hashlib.sha256(((p or "") + "|goffice-login").encode()).hexdigest()
+
+
+def _check_login(user: str, pwd: str) -> bool:
+    """DB-stored credentials (changed in-app) override the env defaults."""
+    s = db.get_settings()
+    du, dh = s.get("login_user"), s.get("login_pass_hash")
+    if du and dh:
+        return (user or "").strip() == du and _hash_pw(pwd) == dh
+    return (user or "").strip() == LOGIN_USER and (pwd or "") == LOGIN_PASS
+
 # Public address of THIS app (set when behind a domain), e.g. https://app.iamceo.ai
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
 # Your self-hosted n8n instance, e.g. https://n8n.iamceo.ai
@@ -255,7 +268,7 @@ async def login_page() -> FileResponse:
 
 @app.post("/api/login")
 async def api_login(p: dict):
-    if (p.get("username") or "").strip() == LOGIN_USER and (p.get("password") or "") == LOGIN_PASS:
+    if _check_login(p.get("username") or "", p.get("password") or ""):
         resp = JSONResponse({"ok": True})
         resp.set_cookie("mf_auth", _auth_token(), httponly=True, samesite="lax",
                         max_age=60 * 60 * 24 * 30, path="/")
@@ -268,6 +281,28 @@ async def api_logout():
     resp = JSONResponse({"ok": True})
     resp.delete_cookie("mf_auth", path="/")
     return resp
+
+
+@app.get("/api/account")
+async def account_info() -> dict:
+    s = db.get_settings()
+    return {"username": s.get("login_user") or LOGIN_USER}
+
+
+@app.post("/api/account/password")
+async def account_password(p: dict, request: Request) -> dict:
+    if request.cookies.get("mf_auth") != _auth_token():
+        return {"error": "กรุณาเข้าสู่ระบบก่อน"}
+    s = db.get_settings()
+    cur_user = s.get("login_user") or LOGIN_USER
+    if not _check_login(cur_user, p.get("current") or ""):
+        return {"error": "รหัสผ่านปัจจุบันไม่ถูกต้อง"}
+    new_user = (p.get("username") or cur_user).strip()
+    new_pass = p.get("password") or ""
+    if len(new_pass) < 4:
+        return {"error": "รหัสใหม่สั้นเกินไป (อย่างน้อย 4 ตัวอักษร)"}
+    db.set_settings({"login_user": new_user, "login_pass_hash": _hash_pw(new_pass)})
+    return {"ok": True, "username": new_user}
 
 
 # --- Inbound webhook: external services (TradingView/Zapier/n8n) trigger the team ---

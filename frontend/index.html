@@ -1155,6 +1155,20 @@
       <section class="view" id="view-settings">
         <h2 style="color:#fff; margin:0 0 14px">ตั้งค่า</h2>
 
+        <div class="panel"><h3>🔐 บัญชีเข้าสู่ระบบ (เปลี่ยนรหัสผ่าน)</h3>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 10px">เปลี่ยนชื่อผู้ใช้/รหัสผ่านสำหรับล็อกอิน G Office (เก็บแบบเข้ารหัสในเซิร์ฟเวอร์)</p>
+          <div style="display:flex;flex-direction:column;gap:8px;max-width:420px">
+            <label style="font-size:12px;color:#94a3b8">รหัสผ่านปัจจุบัน</label>
+            <input id="acCur" class="numfld" type="password" style="margin:0" placeholder="รหัสผ่านที่ใช้อยู่ตอนนี้">
+            <label style="font-size:12px;color:#94a3b8">ชื่อผู้ใช้ใหม่ (เว้นว่าง = คงเดิม)</label>
+            <input id="acUser" class="numfld" style="margin:0" placeholder="ชื่อผู้ใช้">
+            <label style="font-size:12px;color:#94a3b8">รหัสผ่านใหม่</label>
+            <input id="acNew" class="numfld" type="password" style="margin:0" placeholder="อย่างน้อย 4 ตัวอักษร">
+            <label style="font-size:12px;color:#94a3b8">ยืนยันรหัสผ่านใหม่</label>
+            <input id="acNew2" class="numfld" type="password" style="margin:0" placeholder="พิมพ์รหัสใหม่อีกครั้ง">
+            <button class="send" id="acSave" style="align-self:flex-start;padding:10px 22px;margin-top:4px">💾 เปลี่ยนรหัสผ่าน</button>
+          </div>
+        </div>
         <div class="panel"><h3>ชื่อบริษัท</h3>
           <input id="companyName" class="numfld" placeholder="เช่น ToonOffice" />
         </div>
@@ -3781,6 +3795,7 @@ async function applyCompany(){
 async function initSettingsForm(){
   let s = {}; try { s = await (await fetch("/api/settings")).json(); } catch(e){}
   $("companyName").value = s.company_name || $("brandName").textContent || "ToonOffice";
+  try { const a = await (await fetch("/api/account")).json(); if (a.username) $("acUser").placeholder = "ปัจจุบัน: " + a.username; } catch(e){}
   $("agentNameList").innerHTML = Object.values(AGENTS).map(a => `
     <div style="display:flex; align-items:center; gap:10px">
       <span style="font-size:20px">${a.emoji}</span>
@@ -4638,6 +4653,16 @@ $("mochiSend").addEventListener("click", mochiSend);
 $("mochiGoal").addEventListener("keydown", e => { if (e.key === "Enter") mochiSend(); });
 
 /* save company + agent names */
+$("acSave").addEventListener("click", async () => {
+  const cur = $("acCur").value, nw = $("acNew").value, nw2 = $("acNew2").value;
+  if (!cur){ toastNote("ใส่รหัสผ่านปัจจุบันก่อน","#f59e0b"); return; }
+  if (nw.length < 4){ toastNote("รหัสใหม่อย่างน้อย 4 ตัวอักษร","#f59e0b"); return; }
+  if (nw !== nw2){ toastNote("รหัสใหม่ทั้งสองช่องไม่ตรงกัน","#f59e0b"); return; }
+  const r = await postJSON("/api/account/password", { current: cur, username: $("acUser").value.trim(), password: nw });
+  if (r.error){ toastNote(r.error, "#ef4444"); return; }
+  $("acCur").value = $("acNew").value = $("acNew2").value = $("acUser").value = "";
+  toastNote("เปลี่ยนรหัสผ่านแล้ว ✅ ครั้งหน้าใช้รหัสใหม่ล็อกอิน", "#22c55e");
+});
 $("saveNames").addEventListener("click", async () => {
   const data = { company_name: ($("companyName").value || "ToonOffice").trim() };
   $("agentNameList").querySelectorAll("[data-aid]").forEach(inp => {
