@@ -1656,6 +1656,7 @@ def _tick_bot(bot: dict) -> None:
         realized = sum(e.get("pnl", 0.0) for e in events)
         if realized:
             db.paper_balance_adjust(realized)
+    new_state["last_price"] = price          # for live unrealized P&L / equity
     db.set_bot_state(bot["id"], new_state)
 
 
@@ -1677,18 +1678,38 @@ async def trading_bots() -> dict:
             "paper_balance": db.paper_balance_get()}
 
 
+def _bot_unrealized(b: dict) -> float:
+    """Floating P&L of a bot's open paper position at its last seen price."""
+    st = b.get("state") or {}
+    pos = st.get("pos")
+    lp = st.get("last_price")
+    if not pos or not lp:
+        return 0.0
+    sign = 1 if (pos.get("side") == "long") else -1
+    rem_qty = sum(l["qty"] for l in pos.get("legs", []) if not l.get("filled"))
+    return rem_qty * (float(lp) - pos["entry"]) * sign
+
+
 @app.get("/api/trading/wallet")
 async def trading_wallet() -> dict:
-    # today's realized P&L summed across paper bots (for display)
     today = trading._today()
     pnl_today = 0.0
+    unrealized = 0.0
+    holding = False
     for b in db.list_bots():
         if b["mode"] != "paper":
             continue
         st = b.get("state") or {}
         if st.get("day") == today:
             pnl_today += float(st.get("daily_pnl") or 0.0)
-    return {"balance": db.paper_balance_get(), "pnl_today": round(pnl_today, 2)}
+        u = _bot_unrealized(b)
+        unrealized += u
+        if st.get("pos"):
+            holding = True
+    bal = db.paper_balance_get()
+    return {"balance": bal, "pnl_today": round(pnl_today, 2),
+            "unrealized": round(unrealized, 2), "equity": round(bal + unrealized, 2),
+            "holding": holding}
 
 
 @app.post("/api/trading/wallet")

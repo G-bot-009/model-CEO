@@ -1067,6 +1067,7 @@
                 <span id="twBal" style="color:#fff;font-size:30px;font-weight:900">$0.00</span>
                 <span id="twPnl" style="font-size:13px;font-weight:700"></span>
               </div>
+              <div id="twDetail" style="color:#d1fae5;font-size:12px;margin-top:2px"></div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
               <input id="twAmt" class="numfld" style="width:120px;margin:0" placeholder="จำนวน $" type="number">
@@ -3133,13 +3134,25 @@ function tbMountMainChart(){
   $("tbChartSym").textContent = s;
   mountTV("tvchart", s, $("tbChartInt").value, 460);
 }
+let _twTimer = null;
+function tbStartWalletTicker(){ tbStopWalletTicker(); _twTimer = setInterval(loadTradeWallet, 6000); }
+function tbStopWalletTicker(){ if (_twTimer){ clearInterval(_twTimer); _twTimer = null; } }
+function _money(n){ return "$"+(Number(n)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 async function loadTradeWallet(){
   let w; try { w = await (await fetch("/api/trading/wallet")).json(); } catch(e){ return; }
   if (!$("twBal")) return;
-  $("twBal").textContent = "$" + (Number(w.balance)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const equity = (w.equity!=null) ? w.equity : w.balance;
+  const fl = Number(w.unrealized)||0;
+  // big number = live equity (moves with price); show realized balance + floating below
+  $("twBal").textContent = _money(equity);
+  $("twBal").style.color = fl>0 ? "#bbf7d0" : (fl<0 ? "#fecaca" : "#fff");
+  $("twPnl").textContent = w.holding ? "มูลค่ารวมสด" : "";
+  $("twPnl").style.color = "#a7f3d0";
   const p = Number(w.pnl_today)||0;
-  $("twPnl").textContent = (p>=0?"▲ +":"▼ ") + "$"+Math.abs(p).toFixed(2)+" วันนี้";
-  $("twPnl").style.color = p>=0 ? "#34d399" : "#fca5a5";
+  $("twDetail").innerHTML =
+    `💵 ยอดเงินจริง ${_money(w.balance)}` +
+    (w.holding ? ` · <b style="color:${fl>=0?'#34d399':'#fca5a5'}">📈 ลอยตัว ${fl>=0?'+':'−'}${_money(Math.abs(fl)).slice(1)}</b>` : "") +
+    ` · วันนี้ <b style="color:${p>=0?'#34d399':'#fca5a5'}">${p>=0?'+':'−'}${_money(Math.abs(p)).slice(1)}</b>`;
 }
 async function twAction(action){
   const amt = parseFloat($("twAmt").value) || 0;
@@ -4284,7 +4297,7 @@ function showView(v) {
   if (v === "connectors") loadConnectors();
   if (v === "inbox") loadInbox();
   if (v === "automation") loadAutomation();
-  if (v === "tradebot") loadTradeBots();
+  if (v === "tradebot"){ loadTradeBots(); tbStartWalletTicker(); } else tbStopWalletTicker();
   if (v === "content") loadContentFactory();
   if (v === "music") loadMusic();
   if (v === "imageai") loadImageAI();
