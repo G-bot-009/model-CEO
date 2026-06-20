@@ -2695,7 +2695,9 @@ def _fb_ads_assign(slot: str, token: str, acc: dict) -> str:
         return "บัญชีนี้เชื่อมไว้แล้ว"
     if len(db.ads_list_accounts("meta")) >= 10:
         return "ครบ 10 บัญชีแล้ว"
-    label = f"Ads Facebook ตัวที่ {slot}" if slot else (acc.get("name") or "Ads Facebook")
+    # เก็บชื่อบัญชีโฆษณาจริงเป็น label เพื่อแสดงให้เห็นว่าเชื่อมบัญชีไหน
+    name = (acc.get("name") or "").strip()
+    label = (f"ตัวที่ {slot} · {name}" if slot and name else name) or (f"Ads Facebook ตัวที่ {slot}" if slot else "Ads Facebook")
     db.ads_add_account("meta", label, token, acc_id)
     return ""
 
