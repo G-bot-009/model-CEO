@@ -3486,7 +3486,6 @@ async function adsSdkConnect(token, n){
 async function adsConnectPopup(n){
   let s; try { s = await (await fetch("/api/ads/fb-oauth-status")).json(); } catch(e){ s = {has:false,redirect_uri:""}; }
   let appId = ""; try { appId = (await (await fetch("/api/ads/fb-appid")).json()).app_id || ""; } catch(e){}
-  if (appId) ensureFBSdk(appId);   // preload SDK so FB.login fires synchronously on click (no popup-block)
   $("genTitle").textContent = "เชื่อม Ads Facebook ตัวที่ " + n;
   $("genBody").innerHTML = `
     <p class="conn-note" style="margin-top:0">ช่องนี้แยกขาดจากช่องอื่น — ลูกค้า/บัญชีคนละคนได้ คนละ token คนละบัญชีโฆษณา</p>
@@ -3503,15 +3502,11 @@ async function adsConnectPopup(n){
       <button class="save" id="adsPopAdd" style="margin-top:12px">➕ เพิ่มบัญชีตัวที่ ${n}</button>
     </div>`;
   $("adsPopLogin").onclick = () => {
-    if (!appId){ adsPopSetup(n, s.redirect_uri); return; }
-    if (!window.FB){ toastNote("กำลังโหลด Facebook… รอ 2 วินาทีแล้วกดอีกที (ถ้ายังไม่ขึ้น ปิดตัวบล็อกโฆษณา)","#f59e0b"); ensureFBSdk(appId); return; }
-    FB.login(function(resp){
-      if (resp && resp.authResponse && resp.authResponse.accessToken){
-        adsSdkConnect(resp.authResponse.accessToken, n);
-      } else {
-        toastNote("ยังไม่ได้อนุญาต / ปิดหน้าต่างไป","#f59e0b");
-      }
-    }, { scope: "ads_management,ads_read", auth_type: "reauthenticate", return_scopes: true });
+    // ต้องมี App ID + Secret (วิธีเปิดหน้า facebook.com ตรงๆ — เสถียร ไม่โดน ad blocker บล็อก)
+    if (!s.has){ adsPopSetup(n, s.redirect_uri); return; }
+    const w = window.open("/oauth-ads/facebook/start?slot="+encodeURIComponent(n), "_blank", "width=600,height=760");
+    if (!w) toastNote("เบราว์เซอร์บล็อก popup — อนุญาต popup ของ iamceo.ai แล้วกดใหม่ (หรือใช้ทาง B วาง token ด้านล่าง)","#f59e0b");
+    else toastNote("เปิดหน้า Facebook — ล็อกอิน+อนุญาต แล้วเลือกบัญชีสำหรับตัวที่ "+n+" จากนั้นรีเฟรชหน้านี้","#1877F2");
   };
   $("adsPopAdd").onclick = async () => {
     const r = await postJSON("/api/ads/account", { label:"Ads Facebook ตัวที่ "+n, token:$("adsPopTok").value.trim(), ad_account_id:$("adsPopAcc").value.trim() });
@@ -3523,14 +3518,14 @@ async function adsConnectPopup(n){
 function adsPopSetup(n, redirect){
   $("genTitle").textContent = "ตั้งค่าล็อกอิน Facebook (ครั้งเดียว)";
   $("genBody").innerHTML = `
-    <p class="conn-note" style="margin-top:0">ใส่ <b>App ID</b> ครั้งเดียว แล้วต่อไปกดล็อกอินได้เลย (App Secret ใส่ก็ได้ ไม่ใส่ก็ได้ — ใส่ไว้เพื่อ token อายุยาว 60 วัน)</p>
-    <div class="conn-howto"><div class="conn-howto-h">⚠️ ตั้งใน Meta ก่อน (ครั้งเดียว)</div><p class="conn-note" style="margin:0">แอป → เข้าสู่ระบบด้วย Facebook → การตั้งค่า:<br>• เปิด <b>"เข้าสู่ระบบ OAuth ของ JavaScript SDK" = ใช่</b><br>• ช่อง <b>"โดเมนที่อนุญาตสำหรับ JavaScript SDK"</b> ใส่ <code>https://iamceo.ai</code></p></div>
+    <p class="conn-note" style="margin-top:0">ใส่ <b>App ID + App Secret</b> ของแอป (เช่น CEOMarketing) ครั้งเดียว — แล้วต่อไปลูกค้าทุกคนกดล็อกอินคลิกเดียว</p>
+    <div class="conn-howto"><div class="conn-howto-h">⚠️ ตั้งใน Meta ก่อน (ครั้งเดียว)</div><p class="conn-note" style="margin:0">แอป → เข้าสู่ระบบด้วย Facebook → การตั้งค่า → ช่อง <b>Valid OAuth Redirect URIs</b> ใส่:<br><code style="word-break:break-all">https://iamceo.ai/oauth-ads/facebook/callback</code></p></div>
     <label>App ID (จำเป็น)</label><input id="adsSetId" placeholder="App ID จากแอป Meta">
-    <label>App Secret (ไม่บังคับ)</label><input id="adsSetSec" type="password" placeholder="ใส่ไว้เพื่อ token อายุยาว (เว้นว่างได้)">
+    <label>App Secret (จำเป็น)</label><input id="adsSetSec" type="password" placeholder="App Secret จาก การตั้งค่าแอป → พื้นฐาน">
     <button class="save" id="adsSetSave" style="margin-top:12px">บันทึก แล้วไปล็อกอิน</button>`;
   $("adsSetSave").onclick = async () => {
     const app_id = $("adsSetId").value.trim(), app_secret = $("adsSetSec").value.trim();
-    if (!app_id){ toastNote("ใส่ App ID ก่อน","#f59e0b"); return; }
+    if (!app_id || !app_secret){ toastNote("ใส่ทั้ง App ID และ App Secret","#f59e0b"); return; }
     await postJSON("/api/ads/fb-oauth-creds", { app_id, app_secret });
     toastNote("บันทึกแล้ว ✅","#22c55e"); adsConnectPopup(n);
   };
