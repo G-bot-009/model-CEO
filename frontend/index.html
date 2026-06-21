@@ -1599,6 +1599,38 @@
   </div>
 </div>
 
+<!-- Trade bot edit popup -->
+<div class="modal-overlay" id="tbEditModal" hidden style="z-index:180">
+  <div class="modal" style="width:min(560px,96vw); max-height:92vh; overflow:auto">
+    <div class="mh">✏️ แก้ไขบอท <span id="tbEditName" style="opacity:.85;font-weight:600"></span> <span style="cursor:pointer;float:right" data-close="tbEditModal">✕</span></div>
+    <div class="mb">
+      <label>ชื่อบอท</label>
+      <input id="eName" placeholder="ชื่อบอท">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>ตลาด/โบรกเกอร์</label>
+          <select id="eExchange">
+            <option value="binance">Binance Futures (คริปโต)</option>
+            <option value="bybit">Bybit (คริปโต)</option>
+            <option value="mt5">MT5 / Forex (MetaApi)</option>
+          </select></div>
+        <div><label>คู่เทรด (เหรียญ/สินค้า)</label>
+          <input id="eSymbol" placeholder="BTCUSDT"></div>
+        <div><label>โหมด</label>
+          <select id="eMode"><option value="paper">เดโม่ (paper)</option><option value="live">เงินจริง (live)</option></select></div>
+        <div><label>ทิศทาง</label>
+          <select id="eSide"><option value="long">Long (ขาขึ้น)</option><option value="short">Short (ขาลง)</option></select></div>
+        <div><label>ขนาดต่อไม้ ($)</label><input id="eSize" type="number" placeholder="50"></div>
+        <div><label>TP 3 ไม้ (% คั่นด้วย ,)</label><input id="eTp" placeholder="0.5,1,1.5"></div>
+        <div><label>Stop Loss (%)</label><input id="eSl" type="number" placeholder="0.5"></div>
+        <div><label>เลื่อน SL→ทุน หลังไม้ที่</label><input id="eBe" type="number" placeholder="1"></div>
+        <div><label>เป้ากำไร/วัน ($)</label><input id="eTarget" type="number" placeholder="100"></div>
+        <div><label>ลิมิตขาดทุน/วัน ($)</label><input id="eLoss" type="number" placeholder="50"></div>
+      </div>
+      <button class="save" id="eSave" style="margin-top:6px">💾 บันทึกการแก้ไข</button>
+    </div>
+  </div>
+</div>
+
 <!-- Image lightbox (click an image to view it large) -->
 <div class="modal-overlay" id="imgLightbox" hidden style="z-index:200">
   <div style="width:min(1150px,96vw); max-height:94vh; overflow:auto; background:#0b1220; border:1px solid #1e293b; border-radius:16px; padding:16px; position:relative">
@@ -3303,6 +3335,46 @@ async function tbSaveBot(){
   if (r.error){ toastNote(r.error, "#f59e0b"); return; }
   tbEditId = null; toastNote("บันทึกบอทแล้ว ✅", "#22c55e"); loadTradeBots();
 }
+/* ---------- edit a bot via popup ---------- */
+let _tbEditBotId = null;
+function tbEditOpen(b){
+  if (!b) return;
+  _tbEditBotId = b.id;
+  const c = b.config || {};
+  $("tbEditName").textContent = "— " + (b.name || "");
+  $("eName").value = b.name || "";
+  $("eExchange").value = b.exchange || "binance";
+  $("eSymbol").value = b.symbol || "BTCUSDT";
+  $("eMode").value = b.mode || "paper";
+  $("eSide").value = c.side || "long";
+  $("eSize").value = c.size_usd ?? 50;
+  $("eTp").value = (c.tp_legs_pct || [0.5,1,1.5]).join(",");
+  $("eSl").value = c.sl_pct ?? 0.5;
+  $("eBe").value = c.move_sl_to_be_after_leg ?? 1;
+  $("eTarget").value = c.daily_target_usd ?? 100;
+  $("eLoss").value = c.daily_loss_limit_usd ?? 50;
+  $("tbEditModal").hidden = false;
+}
+async function tbEditSave(){
+  if (_tbEditBotId == null) return;
+  const body = {
+    id: _tbEditBotId, name: $("eName").value.trim(), exchange: $("eExchange").value,
+    symbol: ($("eSymbol").value || "BTCUSDT").trim().toUpperCase(), mode: $("eMode").value,
+    config: {
+      side: $("eSide").value,
+      size_usd: parseFloat($("eSize").value) || 50,
+      tp_legs_pct: ($("eTp").value || "").split(",").map(x => parseFloat(x.trim())).filter(x => !isNaN(x)),
+      sl_pct: parseFloat($("eSl").value) || 0.5,
+      move_sl_to_be_after_leg: parseInt($("eBe").value) || 1,
+      daily_target_usd: parseFloat($("eTarget").value) || 0,
+      daily_loss_limit_usd: parseFloat($("eLoss").value) || 0,
+    }
+  };
+  const r = await postJSON("/api/trading/bot", body);
+  if (r.error){ toastNote(r.error, "#f59e0b"); return; }
+  $("tbEditModal").hidden = true; _tbEditBotId = null;
+  toastNote("บันทึกการแก้ไขแล้ว ✅", "#22c55e"); loadTradeBots();
+}
 async function tbAiStrategy(){
   const desc = $("tbAiDesc").value.trim();
   if (!desc){ toastNote("ใส่คำอธิบายกลยุทธ์ก่อน", "#f59e0b"); return; }
@@ -3405,7 +3477,7 @@ async function loadTradeBots(){
   box.querySelectorAll(".tb-stop").forEach(x => x.onclick = async () => { await postJSON("/api/trading/bot/stop",{id:+x.dataset.id}); loadTradeBots(); });
   box.querySelectorAll(".tb-del").forEach(x => x.onclick = async () => { if(!confirm("ลบบอทนี้?"))return; await postJSON("/api/trading/bot/delete",{id:+x.dataset.id}); loadTradeBots(); });
   box.querySelectorAll(".tb-tick").forEach(x => x.onclick = async () => { const r = await postJSON("/api/trading/bot/tick",{id:+x.dataset.id}); if(r.error){toastNote(r.error,"#f59e0b");return;} loadTradeBots(); });
-  box.querySelectorAll(".tb-edit").forEach(x => x.onclick = () => { tbEditId = +x.dataset.id; tbFillForm(bots[x.dataset.id]); toastNote("แก้ไขอยู่ — กดบันทึกเพื่ออัปเดต","#a855f7"); window.scrollTo({top:0,behavior:'smooth'}); loadTradeBots(); });
+  box.querySelectorAll(".tb-edit").forEach(x => x.onclick = () => tbEditOpen(bots[x.dataset.id]));
   box.querySelectorAll(".tb-log").forEach(x => x.onclick = async () => {
     const el = $("tbLog"+x.dataset.id); if (el.style.display==="block"){ el.style.display="none"; return; }
     const r = await (await fetch(`/api/trading/bot/${x.dataset.id}/log`)).json();
@@ -5777,6 +5849,8 @@ $("tbChartSel").addEventListener("change", () => {
   $("tbChartCustomWrap").style.display = ($("tbChartSel").value === "__custom__") ? "flex" : "none";
 });
 $("tbAi").addEventListener("click", tbAiStrategy);
+$("eSave").addEventListener("click", tbEditSave);
+$("tbEditModal").addEventListener("click", e => { if (e.target.id === "tbEditModal") closeModal("tbEditModal"); });
 $("twAdd").addEventListener("click", () => twAction("add"));
 $("twSub").addEventListener("click", () => twAction("sub"));
 $("twSet").addEventListener("click", () => twAction("set"));
