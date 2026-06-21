@@ -1854,6 +1854,60 @@ async def trading_strategy_ai(p: dict) -> dict:
         return {"error": _friendly_err(exc)}
 
 
+@app.post("/api/trading/bot/{bot_id}/chat")
+async def trading_bot_chat(bot_id: int, p: dict) -> dict:
+    """Chat about a bot and optionally adjust its settings in natural Thai."""
+    bot = db.get_bot(bot_id)
+    if not bot:
+        return {"error": "ไม่พบบอท"}
+    msg = (p.get("message") or "").strip()
+    if not msg:
+        return {"error": "พิมพ์ข้อความก่อน"}
+    st = bot.get("state") or {}
+    pos = st.get("pos")
+    context = {
+        "ชื่อ": bot["name"], "ตลาด": bot["exchange"], "คู่เทรด": bot["symbol"],
+        "โหมด": bot["mode"], "config": bot["config"],
+        "กำลังถือไม้": bool(pos),
+        "PnL_วันนี้": round(float(st.get("daily_pnl") or 0), 2),
+        "ราคาล่าสุด": st.get("last_price"),
+    }
+    prompt = (
+        "คุณเป็นโค้ชบอทเทรดที่พูดไทย เป็นกันเอง ตรงไปตรงมา ไม่การันตีกำไร และไม่ทำนายตลาด.\n"
+        "ผู้ใช้จะคุย/ถาม หรือสั่งปรับค่าบอท. ปรับได้เฉพาะคีย์เหล่านี้: "
+        "size_usd, tp_legs_pct(ลิสต์%), sl_pct, move_sl_to_be_after_leg, "
+        "daily_target_usd, daily_loss_limit_usd, side(long/short).\n"
+        f"ข้อมูลบอทตอนนี้: {json.dumps(context, ensure_ascii=False)}\n"
+        f"ผู้ใช้พูดว่า: {msg}\n\n"
+        "ตอบ JSON อย่างเดียว: {\"reply\":\"คำตอบ/คำแนะนำสั้นๆ ภาษาไทย\","
+        "\"config\":{เฉพาะคีย์ที่ผู้ใช้ขอให้เปลี่ยน หรือ {} ถ้าไม่ต้องเปลี่ยน}}"
+    )
+    try:
+        resp = await client_for_agent("trader").messages.create(
+            model=model_for_agent("trader"), max_tokens=700,
+            **thinking_kwargs(model_for_agent("trader")),
+            messages=[{"role": "user", "content": prompt}])
+        text = next((b.text for b in resp.content if b.type == "text"), "{}")
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        data = json.loads(m.group(0)) if m else {}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    reply = (data.get("reply") or "").strip() or "รับทราบครับ"
+    patch = data.get("config") or {}
+    applied = {}
+    if isinstance(patch, dict) and patch:
+        merged = dict(bot["config"]); merged.update(patch)
+        newcfg = trading.normalize_config(merged)
+        # only report keys that actually changed
+        for k, v in newcfg.items():
+            if bot["config"].get(k) != v and k in patch:
+                applied[k] = v
+        if applied:
+            db.update_bot(bot["id"], bot["name"], bot["exchange"], bot["symbol"],
+                          bot["mode"], newcfg)
+    return {"ok": True, "reply": reply, "applied": applied}
+
+
 # ======================= Autonomous content factory =========================
 _SENDABLE = {"Slack", "Discord", "Telegram", "LINE OA", "Webhook → Make/Zapier"}
 

@@ -3381,6 +3381,7 @@ async function loadTradeBots(){
           <button class="qbtn tb-tick" data-id="${b.id}" title="เดินบอท 1 จังหวะ (ทดสอบ)">⏭️ tick</button>
           <button class="qbtn tb-chart" data-id="${b.id}" data-ex="${b.exchange}" data-sym="${b.symbol}">📈 กราฟ</button>
           <button class="qbtn tb-marks" data-id="${b.id}" data-ex="${b.exchange}" data-sym="${b.symbol}" style="font-weight:700;color:#a78bfa">🎯 จังหวะ+เหตุผล</button>
+          <button class="qbtn tb-chat" data-id="${b.id}" style="font-weight:700;color:#22d3ee">💬 คุย/ปรับ</button>
           <button class="qbtn tb-edit" data-id="${b.id}">✏️ แก้</button>
           <button class="qbtn tb-log" data-id="${b.id}">📜 log</button>
           <button class="qbtn tb-del" data-id="${b.id}" style="color:#f87171">🗑️</button>
@@ -3388,6 +3389,14 @@ async function loadTradeBots(){
       </div>
       <div class="tb-chartbox" id="tbChart${b.id}" style="display:none;margin-top:6px"></div>
       <div class="tb-marksbox" id="tbMarks${b.id}" style="display:none;margin-top:6px"></div>
+      <div class="tb-chatbox" id="tbChat${b.id}" style="display:none;margin-top:6px;background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:10px">
+        <div style="font-size:12px;color:#64748b;margin-bottom:6px">💬 คุยเรื่องการเทรด หรือสั่งปรับบอทด้วยภาษาคน เช่น “เพิ่มขนาดไม้เป็น 100”, “ตั้ง TP ให้ใกล้ขึ้น”, “เปลี่ยนเป็น short”, “ช่วยดูหน่อยควรทำไง”</div>
+        <div class="tb-chatlog" id="tbChatLog${b.id}" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto;margin-bottom:8px"></div>
+        <div style="display:flex;gap:6px">
+          <input class="numfld tb-chatin" data-id="${b.id}" style="flex:1;margin:0" placeholder="พิมพ์คุย/สั่งปรับบอท…">
+          <button class="send tb-chatsend" data-id="${b.id}" style="padding:8px 16px">ส่ง</button>
+        </div>
+      </div>
       <div class="tb-logbox" id="tbLog${b.id}" style="display:none;font-size:12px;color:#cbd5e1;background:#0b1220;border-radius:8px;padding:8px;max-height:200px;overflow:auto"></div>
     </div>`;
   }).join("");
@@ -3409,9 +3418,43 @@ async function loadTradeBots(){
     el.style.display = "block"; mountTV("tbChart"+x.dataset.id, tvSymbol(x.dataset.ex, x.dataset.sym));
   });
   box.querySelectorAll(".tb-marks").forEach(x => x.onclick = () => toggleBotMarks(x.dataset.id, x.dataset.ex, x.dataset.sym));
+  box.querySelectorAll(".tb-chat").forEach(x => x.onclick = () => {
+    const el = $("tbChat"+x.dataset.id);
+    el.style.display = el.style.display === "block" ? "none" : "block";
+  });
+  box.querySelectorAll(".tb-chatsend").forEach(x => x.onclick = () => tbBotChat(x.dataset.id));
+  box.querySelectorAll(".tb-chatin").forEach(x => x.addEventListener("keydown", e => { if (e.key==="Enter") tbBotChat(x.dataset.id); }));
   // auto-open the live chart for bots that are running
   d.bots.forEach(b => { if (b.status === "running"){ const el = $("tbChart"+b.id);
     if (el){ el.style.display = "block"; mountTV("tbChart"+b.id, tvSymbol(b.exchange, b.symbol)); } } });
+}
+
+/* ---------- per-bot chat / adjust ---------- */
+function tbChatBubble(id, who, text, mine){
+  const log = $("tbChatLog"+id); if (!log) return;
+  const d = document.createElement("div");
+  d.style.cssText = `align-self:${mine?"flex-end":"flex-start"};max-width:88%;background:${mine?"#1d4ed8":"#1e293b"};color:#fff;border-radius:10px;padding:7px 11px;font-size:13px;white-space:pre-wrap;line-height:1.5`;
+  d.innerHTML = (who?`<b style="font-size:11px;color:${mine?'#bfdbfe':'#93c5fd'}">${escapeHtml(who)}</b><br>`:"") + escapeHtml(text);
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+async function tbBotChat(id){
+  const inp = document.querySelector(`.tb-chatin[data-id="${id}"]`);
+  const msg = (inp.value||"").trim(); if (!msg) return;
+  inp.value = ""; tbChatBubble(id, "คุณ", msg, true);
+  tbChatBubble(id, "โค้ชบอท", "⏳ กำลังคิด…", false);
+  const log = $("tbChatLog"+id); const thinking = log.lastChild;
+  const r = await postJSON(`/api/trading/bot/${id}/chat`, { message: msg });
+  if (thinking) log.removeChild(thinking);
+  if (r.error){ tbChatBubble(id, "โค้ชบอท", "❌ "+r.error, false); return; }
+  let reply = r.reply || "";
+  if (r.applied && Object.keys(r.applied).length){
+    const labels = {size_usd:"ขนาดไม้ ($)", tp_legs_pct:"TP (%)", sl_pct:"SL (%)",
+      move_sl_to_be_after_leg:"เลื่อน SL→ทุน หลังไม้", daily_target_usd:"เป้ากำไร/วัน ($)",
+      daily_loss_limit_usd:"ลิมิตขาดทุน/วัน ($)", side:"ทิศทาง"};
+    const chg = Object.entries(r.applied).map(([k,v]) => `${labels[k]||k} = ${Array.isArray(v)?v.join("/"):v}`).join(", ");
+    reply += `\n\n✅ ปรับให้แล้ว: ${chg}\n(ค่าใหม่มีผลทันที — ปิด/เปิดการ์ดนี้เพื่อดูสรุปที่อัปเดต)`;
+  }
+  tbChatBubble(id, "โค้ชบอท", reply, false);
 }
 
 /* ---------- Trade markers chart (จังหวะเข้าไม้ + เหตุผล) ---------- */
