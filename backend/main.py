@@ -2100,13 +2100,20 @@ async def _best_speech_uri(text: str, lang: str = "th"):
             if _is_credit_err(exc):
                 return "", _voice_prov_name(cfg["provider"]), None   # surface credit popup
             # other errors → fall back to free TTS, but report the failure so user knows
+            et = str(exc).lower()
+            if "401" in et or "unauthorized" in et or "invalid api key" in et:
+                reason = "คีย์ไม่ถูกต้อง/ไม่มีสิทธิ์ (401) — คัดลอกใหม่ หรือสร้างคีย์ใหม่แบบเปิดสิทธิ์ Text to Speech"
+            elif "403" in et or "forbidden" in et:
+                reason = "คีย์ไม่มีสิทธิ์ใช้ Text to Speech (403)"
+            else:
+                reason = _friendly_err(exc)[:90]
             try:
                 audio = await _google_tts_mp3(text, lang)
             except Exception:
                 audio = b""
             if audio:
                 return ("data:audio/mpeg;base64," + _b64.b64encode(audio).decode(), None,
-                        f"Google (ฟรี) — {_voice_prov_name(cfg['provider'])} ใช้ไม่ได้: {_friendly_err(exc)[:80]}")
+                        f"Google (ฟรี) — {_voice_prov_name(cfg['provider'])} ใช้ไม่ได้: {reason}")
             return "", None, None
     try:
         audio = await _google_tts_mp3(text, lang)
