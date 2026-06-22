@@ -2321,6 +2321,18 @@ _VEO_CATALOG = [
     {"id": "kling-i2v",  "name": "Kling I2V / Avatar",      "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลด 'รูปเริ่มต้น' — เมนูนี้รองรับ Text→Video ก่อน (กำลังพัฒนา)"},
     {"id": "kling-v2v",  "name": "Kling Edit / Reference V2V","prov": "",    "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ต้องอัปโหลด 'วิดีโอต้นฉบับ' — กำลังพัฒนา"},
     {"id": "foley",      "name": "Hunyuan Video Foley",     "prov": "",     "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ใส่เสียงประกอบให้วิดีโอ — ต้องอัปโหลดวิดีโอ (กำลังพัฒนา)"},
+    # ---- เพิ่มเติม (เพิ่มตามคำขอ) ----
+    {"id": "minimax23",   "name": "MiniMax Hailuo 2.3 Standard (T2V)", "prov": "minimax", "model": "MiniMax-Hailuo-02", "endpoint": "", "tags": ["Text to Video"], "ok": True, "desc": "Hailuo 2.3 ความละเอียด 768p สร้างจากข้อความ"},
+    {"id": "seedance-lite-t2v", "name": "Seedance 1.0 Lite (T2V)", "prov": "fal", "model": "seedance-lite", "endpoint": "fal-ai/bytedance/seedance/v1/lite/text-to-video", "tags": ["Text to Video"], "ok": True, "desc": "Seedance Lite ผ่าน fal.ai (ถูก/เร็ว · ต้องใส่คีย์ fal.ai)"},
+    {"id": "seedance-pro-multi", "name": "Seedance 1.0 Pro Multi", "prov": "fal", "model": "seedance-pro", "endpoint": "fal-ai/bytedance/seedance/v1/pro/text-to-video", "tags": ["Text to Video"], "ok": True, "desc": "Seedance Pro (โหมด T→V) ผ่าน fal.ai"},
+    {"id": "veo31",       "name": "VEO 3.1",                 "prov": "veo",  "model": "veo-3.1-generate-preview",      "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "Google Veo 3.1 (พรีวิว) — ถ้าโมเดลยังไม่เปิดในคีย์คุณจะขึ้น error แจ้งได้"},
+    {"id": "veo31fast",   "name": "VEO 3.1 Fast",            "prov": "veo",  "model": "veo-3.1-fast-generate-preview", "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "Veo 3.1 เวอร์ชันเร็ว (พรีวิว)"},
+    {"id": "lipsync",     "name": "Lipsync (Sync 2 Pro)",    "prov": "",     "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ขยับปากให้ตรงเสียง — ต้องอัปโหลดวิดีโอ+เสียง (กำลังพัฒนา)"},
+    {"id": "minimax23pro","name": "MiniMax Hailuo 2.3 Pro (I2V)", "prov": "", "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลด 'รูปเริ่มต้น' — เมนูนี้รองรับ Text→Video ก่อน"},
+    {"id": "omnihuman",   "name": "Omni-Human 1.5",          "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "สร้างคนพูด/ขยับจากรูป — ต้องอัปโหลดรูป+เสียง (กำลังพัฒนา)"},
+    {"id": "seedance-lite-i2v", "name": "Seedance 1.0 Lite (I2V)", "prov": "", "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลด 'รูปเริ่มต้น' (กำลังพัฒนา)"},
+    {"id": "veo31-flf",   "name": "VEO 3.1 First-Last Frame","prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดเฟรมแรก+เฟรมสุดท้าย (กำลังพัฒนา)"},
+    {"id": "veo31-ref",   "name": "VEO 3.1 Reference to Video","prov": "",   "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดรูปอ้างอิง (กำลังพัฒนา)"},
 ]
 
 
