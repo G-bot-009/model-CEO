@@ -1407,8 +1407,9 @@
                 <button class="qbtn" id="vsKeyBtn" style="font-weight:700;background:#1e293b">🔑 ใส่คีย์</button>
               </div>
               <div id="vsTabs" style="display:flex;gap:6px;background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:4px;margin-bottom:12px">
-                <button class="qbtn vs-tab active" data-mode="t2v" style="flex:1;font-weight:700">🎬 Text to Video</button>
-                <button class="qbtn vs-tab" data-mode="i2v" style="flex:1;font-weight:700">🖼️ Image to Video</button>
+                <button class="qbtn vs-tab active" data-mode="t2v" style="flex:1;font-weight:700">🎬 Text→Video</button>
+                <button class="qbtn vs-tab" data-mode="i2v" style="flex:1;font-weight:700">🖼️ Image→Video</button>
+                <button class="qbtn vs-tab" data-mode="v2v" style="flex:1;font-weight:700">🎞️ Video→Video</button>
               </div>
               <div id="vsFirstFrame" style="display:none;margin-bottom:12px">
                 <label style="font-size:13px;color:#cbd5e1;font-weight:700">First Frame <span style="color:#f87171">*</span></label>
@@ -1416,6 +1417,14 @@
                   <input id="vsImage" type="file" accept="image/*" style="display:none">
                   <div id="vsImagePrompt"><div style="font-size:28px">⬆️</div><b style="color:#cbd5e1">อัปโหลดรูปเพื่อทำให้ขยับ</b><br><span style="font-size:11px">JPG, PNG, GIF, WebP · สูงสุด ~20MB</span></div>
                   <img id="vsImagePrev" style="display:none;max-height:160px;border-radius:10px;margin:0 auto">
+                </label>
+              </div>
+              <div id="vsSourceVideo" style="display:none;margin-bottom:12px">
+                <label style="font-size:13px;color:#cbd5e1;font-weight:700">วิดีโอต้นฉบับ <span style="color:#f87171">*</span></label>
+                <label style="display:block;border:2px dashed #334155;border-radius:12px;padding:18px;text-align:center;cursor:pointer;margin-top:6px;color:#94a3b8">
+                  <input id="vsVideo" type="file" accept="video/*" style="display:none">
+                  <div id="vsVideoPrompt"><div style="font-size:28px">⬆️</div><b style="color:#cbd5e1">อัปโหลดวิดีโอที่จะแก้/แปลง</b><br><span style="font-size:11px">MP4/MOV · สั้น ๆ · สูงสุด ~28MB</span></div>
+                  <video id="vsVideoPrev" style="display:none;max-height:160px;border-radius:10px;margin:0 auto" muted></video>
                 </label>
               </div>
               <label style="font-size:13px;color:#cbd5e1;font-weight:700">Description <span style="color:#f87171">*</span></label>
@@ -4091,13 +4100,12 @@ function veoOpenKey(prov){
   $("veo_clear").onclick = async () => { await postJSON("/api/veo/key/clear",{provider:prov}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadVeo(); };
   openModal("genModal");
 }
-let _vsModelId = null, _vsAr = "16:9", _vsMode = "t2v", _vsImage = null;
+let _vsModelId = null, _vsAr = "16:9", _vsMode = "t2v", _vsImage = null, _vsVid = null;
 const _VS_SIZES = { "16:9":{ "1080p":"1920 × 1080 px", "720p":"1280 × 720 px" },
                     "9:16":{ "1080p":"1080 × 1920 px", "720p":"720 × 1280 px" },
                     "1:1": { "1080p":"1080 × 1080 px", "720p":"720 × 720 px" } };
 function vsUpdateSize(){
   $("vsSize").textContent = (_VS_SIZES[_vsAr]||{})[$("vsReso").value] || "";
-  // resize the ratio preview box to match the chosen aspect ratio (fit in 130×74)
   const box = $("vsRatioBox");
   if (box){
     const dims = { "16:9":[130,73], "9:16":[42,74], "1:1":[72,72] }[_vsAr] || [130,73];
@@ -4107,9 +4115,12 @@ function vsUpdateSize(){
 function vsSetMode(mode){
   const m = _veoCat[_vsModelId] || {};
   if (mode === "i2v" && !m.i2v){ toastNote("โมเดลนี้ยังไม่รองรับ Image→Video","#f59e0b"); return; }
+  if (mode === "v2v" && !m.v2v){ toastNote("โมเดลนี้ยังไม่รองรับ Video→Video","#f59e0b"); return; }
+  if (mode === "t2v" && !m.t2v){ toastNote("โมเดลนี้ไม่รองรับ Text→Video (ต้องอัปโหลดรูป/วิดีโอ)","#f59e0b"); return; }
   _vsMode = mode;
   document.querySelectorAll(".vs-tab").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
   $("vsFirstFrame").style.display = (mode === "i2v") ? "block" : "none";
+  $("vsSourceVideo").style.display = (mode === "v2v") ? "block" : "none";
 }
 function veoOpenGen(modelId, name){
   _vsModelId = modelId; _vsAr = "16:9"; _vsImage = null;
@@ -4122,11 +4133,14 @@ function veoOpenGen(modelId, name){
   const needKey = m.prov && !m.has_key;
   $("vsKeyNote").style.display = needKey ? "flex" : "none";
   if (needKey){ $("vsKeyProv").textContent = m.provider_name || ""; $("vsKeyBtn").dataset.prov = m.prov; }
-  // show I2V tab only if supported
+  // show tabs only for supported modes; pick the first available as default
+  $("vsTabs").querySelector('[data-mode="t2v"]').style.display = m.t2v ? "block" : "none";
   $("vsTabs").querySelector('[data-mode="i2v"]').style.display = m.i2v ? "block" : "none";
-  $("vsImage").value = ""; $("vsImagePrev").style.display = "none"; $("vsImagePrompt").style.display = "block";
+  $("vsTabs").querySelector('[data-mode="v2v"]').style.display = m.v2v ? "block" : "none";
+  $("vsImage").value = ""; _vsImage=null; $("vsImagePrev").style.display = "none"; $("vsImagePrompt").style.display = "block";
+  $("vsVideo").value = ""; _vsVid=null; $("vsVideoPrev").style.display = "none"; $("vsVideoPrompt").style.display = "block";
   $("vsFps").value = "24"; $("vsFixedCam").checked = false; $("vsAudio").checked = true;
-  vsSetMode("t2v");
+  vsSetMode(m.t2v ? "t2v" : (m.i2v ? "i2v" : "v2v"));
   $("vsPreview").innerHTML = '<div style="text-align:center;color:#64748b"><div style="font-size:40px">🎬</div>กด Generate เพื่อสร้างวิดีโอใหม่</div>';
   veoBuildThumbs();
   $("veoGrid").style.display = "none"; $("veoGalleryPanel").style.display = "none";
@@ -4196,14 +4210,23 @@ if ($("vsBack")){
     rd.onload = () => { _vsImage = rd.result; $("vsImagePrev").src = rd.result; $("vsImagePrev").style.display="block"; $("vsImagePrompt").style.display="none"; };
     rd.readAsDataURL(f);
   });
+  $("vsVideo").addEventListener("change", e => {
+    const f = e.target.files[0]; if (!f) return;
+    if (f.size > 28*1024*1024){ toastNote("วิดีโอใหญ่เกิน ~28MB — ตัดให้สั้นลง","#f59e0b"); return; }
+    const rd = new FileReader();
+    rd.onload = () => { _vsVid = rd.result; $("vsVideoPrev").src = rd.result; $("vsVideoPrev").style.display="block"; $("vsVideoPrompt").style.display="none"; };
+    rd.readAsDataURL(f);
+  });
   $("vsGen").addEventListener("click", async () => {
     const prompt = $("vsPrompt").value.trim();
     if (!prompt){ toastNote("ใส่ Description ก่อน","#f59e0b"); return; }
     if (_vsMode === "i2v" && !_vsImage){ toastNote("อัปโหลดรูป First Frame ก่อน","#f59e0b"); return; }
+    if (_vsMode === "v2v" && !_vsVid){ toastNote("อัปโหลดวิดีโอต้นฉบับก่อน","#f59e0b"); return; }
     const b=$("vsGen"),o=b.textContent; b.disabled=true; b.textContent="⏳ กำลังส่งงาน…";
     const payload = { model_id:_vsModelId, prompt, aspect_ratio:_vsAr, resolution:$("vsReso").value, mode:_vsMode,
       fps:parseInt($("vsFps").value)||24, fixed_camera:$("vsFixedCam").checked, generate_audio:$("vsAudio").checked };
     if (_vsMode === "i2v") payload.image = _vsImage;
+    if (_vsMode === "v2v") payload.video = _vsVid;
     const r = await postJSON("/api/veo/generate", payload);
     b.disabled=false; b.textContent=o;
     if (r.error){

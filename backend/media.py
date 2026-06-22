@@ -162,6 +162,8 @@ def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: s
             body["generate_audio"] = bool(opts["generate_audio"])
         if is_i2v:
             body["image_url"] = image   # fal accepts a data URI here
+        if mode == "v2v" and opts.get("video"):
+            body["video_url"] = opts["video"]   # fal accepts a data URI here
         d = _post_json(f"https://queue.fal.run/{ep}", body,
                        headers={"Authorization": f"Key {key}"}, timeout=90)
         status_url = d.get("status_url"); resp_url = d.get("response_url", "")

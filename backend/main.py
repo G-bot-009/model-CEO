@@ -2317,10 +2317,10 @@ _VEO_CATALOG = [
     {"id": "hunyuan",    "name": "Hunyuan Video",           "prov": "fal",  "model": "hunyuan",       "endpoint": "fal-ai/hunyuan-video", "tags": ["Text to Video"], "ok": True, "desc": "Tencent Hunyuan ผ่าน fal.ai (ต้องใส่คีย์ fal.ai)"},
     {"id": "kling-t2v",  "name": "Kling 2.1 (Text→Video)",  "prov": "fal",  "model": "kling-2.1",     "endpoint": "fal-ai/kling-video/v2.1/master/text-to-video", "tags": ["Text to Video"], "ok": True, "desc": "Kling ผ่าน fal.ai (ทดลอง — ถ้า error แจ้งได้)"},
     {"id": "grok",       "name": "Grok Imagine (xAI)",      "prov": "",     "model": "", "endpoint": "", "tags": ["Text to Video"], "ok": False, "desc": "ยังไม่มี API สาธารณะให้เชื่อม (ใช้ได้เฉพาะในแอป X/Grok)"},
-    {"id": "dreamactor", "name": "Dream Actor 2",           "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดรูป + ยังไม่มี API ที่เชื่อมได้สาธารณะ"},
-    {"id": "kling-i2v",  "name": "Kling I2V / Avatar",      "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลด 'รูปเริ่มต้น' — เมนูนี้รองรับ Text→Video ก่อน (กำลังพัฒนา)"},
-    {"id": "kling-v2v",  "name": "Kling Edit / Reference V2V","prov": "",    "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ต้องอัปโหลด 'วิดีโอต้นฉบับ' — กำลังพัฒนา"},
-    {"id": "foley",      "name": "Hunyuan Video Foley",     "prov": "",     "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ใส่เสียงประกอบให้วิดีโอ — ต้องอัปโหลดวิดีโอ (กำลังพัฒนา)"},
+    {"id": "dreamactor", "name": "Dream Actor 2",           "prov": "fal",  "model": "dreamactor", "endpoint": "", "tags": ["Image to Video"], "ok": True, "desc": "ทำให้คนในรูปขยับ ผ่าน fal.ai (อัปโหลดรูป · ต้องใส่คีย์ fal.ai · ทดลอง)"},
+    {"id": "kling-i2v",  "name": "Kling 2.1 (Image→Video)", "prov": "fal",  "model": "kling-i2v",  "endpoint": "", "tags": ["Image to Video"], "ok": True, "desc": "Kling Image→Video ผ่าน fal.ai (อัปโหลดรูป · ต้องใส่คีย์ fal.ai)"},
+    {"id": "kling-v2v",  "name": "Kling Edit / Reference V2V","prov": "fal", "model": "kling-v2v",  "endpoint": "", "tags": ["Video to Video"], "ok": True, "desc": "แก้/รีเมกวิดีโอ ผ่าน fal.ai (อัปโหลดวิดีโอ · ทดลอง)"},
+    {"id": "foley",      "name": "Hunyuan Video Foley",     "prov": "fal",  "model": "foley",      "endpoint": "", "tags": ["Video to Video"], "ok": True, "desc": "ใส่เสียงประกอบให้วิดีโอ ผ่าน fal.ai (อัปโหลดวิดีโอ · ทดลอง)"},
     # ---- เพิ่มเติม (เพิ่มตามคำขอ) ----
     {"id": "minimax23",   "name": "MiniMax Hailuo 2.3 Standard (T2V)", "prov": "minimax", "model": "MiniMax-Hailuo-02", "endpoint": "", "tags": ["Text to Video"], "ok": True, "desc": "Hailuo 2.3 ความละเอียด 768p สร้างจากข้อความ"},
     {"id": "seedance-lite-t2v", "name": "Seedance 1.0 Lite (T2V)", "prov": "fal", "model": "seedance-lite", "endpoint": "fal-ai/bytedance/seedance/v1/lite/text-to-video", "tags": ["Text to Video"], "ok": True, "desc": "Seedance Lite ผ่าน fal.ai (ถูก/เร็ว · ต้องใส่คีย์ fal.ai)"},
@@ -2328,9 +2328,9 @@ _VEO_CATALOG = [
     {"id": "veo31",       "name": "VEO 3.1",                 "prov": "veo",  "model": "veo-3.1-generate-preview",      "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "Google Veo 3.1 (พรีวิว) — ถ้าโมเดลยังไม่เปิดในคีย์คุณจะขึ้น error แจ้งได้"},
     {"id": "veo31fast",   "name": "VEO 3.1 Fast",            "prov": "veo",  "model": "veo-3.1-fast-generate-preview", "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "Veo 3.1 เวอร์ชันเร็ว (พรีวิว)"},
     {"id": "lipsync",     "name": "Lipsync (Sync 2 Pro)",    "prov": "",     "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ขยับปากให้ตรงเสียง — ต้องอัปโหลดวิดีโอ+เสียง (กำลังพัฒนา)"},
-    {"id": "minimax23pro","name": "MiniMax Hailuo 2.3 Pro (I2V)", "prov": "", "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลด 'รูปเริ่มต้น' — เมนูนี้รองรับ Text→Video ก่อน"},
-    {"id": "omnihuman",   "name": "Omni-Human 1.5",          "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "สร้างคนพูด/ขยับจากรูป — ต้องอัปโหลดรูป+เสียง (กำลังพัฒนา)"},
-    {"id": "seedance-lite-i2v", "name": "Seedance 1.0 Lite (I2V)", "prov": "", "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลด 'รูปเริ่มต้น' (กำลังพัฒนา)"},
+    {"id": "minimax23pro","name": "MiniMax Hailuo 2.3 Pro (I2V)", "prov": "fal", "model": "minimax-i2v", "endpoint": "", "tags": ["Image to Video"], "ok": True, "desc": "Hailuo Image→Video ผ่าน fal.ai (อัปโหลดรูป · ต้องใส่คีย์ fal.ai)"},
+    {"id": "omnihuman",   "name": "Omni-Human 1.5",          "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องใช้ 'รูป + ไฟล์เสียง' พร้อมกัน — เมนูนี้รับอินพุตเดียว (กำลังพัฒนา)"},
+    {"id": "seedance-lite-i2v", "name": "Seedance 1.0 Lite (I2V)", "prov": "fal", "model": "seedance-lite-i2v", "endpoint": "", "tags": ["Image to Video"], "ok": True, "desc": "Seedance Lite Image→Video ผ่าน fal.ai (อัปโหลดรูป)"},
     {"id": "veo31-flf",   "name": "VEO 3.1 First-Last Frame","prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดเฟรมแรก+เฟรมสุดท้าย (กำลังพัฒนา)"},
     {"id": "veo31-ref",   "name": "VEO 3.1 Reference to Video","prov": "",   "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดรูปอ้างอิง (กำลังพัฒนา)"},
 ]
@@ -2344,11 +2344,24 @@ _VEO_I2V_FAL = {
     "seedance-pro-multi": "fal-ai/bytedance/seedance/v1/pro/image-to-video",
     "kling-t2v":          "fal-ai/kling-video/v2.1/master/image-to-video",
     "hunyuan":            "fal-ai/hunyuan-video-image-to-video",
+    # image→video-only models (connected via fal)
+    "kling-i2v":          "fal-ai/kling-video/v2.1/master/image-to-video",
+    "minimax23pro":       "fal-ai/minimax/video-01/image-to-video",
+    "seedance-lite-i2v":  "fal-ai/bytedance/seedance/v1/lite/image-to-video",
+    "dreamactor":         "fal-ai/dreamactor",
+}
+# Video→Video (upload a source video). fal endpoints (experimental).
+_VEO_V2V_FAL = {
+    "kling-v2v": "fal-ai/kling-video/v1.6/pro/video-to-video",
+    "foley":     "fal-ai/hunyuan-video-foley",
 }
 def _i2v_endpoint(model_id: str) -> str:
     if model_id in _VEO_I2V_VEO:
         return "veo"
     return _VEO_I2V_FAL.get(model_id, "")
+
+def _v2v_endpoint(model_id: str) -> str:
+    return _VEO_V2V_FAL.get(model_id, "")
 
 
 def _video_key(provider: str) -> str:
@@ -2367,13 +2380,18 @@ async def veo_catalog() -> dict:
     for m in _VEO_CATALOG:
         connectable = m["ok"] and bool(m["prov"])
         i2v = connectable and bool(_i2v_endpoint(m["id"]))
-        tags = list(m["tags"])
-        if i2v and "Image to Video" not in tags:
-            tags.append("Image to Video")
+        v2v = connectable and bool(_v2v_endpoint(m["id"]))
+        # text→video only if the provider has a text endpoint
+        t2v = connectable and (m["prov"] in ("veo", "luma", "minimax") or bool(m["endpoint"]))
+        tags = []
+        if t2v: tags.append("Text to Video")
+        if i2v: tags.append("Image to Video")
+        if v2v: tags.append("Video to Video")
+        if not tags: tags = list(m["tags"])
         cat.append({**m, "tags": tags,
                     "provider_name": _VEO_PROVIDERS.get(m["prov"], {}).get("name", ""),
                     "has_key": bool(_video_key(m["prov"])) if m["prov"] else False,
-                    "connectable": connectable, "i2v": i2v})
+                    "connectable": connectable, "t2v": t2v, "i2v": i2v, "v2v": v2v})
     return {"catalog": cat, "providers": provs, "videos": db.video_list()}
 
 
@@ -2418,8 +2436,9 @@ async def veo_generate(p: dict) -> dict:
         return {"error": f"ยังไม่ได้ใส่คีย์ {_VEO_PROVIDERS[m['prov']]['name']} — กด 🔑 ที่การ์ดนี้ก่อน"}
     ar = p.get("aspect_ratio") if p.get("aspect_ratio") in ("16:9", "9:16", "1:1") else "16:9"
     reso = p.get("resolution") if p.get("resolution") in ("1080p", "720p") else "1080p"
-    mode = "i2v" if p.get("mode") == "i2v" else "t2v"
+    mode = p.get("mode") if p.get("mode") in ("t2v", "i2v", "v2v") else "t2v"
     image = p.get("image", "") or ""
+    video = p.get("video", "") or ""
     endpoint = m["endpoint"]
     if mode == "i2v":
         i2 = _i2v_endpoint(m["id"])
@@ -2431,9 +2450,19 @@ async def veo_generate(p: dict) -> dict:
             return {"error": "รูปใหญ่เกินไป (ไม่เกิน ~22MB)"}
         if i2 != "veo":
             endpoint = i2     # fal i2v endpoint
+    elif mode == "v2v":
+        v2 = _v2v_endpoint(m["id"])
+        if not v2:
+            return {"error": "โมเดลนี้ยังไม่รองรับ Video→Video"}
+        if not video:
+            return {"error": "อัปโหลดวิดีโอต้นฉบับก่อน"}
+        if len(video) > 40_000_000:
+            return {"error": "วิดีโอใหญ่เกินไป (ไม่เกิน ~28MB) — ตัดให้สั้นลงก่อน"}
+        endpoint = v2
     opts = {"fps": int(p.get("fps") or 24),
             "fixed_camera": bool(p.get("fixed_camera")),
             "generate_audio": bool(p.get("generate_audio", True))}
+    opts["video"] = video
     try:
         job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt,
                                       endpoint, ar, reso, mode, image, opts)
