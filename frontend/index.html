@@ -1396,6 +1396,10 @@
           <div style="display:grid;grid-template-columns:minmax(320px,1fr) 1.2fr;gap:16px;align-items:start">
             <div class="panel" style="margin:0">
               <div style="font-weight:800;color:#fff;font-size:16px;margin-bottom:10px">🎬 <span id="vsTitle"></span></div>
+              <div id="vsKeyNote" style="display:none;background:#78350f33;border:1px solid #f59e0b55;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#fbbf24;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                <span>⚠️ ยังไม่ได้ใส่คีย์ <b id="vsKeyProv"></b></span>
+                <button class="qbtn" id="vsKeyBtn" style="font-weight:700;background:#1e293b">🔑 ใส่คีย์</button>
+              </div>
               <div id="vsTabs" style="display:flex;gap:6px;background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:4px;margin-bottom:12px">
                 <button class="qbtn vs-tab active" data-mode="t2v" style="flex:1;font-weight:700">🎬 Text to Video</button>
                 <button class="qbtn vs-tab" data-mode="i2v" style="flex:1;font-weight:700">🖼️ Image to Video</button>
@@ -4014,8 +4018,6 @@ async function loadVeo(){
     let btn;
     if (!m.connectable){
       btn = `<button class="qbtn" disabled style="width:100%;opacity:.6;cursor:not-allowed">🔒 ยังเชื่อมไม่ได้</button>`;
-    } else if (!m.has_key){
-      btn = `<button class="qbtn veo-key" data-prov="${m.prov}" style="width:100%;font-weight:700;background:#1e293b">🔑 ใส่คีย์ ${escapeHtml(m.provider_name)} ก่อน</button>`;
     } else {
       btn = `<button class="send veo-gen" data-id="${m.id}" data-name="${escapeHtml(m.name)}" style="width:100%;padding:9px">✨ Generate</button>`;
     }
@@ -4052,7 +4054,9 @@ function veoOpenKey(prov){
     const key = $("veo_key").value.trim();
     if (!key){ toastNote("วางคีย์ก่อน","#f59e0b"); return; }
     await postJSON("/api/veo/key", { provider:prov, key });
-    closeModal("genModal"); toastNote("บันทึกคีย์แล้ว ✅","#22c55e"); loadVeo();
+    closeModal("genModal"); toastNote("บันทึกคีย์แล้ว ✅","#22c55e");
+    await loadVeo();   // refresh _veoCat
+    if ($("veoStudio").style.display === "block") $("vsKeyNote").style.display = "none";  // key now set
   };
   $("veo_clear").onclick = async () => { await postJSON("/api/veo/key/clear",{provider:prov}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadVeo(); };
   openModal("genModal");
@@ -4076,6 +4080,10 @@ function veoOpenGen(modelId, name){
   $("vsPrompt").value = ""; $("vsCount").textContent = "0 / 4,000"; $("vsReso").value = "1080p";
   document.querySelectorAll(".vs-ar").forEach(b => b.classList.toggle("active", b.dataset.ar === "16:9"));
   vsUpdateSize();
+  // key notice
+  const needKey = m.prov && !m.has_key;
+  $("vsKeyNote").style.display = needKey ? "flex" : "none";
+  if (needKey){ $("vsKeyProv").textContent = m.provider_name || ""; $("vsKeyBtn").dataset.prov = m.prov; }
   // show I2V tab only if supported
   $("vsTabs").querySelector('[data-mode="i2v"]').style.display = m.i2v ? "block" : "none";
   $("vsImage").value = ""; $("vsImagePrev").style.display = "none"; $("vsImagePrompt").style.display = "block";
@@ -4116,6 +4124,7 @@ if ($("vsBack")){
     vsUpdateSize();
   }));
   document.querySelectorAll(".vs-tab").forEach(b => b.addEventListener("click", () => vsSetMode(b.dataset.mode)));
+  $("vsKeyBtn").addEventListener("click", () => veoOpenKey($("vsKeyBtn").dataset.prov, true));
   $("vsImage").addEventListener("change", e => {
     const f = e.target.files[0]; if (!f) return;
     const rd = new FileReader();
@@ -4131,7 +4140,11 @@ if ($("vsBack")){
     if (_vsMode === "i2v") payload.image = _vsImage;
     const r = await postJSON("/api/veo/generate", payload);
     b.disabled=false; b.textContent=o;
-    if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
+    if (r.error){
+      toastNote("❌ "+r.error,"#ef4444");
+      if (r.error.indexOf("ใส่คีย์") >= 0){ const mm=_veoCat[_vsModelId]||{}; if (mm.prov) veoOpenKey(mm.prov, true); }
+      return;
+    }
     toastNote("เริ่มสร้างวิดีโอแล้ว 🎬 รอ 1-3 นาที","#22c55e");
     $("vsPreview").innerHTML = '<div style="text-align:center;color:#94a3b8"><div class="cf-dot"></div><div class="cf-dot"></div><div class="cf-dot"></div><div style="margin-top:8px">⏳ กำลังเรนเดอร์… จะขึ้นในแถบผลงานด้านล่างเมื่อเสร็จ</div></div>';
     veoBuildThumbs();
