@@ -4124,6 +4124,27 @@ function vsSetMode(mode){
   $("vsFirstFrame").style.display = (mode === "i2v") ? "block" : "none";
   $("vsSourceVideo").style.display = (mode === "v2v") ? "block" : "none";
 }
+const _CREDIT_TOPUP = {
+  "fal.ai": "https://fal.ai/dashboard/billing",
+  "ElevenLabs": "https://elevenlabs.io/app/subscription",
+  "Google Veo": "https://aistudio.google.com/apikey",
+  "MiniMax": "https://www.minimax.io/",
+  "Luma": "https://lumalabs.ai/dream-machine/api",
+  "ElevenLabs (Sound/Music)": "https://elevenlabs.io/app/subscription",
+};
+function showCreditPopup(service, msg){
+  const url = _CREDIT_TOPUP[service] || "";
+  $("genTitle").textContent = "💳 เครดิตหมด";
+  $("genBody").innerHTML = `
+    <div style="text-align:center;padding:6px 0 4px"><div style="font-size:46px">💳</div></div>
+    <div style="font-weight:800;color:#1f2937;font-size:16px;text-align:center">เครดิต <span style="color:#dc2626">${escapeHtml(service||"API")}</span> หมดแล้ว</div>
+    <p class="conn-note" style="text-align:center">${escapeHtml(msg||"")}</p>
+    <div class="note" style="font-size:12px">ℹ️ การทำวิดีโอใช้หลาย API แยกกัน — <b>ภาพ/วิดีโอ</b> (fal.ai/Google) และ <b>เสียง</b> (ElevenLabs) คิดเครดิตคนละกอง เติมเฉพาะตัวที่หมดได้เลย</div>
+    ${url?`<a class="save" href="${url}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;margin-top:12px">💰 เติมเงิน/เช็กยอด ${escapeHtml(service)} ↗</a>`:""}
+    <button class="qbtn" id="cp_ok" style="width:100%;margin-top:8px">ปิด</button>`;
+  $("cp_ok").onclick = () => closeModal("genModal");
+  openModal("genModal");
+}
 async function veoOpenVoiceKey(){
   let d; try { d = await (await fetch("/api/content/media-keys")).json(); } catch(e){ d={providers:{},selection:{}}; }
   const provs = (d.providers||{}).voice || [];
@@ -4267,6 +4288,7 @@ if ($("vsBack")){
     const r = await postJSON("/api/veo/generate", payload);
     b.disabled=false; b.textContent=o;
     if (r.error){
+      if (r.out_of_credits){ showCreditPopup(r.service, r.error); return; }
       toastNote("❌ "+r.error,"#ef4444");
       if (r.error.indexOf("ใส่คีย์") >= 0){ const mm=_veoCat[_vsModelId]||{}; if (mm.prov) veoOpenKey(mm.prov, true); }
       return;

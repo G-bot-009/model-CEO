@@ -2084,8 +2084,9 @@ async def content_run(p: dict) -> dict:
 
 
 async def _best_speech_uri(text: str, lang: str = "th"):
-    """Return a speech audio data URI. Prefers a Neural TTS (Voice AI key) for smoothness,
-    falls back to the free Google TTS. Returns '' on failure."""
+    """Return (data_uri, credit_provider_name). Prefers Neural TTS (Voice AI key);
+    if the voice provider is out of credits, returns ('', provider_name) so the UI can
+    show a clear popup. Otherwise falls back to free Google TTS."""
     import asyncio
     import base64 as _b64
     cfg = _media_cfg("voice")
@@ -2094,16 +2095,18 @@ async def _best_speech_uri(text: str, lang: str = "th"):
             out = await asyncio.to_thread(media.generate_voice, cfg["provider"], cfg["model"], cfg["key"], text, "")
             b64 = (out.get("b64") or "").strip()
             if len(b64) > 100:
-                return f"data:{out.get('mime','audio/mpeg')};base64,{b64}"
-        except Exception:
-            pass
+                return f"data:{out.get('mime','audio/mpeg')};base64,{b64}", None
+        except Exception as exc:
+            if _is_credit_err(exc):
+                return "", _voice_prov_name(cfg["provider"])   # surface credit popup
+            # other errors → silently fall back to free TTS
     try:
         audio = await _google_tts_mp3(text, lang)
     except Exception:
         audio = b""
     if audio:
-        return "data:audio/mpeg;base64," + _b64.b64encode(audio).decode()
-    return ""
+        return "data:audio/mpeg;base64," + _b64.b64encode(audio).decode(), None
+    return "", None
 
 
 async def _google_tts_mp3(text: str, lang: str = "th") -> bytes:
@@ -2403,6 +2406,22 @@ def _video_key(provider: str) -> str:
     return k
 
 
+def _is_credit_err(exc) -> bool:
+    """Heuristic: does this error look like 'out of credits / quota / billing'?"""
+    t = str(exc).lower()
+    return any(k in t for k in (
+        "insufficient", "quota", "out of credit", "credits", "balance",
+        "402", "payment required", "exhaust", "billing", "not enough",
+        "exceeded", "free tier", "upgrade", "limit reached"))
+
+
+def _voice_prov_name(pid: str) -> str:
+    for p in media.PROVIDERS["voice"]:
+        if p["id"] == pid:
+            return p["name"]
+    return pid or "เสียง"
+
+
 @app.get("/api/veo/catalog")
 async def veo_catalog() -> dict:
     s = db.get_settings()
@@ -2482,7 +2501,11 @@ async def veo_generate(p: dict) -> dict:
             return {"error": "อัปโหลดรูปคนก่อน"}
         if not prompt:
             return {"error": "พิมพ์ 'บทพูด' ในช่อง Description"}
-        audio_uri = await _best_speech_uri(prompt, "th")
+        audio_uri, voice_credit = await _best_speech_uri(prompt, "th")
+        if voice_credit:
+            return {"error": f"เครดิตเสียง {voice_credit} หมดแล้ว — เติมเงินที่ {voice_credit} แล้วลองใหม่ "
+                             f"(หรือเอาคีย์เสียงออกเพื่อใช้เสียงฟรีชั่วคราว)",
+                    "out_of_credits": True, "service": voice_credit}
         if not audio_uri:
             return {"error": "สร้างเสียงพูดไม่สำเร็จ — ลองพิมพ์บทใหม่/สั้นลง"}
         opts["audio"] = audio_uri
@@ -2511,6 +2534,10 @@ async def veo_generate(p: dict) -> dict:
         job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt,
                                       endpoint, ar, reso, mode, image, opts)
     except Exception as exc:
+        if _is_credit_err(exc):
+            pname = _VEO_PROVIDERS.get(m["prov"], {}).get("name", m["prov"])
+            return {"error": f"เครดิต {pname} หมดแล้ว — เติมเงินที่ {pname} แล้วลองใหม่",
+                    "out_of_credits": True, "service": pname}
         return {"error": _friendly_err(exc)}
     tid = db.video_add(prompt, m["prov"], m["name"], job.get("task_id", ""))
     return {"ok": True, "video": db.video_get(tid)}
