@@ -4145,12 +4145,23 @@ function showCreditPopup(service, msg){
   $("cp_ok").onclick = () => closeModal("genModal");
   openModal("genModal");
 }
+function veoUpdateVoiceBtn(v){
+  const b = $("vsVoiceKey"); if (!b) return;
+  b.innerHTML = (v && v.has)
+    ? `✅ เสียง Neural พร้อม (${escapeHtml(v.provider||"")}) · เปลี่ยน`
+    : "🔊 ตั้งเสียงพากย์ Neural (ลื่นกว่า)";
+}
 async function veoOpenVoiceKey(){
   let d; try { d = await (await fetch("/api/content/media-keys")).json(); } catch(e){ d={providers:{},selection:{}}; }
   const provs = (d.providers||{}).voice || [];
   const sel = (d.selection||{}).voice || {};
+  const provName = (id) => (provs.find(x=>x.id===id)||{}).name || id;
+  const statusHtml = (s) => s.has
+    ? `<div id="vk_status" style="background:#dcfce7;border:1px solid #86efac;color:#166534;border-radius:10px;padding:10px 12px;font-weight:700;font-size:13px;margin-bottom:12px">✅ เชื่อม ${escapeHtml(provName(s.provider))} แล้ว · คีย์: ${escapeHtml(s.key||"••••")} <span style="font-weight:500">(ค้างไว้จนกว่าจะลบ)</span></div>`
+    : `<div id="vk_status" style="background:#fef9c3;border:1px solid #fde047;color:#854d0e;border-radius:10px;padding:10px 12px;font-weight:700;font-size:13px;margin-bottom:12px">⚠️ ยังไม่ได้เชื่อมคีย์เสียง — ตอนนี้ใช้เสียงฟรี (Google)</div>`;
   $("genTitle").textContent = "🔊 ตั้งเสียงพากย์ Neural (ลื่น/เป็นธรรมชาติ)";
   $("genBody").innerHTML = `
+    ${statusHtml(sel)}
     <p class="conn-note">ใส่คีย์เสียงคุณภาพสูง — Talking Avatar จะพูดลื่นขึ้นมาก (ElevenLabs ไทยลื่นสุด)<br>ถ้าไม่ใส่ ระบบใช้เสียงฟรี (Google) ให้</p>
     <label>ผู้ให้บริการเสียง</label>
     <select id="vk_prov">${provs.map(p=>`<option value="${p.id}" ${p.id===sel.provider?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}</select>
@@ -4164,13 +4175,25 @@ async function veoOpenVoiceKey(){
     <div id="vk_testout" style="font-size:12px;color:#374151;margin-top:8px;text-align:center"></div>`;
   const setGet = () => { const pp=provs.find(x=>x.id===$("vk_prov").value); $("vk_get").innerHTML = pp?`ขอคีย์: <a href="${pp.get}" target="_blank" rel="noopener" style="color:#60a5fa">${pp.get}</a>`:""; };
   setGet(); $("vk_prov").onchange = setGet;
+  async function vkRefresh(){
+    let d2; try { d2 = await (await fetch("/api/content/media-keys")).json(); } catch(e){ return; }
+    const s2 = (d2.selection||{}).voice || {};
+    const el = $("vk_status"); if (el) el.outerHTML = statusHtml(s2);
+    $("vk_key").value = ""; $("vk_key").placeholder = s2.has ? "มีคีย์แล้ว — วางใหม่เพื่อเปลี่ยน" : "วาง API key";
+    veoUpdateVoiceBtn(s2);   // reflect on the studio button
+  }
   $("vk_save").onclick = async () => {
     const key = $("vk_key").value.trim();
     const block = { provider:$("vk_prov").value }; if (key) block.key = key;
     await postJSON("/api/content/media-keys", { voice: block });
-    closeModal("genModal"); toastNote("บันทึกเสียงพากย์แล้ว ✅ — ลองสร้าง Talking Avatar ใหม่","#22c55e");
+    toastNote("บันทึกเสียงพากย์แล้ว ✅","#22c55e");
+    await vkRefresh();
   };
-  $("vk_clear").onclick = async () => { await postJSON("/api/content/media-key/clear",{kind:"voice"}); closeModal("genModal"); toastNote("ลบคีย์เสียงแล้ว (กลับไปใช้เสียงฟรี)","#f59e0b"); };
+  $("vk_clear").onclick = async () => {
+    await postJSON("/api/content/media-key/clear",{kind:"voice"});
+    toastNote("ลบคีย์เสียงแล้ว (กลับไปใช้เสียงฟรี)","#f59e0b");
+    await vkRefresh();
+  };
   $("vk_test").onclick = async () => {
     // save current selection first so the test reflects what you just entered
     const key = $("vk_key").value.trim();
@@ -4196,7 +4219,10 @@ function veoOpenGen(modelId, name){
     if (m.avatar){ $("vsHint").style.display="block"; $("vsHint").innerHTML = "🗣️ โมเดลนี้ <b>พูดได้</b> — พิมพ์บทพูดในช่องบน ระบบแปลงเป็นเสียง + ขยับปากให้ · อยากให้เสียง<b>ลื่น</b>ขึ้น กดปุ่มล่างตั้งเสียง Neural"; }
     else { $("vsHint").style.display="block"; $("vsHint").innerHTML = "ℹ️ โมเดลนี้สร้าง <b>ภาพเคลื่อนไหวอย่างเดียว ไม่มีเสียงพูด</b> — ถ้าอยากให้คน <b>พูดได้</b> กลับไปเลือกการ์ด <b>🗣️ Talking Avatar</b>"; }
   }
-  if ($("vsVoiceKey")) $("vsVoiceKey").style.display = m.avatar ? "inline-block" : "none";
+  if ($("vsVoiceKey")){
+    $("vsVoiceKey").style.display = m.avatar ? "inline-block" : "none";
+    if (m.avatar){ fetch("/api/content/media-keys").then(r=>r.json()).then(d=>veoUpdateVoiceBtn((d.selection||{}).voice||{})).catch(()=>{}); }
+  }
   document.querySelectorAll(".vs-ar").forEach(b => b.classList.toggle("active", b.dataset.ar === "16:9"));
   vsUpdateSize();
   // key notice
