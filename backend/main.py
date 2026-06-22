@@ -2431,9 +2431,12 @@ async def veo_generate(p: dict) -> dict:
             return {"error": "รูปใหญ่เกินไป (ไม่เกิน ~22MB)"}
         if i2 != "veo":
             endpoint = i2     # fal i2v endpoint
+    opts = {"fps": int(p.get("fps") or 24),
+            "fixed_camera": bool(p.get("fixed_camera")),
+            "generate_audio": bool(p.get("generate_audio", True))}
     try:
         job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt,
-                                      endpoint, ar, reso, mode, image)
+                                      endpoint, ar, reso, mode, image, opts)
     except Exception as exc:
         return {"error": _friendly_err(exc)}
     tid = db.video_add(prompt, m["prov"], m["name"], job.get("task_id", ""))

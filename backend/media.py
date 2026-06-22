@@ -128,10 +128,11 @@ def _split_data_uri(uri: str):
 
 def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: str = "",
                    aspect_ratio: str = "16:9", resolution: str = "1080p",
-                   mode: str = "t2v", image: str = "") -> dict:
+                   mode: str = "t2v", image: str = "", opts: dict = None) -> dict:
     """Kick off a text/image-to-video job. Returns {task_id} (poll separately)."""
     if not key:
         raise RuntimeError("ยังไม่ได้ใส่คีย์วิดีโอ")
+    opts = opts or {}
     p = (provider or "veo").lower()
     ar = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1") else "16:9"
     is_i2v = (mode == "i2v" and bool(image))
@@ -142,7 +143,10 @@ def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: s
         if is_i2v:
             mime, b64 = _split_data_uri(image)
             inst["image"] = {"bytesBase64Encoded": b64, "mimeType": mime}
-        d = _post_json(url, {"instances": [inst], "parameters": {"aspectRatio": ar}}, timeout=90)
+        params = {"aspectRatio": ar}
+        if not opts.get("generate_audio", True):
+            params["generateAudio"] = False
+        d = _post_json(url, {"instances": [inst], "parameters": params}, timeout=90)
         name = d.get("name")
         if not name:
             raise RuntimeError(f"Veo ไม่คืน operation: {str(d)[:160]}")
@@ -150,6 +154,12 @@ def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: s
     if p == "fal":
         ep = endpoint or "fal-ai/minimax/video-01"
         body = {"prompt": prompt, "aspect_ratio": ar, "resolution": resolution}
+        if opts.get("fixed_camera"):
+            body["camera_fixed"] = True
+        if opts.get("fps"):
+            body["fps"] = int(opts["fps"])
+        if "generate_audio" in opts:
+            body["generate_audio"] = bool(opts["generate_audio"])
         if is_i2v:
             body["image_url"] = image   # fal accepts a data URI here
         d = _post_json(f"https://queue.fal.run/{ep}", body,

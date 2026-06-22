@@ -43,6 +43,12 @@
   .menu-group.open .submenu { max-height:140px; }
   .submenu-item { padding-left:30px; font-size:13px; }
   .submenu-item .ico { font-size:15px; }
+  .vs-switch { position:relative; display:inline-block; width:42px; height:24px; flex:0 0 auto; }
+  .vs-switch input { display:none; }
+  .vs-switch span { position:absolute; inset:0; background:#334155; border-radius:999px; transition:.2s; cursor:pointer; }
+  .vs-switch span::before { content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+  .vs-switch input:checked + span { background:#22c55e; }
+  .vs-switch input:checked + span::before { transform:translateX(18px); }
   .side-title { padding:14px 16px 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
   .agent-list { padding:0 8px 12px; }
   .agent-row { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:10px; font-size:13px; }
@@ -1436,6 +1442,24 @@
                   <option value="1080p">1080p (Full HD)</option>
                   <option value="720p">720p (HD)</option>
                 </select>
+              </div>
+
+              <div style="background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:12px;margin-top:10px">
+                <div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:2px">🎛️ Advanced Options</div>
+                <div style="font-size:11px;color:#64748b;margin-bottom:10px">ปรับละเอียด — ค่าเริ่มต้นเหมาะกับงานทั่วไป</div>
+                <label style="font-size:12px;color:#94a3b8">Frame Rate (FPS)</label>
+                <select id="vsFps" class="numfld" style="width:100%;margin:6px 0 10px">
+                  <option value="24">24 FPS</option>
+                  <option value="30">30 FPS</option>
+                </select>
+                <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid #1e293b;border-radius:10px;padding:10px;margin-bottom:8px">
+                  <div><div style="color:#cbd5e1;font-weight:700;font-size:13px">Fixed Camera</div><div style="font-size:11px;color:#64748b">ล็อกกล้องให้อยู่นิ่ง ไม่แพน/ซูม</div></div>
+                  <label class="vs-switch"><input type="checkbox" id="vsFixedCam"><span></span></label>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid #1e293b;border-radius:10px;padding:10px">
+                  <div><div style="color:#cbd5e1;font-weight:700;font-size:13px">Generate Audio</div><div style="font-size:11px;color:#64748b">สร้างเสียงพากย์/เอฟเฟกต์/เพลงประกอบ (เฉพาะรุ่นที่รองรับ)</div></div>
+                  <label class="vs-switch"><input type="checkbox" id="vsAudio" checked><span></span></label>
+                </div>
               </div>
 
               <div style="display:flex;gap:8px;margin-top:12px">
@@ -4101,6 +4125,7 @@ function veoOpenGen(modelId, name){
   // show I2V tab only if supported
   $("vsTabs").querySelector('[data-mode="i2v"]').style.display = m.i2v ? "block" : "none";
   $("vsImage").value = ""; $("vsImagePrev").style.display = "none"; $("vsImagePrompt").style.display = "block";
+  $("vsFps").value = "24"; $("vsFixedCam").checked = false; $("vsAudio").checked = true;
   vsSetMode("t2v");
   $("vsPreview").innerHTML = '<div style="text-align:center;color:#64748b"><div style="font-size:40px">🎬</div>กด Generate เพื่อสร้างวิดีโอใหม่</div>';
   veoBuildThumbs();
@@ -4150,7 +4175,8 @@ if ($("vsBack")){
     if (!prompt){ toastNote("ใส่ Description ก่อน","#f59e0b"); return; }
     if (_vsMode === "i2v" && !_vsImage){ toastNote("อัปโหลดรูป First Frame ก่อน","#f59e0b"); return; }
     const b=$("vsGen"),o=b.textContent; b.disabled=true; b.textContent="⏳ กำลังส่งงาน…";
-    const payload = { model_id:_vsModelId, prompt, aspect_ratio:_vsAr, resolution:$("vsReso").value, mode:_vsMode };
+    const payload = { model_id:_vsModelId, prompt, aspect_ratio:_vsAr, resolution:$("vsReso").value, mode:_vsMode,
+      fps:parseInt($("vsFps").value)||24, fixed_camera:$("vsFixedCam").checked, generate_audio:$("vsAudio").checked };
     if (_vsMode === "i2v") payload.image = _vsImage;
     const r = await postJSON("/api/veo/generate", payload);
     b.disabled=false; b.textContent=o;
