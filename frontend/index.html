@@ -834,6 +834,15 @@
           <div style="font-size:11px;color:#64748b;margin-top:6px">⚠️ <b>API คลังโฆษณา ≠ เว็บคลังโฆษณา</b> — API สาธารณะของ Meta ดึง “โฆษณาทั่วไป” ของไทยไม่ได้ (คืนเต็มเฉพาะหมวดการเมือง/ประเด็นสังคม) ถ้าค้นแล้วขึ้น error ให้กดปุ่ม <b>↗ เปิดในเว็บ Facebook</b> เพื่อดูผลจริง แล้วคัดลอกข้อความโฆษณามาวางช่องล่างให้ AI เขียนเลียนแบบ</div>
         </div>
         <div id="alResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
+
+        <div class="panel" style="margin-top:14px;border:1px solid #7c3aed55">
+          <h3>🎨 เลียนแบบครีเอทีฟ (ภาพ/วิดีโอ) จากโฆษณาที่เห็น</h3>
+          <p style="color:#94a3b8;font-size:13px;margin:2px 0 10px">เปิดดูโฆษณาคู่แข่ง (จาก ID หรือเว็บ) → <b>คัดลอกข้อความ/อธิบายภาพที่เห็น</b> มาวางที่นี่ → AI จะวิเคราะห์ + เขียนแคปชั่นใหม่ + สร้าง “พรอมต์ภาพ” และ “พรอมต์วิดีโอ” ให้ กดปุ่มเดียวไปสร้างต่อใน Image AI / VEO AI ได้เลย (เป็นของธุรกิจคุณ ไม่ลอกตรงๆ)</p>
+          <textarea id="alImitateAd" class="numfld" style="width:100%;min-height:90px;margin:0 0 8px" placeholder="วางข้อความโฆษณาที่เห็น หรืออธิบายภาพ/วิดีโอของคู่แข่ง เช่น 'ภาพวิลล่าพูลริมทะเล โทนอุ่น มีข้อความโปรโมชั่นลด 50% มุมมองจากด้านบน'"></textarea>
+          <div style="font-size:12px;color:#64748b;margin-bottom:6px">โจทย์ธุรกิจของคุณ ใช้ช่อง “โจทย์ธุรกิจ” เหนือผลการค้นหา ↑</div>
+          <button class="send" id="alImitateGo" style="padding:10px 20px">✨ วิเคราะห์ + สร้างพรอมต์ภาพ/วิดีโอ</button>
+          <div id="alImitateOut" style="font-size:13px;color:#cbd5e1;margin-top:12px;line-height:1.6"></div>
+        </div>
       </section>
 
       <!-- GUIDE / คู่มือใช้งาน -->
@@ -5043,11 +5052,50 @@ async function alSearch(){
     const rr = await postJSON("/api/ads/library/imitate", { ad: (ad.title?ad.title+"\n":"")+(ad.body||""), brief });
     btn.disabled=false; btn.textContent=o;
     if (rr.error){ out.innerHTML = `<span style="color:#ef4444">${escapeHtml(rr.error)}</span>`; return; }
-    out.innerHTML = mdLite(rr.result||"");
+    alRenderImitate(out, rr);
   });
+}
+/* render imitate result with one-click buttons to Image AI / VEO AI */
+let _alLastImgPrompt = "", _alLastVidPrompt = "";
+function alRenderImitate(el, rr){
+  if (rr.result){ el.innerHTML = mdLite(rr.result); return; }   // fallback raw text
+  _alLastImgPrompt = rr.image_prompt || ""; _alLastVidPrompt = rr.video_prompt || "";
+  let h = "";
+  if (rr.analysis) h += `<div style="margin-bottom:6px"><b style="color:#fff">🔍 วิเคราะห์:</b> ${escapeHtml(rr.analysis)}</div>`;
+  (rr.captions||[]).forEach((c,i) => { h += `<div style="background:#0f1b33;border:1px solid #1e293b;border-radius:8px;padding:8px;margin:6px 0"><b style="color:#93c5fd">แบบ ${i?'B':'A'}:</b> ${escapeHtml(c)}</div>`; });
+  if (rr.image_prompt) h += `<div style="margin-top:8px"><b style="color:#fff">🎨 พรอมต์ภาพ:</b> <span style="color:#94a3b8;font-size:12px">${escapeHtml(rr.image_prompt)}</span></div>`;
+  if (rr.video_prompt) h += `<div style="margin-top:4px"><b style="color:#fff">🎬 พรอมต์วิดีโอ:</b> <span style="color:#94a3b8;font-size:12px">${escapeHtml(rr.video_prompt)}</span></div>`;
+  h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">`;
+  if (rr.image_prompt) h += `<button class="qbtn al-mkimg" style="font-weight:700;background:#7c3aed;color:#fff;border-color:#7c3aed">🎨 สร้างภาพแบบนี้</button>`;
+  if (rr.video_prompt) h += `<button class="qbtn al-mkvid" style="font-weight:700;background:#0ea5e9;color:#fff;border-color:#0ea5e9">🎬 สร้างวิดีโอแบบนี้</button>`;
+  h += `</div>`;
+  el.innerHTML = h;
+  const ib = el.querySelector(".al-mkimg"); if (ib) ib.onclick = () => alMakeImage(_alLastImgPrompt);
+  const vb = el.querySelector(".al-mkvid"); if (vb) vb.onclick = () => alMakeVideo(_alLastVidPrompt);
+}
+function alMakeImage(prompt){
+  showView("imageai");
+  setTimeout(() => { if ($("iaPrompt")){ $("iaPrompt").value = prompt; $("iaPrompt").scrollIntoView({behavior:"smooth",block:"center"}); } toastNote("ใส่พรอมต์ใน Image AI ให้แล้ว — กด 🖌️ สร้างภาพ ได้เลย","#22c55e"); }, 200);
+}
+function alMakeVideo(prompt){
+  showView("veo");
+  setTimeout(() => { if ($("veoPrompt")){ $("veoPrompt").value = prompt; $("veoPrompt").scrollIntoView({behavior:"smooth",block:"center"}); } toastNote("ใส่พรอมต์ใน VEO AI ให้แล้ว — กด 🎬 สร้างวิดีโอ ได้เลย","#22c55e"); }, 200);
 }
 $("alGo").addEventListener("click", alSearch);
 $("alQuery").addEventListener("keydown", e => { if (e.key==="Enter") alSearch(); });
+/* standalone: imitate a creative from pasted text/description (works for ID-view too) */
+$("alImitateGo") && $("alImitateGo").addEventListener("click", async () => {
+  const ad = $("alImitateAd").value.trim();
+  const brief = $("alBrief").value.trim();
+  if (!ad){ toastNote("วางข้อความ/คำอธิบายโฆษณาที่เห็นก่อน","#f59e0b"); return; }
+  if (!brief){ toastNote("ใส่โจทย์ธุรกิจของคุณ (ช่องเหนือปุ่มนี้)","#f59e0b"); return; }
+  const b=$("alImitateGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ AI กำลังคิด…";
+  const out=$("alImitateOut"); out.innerHTML="";
+  const rr = await postJSON("/api/ads/library/imitate", { ad, brief });
+  b.disabled=false; b.textContent=o;
+  if (rr.error){ out.innerHTML = `<span style="color:#ef4444">${escapeHtml(rr.error)}</span>`; return; }
+  alRenderImitate(out, rr);
+});
 
 /* ---------- คู่มือใช้งาน ---------- */
 const GUIDE = [

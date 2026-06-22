@@ -3358,11 +3358,15 @@ async def ads_library_search(p: dict) -> dict:
 
 
 _AD_IMITATE_PROMPT = (
-    "นี่คือโฆษณา Facebook ของคู่แข่ง:\n«{ad}»\n\n"
-    "งาน: วิเคราะห์ว่าโฆษณานี้ใช้กลยุทธ์/จุดขาย/อารมณ์อะไร แล้วเขียนโฆษณาใหม่สไตล์คล้ายกัน "
-    "สำหรับธุรกิจของผู้ใช้: {brief}\n"
-    "ตอบเป็นภาษาไทย: (1) วิเคราะห์สั้นๆ 2-3 ข้อ (2) โฆษณาใหม่ 2 แบบ (พาดหัว+เนื้อหา+CTA) "
-    "ห้ามลอกคำต่อคำ ให้ดัดแปลงให้เป็นของเราเอง ปลอดภัยตามนโยบาย Meta"
+    "นี่คือโฆษณา Facebook ของคู่แข่ง (ข้อความ/คำอธิบายที่ผู้ใช้เห็น):\n«{ad}»\n\n"
+    "ธุรกิจของผู้ใช้: {brief}\n\n"
+    "งาน: วิเคราะห์กลยุทธ์/จุดขาย/อารมณ์ของโฆษณานี้ แล้วสร้างของ \"เลียนแบบสไตล์\" ให้ผู้ใช้ "
+    "(ห้ามลอกคำต่อคำ ดัดแปลงเป็นของเราเอง ปลอดภัยตามนโยบาย Meta)\n"
+    "ตอบ JSON อย่างเดียว:\n"
+    "{{\"analysis\":\"วิเคราะห์สั้นๆ 2-3 ข้อ (ภาษาไทย)\","
+    "\"captions\":[\"โฆษณาใหม่แบบ A: พาดหัว + เนื้อหา + CTA\",\"โฆษณาใหม่แบบ B\"],"
+    "\"image_prompt\":\"prompt ภาษาอังกฤษสำหรับสร้าง 'ภาพโฆษณา' สไตล์เดียวกัน (องค์ประกอบ/มุมภาพ/โทนสี/อารมณ์) แต่เป็นสินค้า/บริการของผู้ใช้\","
+    "\"video_prompt\":\"prompt ภาษาอังกฤษสำหรับสร้าง 'วิดีโอโฆษณาสั้น' สไตล์เดียวกัน (ฉาก/การเคลื่อนไหว/โทน) ของผู้ใช้\"}}"
 )
 
 
@@ -3371,13 +3375,20 @@ async def ads_library_imitate(p: dict) -> dict:
     ad = (p.get("ad") or "").strip()
     brief = (p.get("brief") or "").strip()
     if not ad or not brief:
-        return {"error": "ต้องมีข้อความโฆษณา + โจทย์ธุรกิจของคุณ"}
+        return {"error": "ต้องมีข้อความ/คำอธิบายโฆษณา + โจทย์ธุรกิจของคุณ"}
     try:
         txt = await _claude_text("marketing", model_for_agent("marketing"),
                                  _AD_IMITATE_PROMPT.format(ad=ad[:1500], brief=brief), 1500)
     except Exception as exc:
         return {"error": _friendly_err(exc)}
-    return {"ok": True, "result": txt}
+    data = _parse_json(txt) or {}
+    if not data:
+        return {"ok": True, "result": txt}     # fallback: raw text
+    return {"ok": True,
+            "analysis": data.get("analysis", ""),
+            "captions": data.get("captions", []),
+            "image_prompt": data.get("image_prompt", ""),
+            "video_prompt": data.get("video_prompt", "")}
 
 
 # ============================== Auto Post Facebook (Pages) ===================
