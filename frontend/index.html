@@ -515,6 +515,7 @@
         <div class="submenu" id="adsSub">
           <div class="menu-item submenu-item" data-view="adlibrary"><span class="ico">🔎</span><span class="label">Ad Library</span></div>
           <div class="menu-item submenu-item" data-view="autopost"><span class="ico">📲</span><span class="label">Auto Post Facebook</span></div>
+          <div class="menu-item submenu-item" data-view="warm"><span class="ico">🔥</span><span class="label">Warm Facebook</span></div>
         </div>
       </div>
       <div class="menu-item" data-view="chatbot"><span class="ico">💬</span><span class="label">Chat Bot</span></div>
@@ -856,6 +857,42 @@
           <div style="font-size:12px;color:#64748b;margin-bottom:6px">โจทย์ธุรกิจของคุณ ใช้ช่อง “โจทย์ธุรกิจ” เหนือผลการค้นหา ↑</div>
           <button class="send" id="alImitateGo" style="padding:10px 20px">✨ วิเคราะห์ + สร้างพรอมต์ภาพ/วิดีโอ</button>
           <div id="alImitateOut" style="font-size:13px;color:#cbd5e1;margin-top:12px;line-height:1.6"></div>
+        </div>
+      </section>
+
+      <!-- WARM FACEBOOK -->
+      <section class="view" id="view-warm">
+        <div class="panel" style="background:linear-gradient(135deg,#ea580c,#b91c1c);border:none">
+          <h3 style="color:#fff;margin:0">🔥 Warm Facebook — วอร์มบัญชี/เพจ/บัญชีโฆษณา</h3>
+          <p style="color:#fed7aa;font-size:13px;margin:8px 0 0">ค่อย ๆ สร้างความน่าเชื่อถือให้ Meta ก่อนยิงแอดจริง — ลดโอกาสโดนจำกัด/แบน · ใช้แผน + เช็กลิสต์ + ตัวคำนวณเพิ่มงบแบบปลอดภัย</p>
+        </div>
+
+        <div class="panel" style="border:1px solid #f59e0b55;background:#78350f22">
+          <p style="color:#fbbf24;font-size:13px;margin:0">⚠️ <b>ทำแบบถูกกฎ Meta เท่านั้น</b> — เครื่องมือนี้ช่วย “วางแผน + เตือน + คำนวณ” ให้คุณทำกิจกรรม<b>จริง</b>ด้วยตัวเอง (โพสต์จริง/ค่อยเพิ่มงบ) · <b>ไม่ใช้บอทปั๊มไลก์/กิจกรรมปลอม</b> เพราะผิดนโยบายและทำให้โดนแบนหนักกว่าเดิม</p>
+        </div>
+
+        <div class="panel"><h3>📈 ตัวคำนวณเพิ่มงบแบบปลอดภัย (Budget Warm-up)</h3>
+          <p style="color:#94a3b8;font-size:13px;margin:2px 0 10px">เพิ่มงบทีละน้อย กันไม่ให้ Meta จับว่าผิดปกติ (แนะนำเพิ่มไม่เกิน ~20-30%/วัน)</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+            <div class="fld" style="width:130px"><label style="font-size:12px;color:#94a3b8">งบเริ่มต้น/วัน (฿)</label><input id="wmStart" type="number" class="numfld" value="100" style="margin:4px 0 0"></div>
+            <div class="fld" style="width:130px"><label style="font-size:12px;color:#94a3b8">เพิ่มวันละ (%)</label><input id="wmPct" type="number" class="numfld" value="20" style="margin:4px 0 0"></div>
+            <div class="fld" style="width:110px"><label style="font-size:12px;color:#94a3b8">จำนวนวัน</label><input id="wmDays" type="number" class="numfld" value="10" style="margin:4px 0 0"></div>
+            <button class="qbtn" id="wmCalc" style="font-weight:700;height:42px">คำนวณ</button>
+          </div>
+          <div id="wmTable" style="margin-top:12px"></div>
+        </div>
+
+        <div class="panel"><h3>🗓️ แผนวอร์ม + เช็กลิสต์ (AI วางให้)</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <select id="wmType" class="numfld" style="width:auto;margin:0">
+              <option value="ad_account">บัญชีโฆษณาใหม่</option>
+              <option value="page">เพจใหม่</option>
+              <option value="profile">บัญชีส่วนตัว (สำหรับยิงแอด)</option>
+            </select>
+            <input id="wmGoal" class="numfld" style="flex:1;min-width:220px;margin:0" placeholder="ธุรกิจ/เป้าหมาย เช่น ขายครีม งบเดือนละ 30,000">
+            <button class="send" id="wmPlan" style="padding:10px 18px">✨ ให้ AI วางแผนวอร์ม</button>
+          </div>
+          <div id="wmPlanOut" style="margin-top:6px"></div>
         </div>
       </section>
 
@@ -4962,7 +4999,7 @@ async function biOpen(pid){
 function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
-  if (["ads","adlibrary","autopost"].includes(v)) $("adsGroup") && $("adsGroup").classList.add("open");
+  if (["ads","adlibrary","autopost","warm"].includes(v)) $("adsGroup") && $("adsGroup").classList.add("open");
   $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", music:"Music AI", imageai:"Image AI", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
@@ -4974,6 +5011,7 @@ function showView(v) {
   if (v === "music") loadMusic();
   if (v === "imageai") loadImageAI();
   if (v === "veo") loadVeo(); else veoStopPoll();
+  if (v === "warm") loadWarm();
   if (v === "bio") loadBio();
   if (v === "ads") loadAds();
   if (v === "adlibrary") loadAdLibrary();
@@ -5328,6 +5366,51 @@ $("alImitateGo") && $("alImitateGo").addEventListener("click", async () => {
   b.disabled=false; b.textContent=o;
   if (rr.error){ out.innerHTML = `<span style="color:#ef4444">${escapeHtml(rr.error)}</span>`; return; }
   alRenderImitate(out, rr);
+});
+
+/* ---------- Warm Facebook ---------- */
+function loadWarm(){ wmCalc(); wmRenderPlan(); }
+function wmCalc(){
+  const start = parseFloat($("wmStart").value)||100;
+  const pct = parseFloat($("wmPct").value)||20;
+  const days = Math.min(60, Math.max(1, parseInt($("wmDays").value)||10));
+  let b = start, total = 0, rows = "";
+  for (let d=1; d<=days; d++){
+    total += b;
+    rows += `<tr><td style="padding:6px 10px">วันที่ ${d}</td><td style="padding:6px 10px;text-align:right;color:#fbbf24;font-weight:700">฿${b.toLocaleString("en-US",{maximumFractionDigits:0})}</td><td style="padding:6px 10px;text-align:right;color:#64748b">รวม ฿${total.toLocaleString("en-US",{maximumFractionDigits:0})}</td></tr>`;
+    b = b * (1 + pct/100);
+  }
+  $("wmTable").innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;color:#cbd5e1">
+    <tr style="color:#94a3b8;font-size:12px"><th style="text-align:left;padding:6px 10px">วัน</th><th style="text-align:right;padding:6px 10px">งบ/วัน</th><th style="text-align:right;padding:6px 10px">สะสม</th></tr>
+    ${rows}</table></div>
+    <div style="font-size:12px;color:#64748b;margin-top:8px">💡 เพิ่ม ${pct}%/วัน · ถ้าตัวไหนผลดี ค่อยเพิ่ม ถ้าเริ่มถูกจำกัดให้คงงบไว้ 2-3 วันก่อนเพิ่มต่อ</div>`;
+}
+function wmKey(){ return "warmPlan"; }
+function wmRenderPlan(){
+  let saved; try { saved = JSON.parse(localStorage.getItem(wmKey())||"null"); } catch(e){ saved=null; }
+  const out = $("wmPlanOut");
+  if (!saved || !(saved.days||[]).length){ out.innerHTML = '<div style="color:#64748b;font-size:13px">ยังไม่มีแผน — เลือกประเภท + ใส่เป้าหมาย แล้วกด “ให้ AI วางแผนวอร์ม”</div>'; return; }
+  const done = saved.done || {};
+  out.innerHTML = (saved.days||[]).map((d,di) => `
+    <div style="background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="font-weight:800;color:#fff;margin-bottom:6px">วันที่ ${d.day||di+1} · ${escapeHtml(d.title||"")}</div>
+      ${(d.tasks||[]).map((t,ti) => { const k=di+"-"+ti; return `<label style="display:flex;gap:8px;align-items:flex-start;color:#cbd5e1;font-size:13px;margin:4px 0;cursor:pointer"><input type="checkbox" class="wm-chk" data-k="${k}" ${done[k]?"checked":""} style="margin-top:3px"> <span style="${done[k]?'text-decoration:line-through;opacity:.6':''}">${escapeHtml(t)}</span></label>`; }).join("")}
+    </div>`).join("")
+    + ((saved.tips||[]).length ? `<div style="background:#78350f22;border:1px solid #f59e0b55;border-radius:10px;padding:12px;font-size:13px;color:#fbbf24;line-height:1.7">⚠️ ข้อควรระวัง:<br>${saved.tips.map(t=>"• "+escapeHtml(t)).join("<br>")}</div>` : "");
+  out.querySelectorAll(".wm-chk").forEach(x => x.onchange = () => {
+    saved.done = saved.done || {}; saved.done[x.dataset.k] = x.checked;
+    localStorage.setItem(wmKey(), JSON.stringify(saved)); wmRenderPlan();
+  });
+}
+$("wmCalc") && $("wmCalc").addEventListener("click", wmCalc);
+$("wmPlan") && $("wmPlan").addEventListener("click", async () => {
+  const b=$("wmPlan"),o=b.textContent; b.disabled=true; b.textContent="⏳ AI กำลังวางแผน…";
+  const r = await postJSON("/api/warm/plan", { type:$("wmType").value, goal:$("wmGoal").value.trim() });
+  b.disabled=false; b.textContent=o;
+  if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
+  if (!(r.days||[]).length){ $("wmPlanOut").innerHTML = `<div style="color:#cbd5e1;white-space:pre-wrap">${escapeHtml(r.raw||"ไม่ได้แผน ลองใหม่")}</div>`; return; }
+  localStorage.setItem(wmKey(), JSON.stringify({ days:r.days, tips:r.tips||[], done:{} }));
+  wmRenderPlan(); toastNote("AI วางแผนวอร์มให้แล้ว ✅","#22c55e");
 });
 
 /* ---------- คู่มือใช้งาน ---------- */
