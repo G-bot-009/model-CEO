@@ -1427,6 +1427,23 @@
                   <video id="vsVideoPrev" style="display:none;max-height:160px;border-radius:10px;margin:0 auto" muted></video>
                 </label>
               </div>
+              <div id="vsLangWrap" style="display:none;margin-bottom:10px">
+                <label style="font-size:13px;color:#cbd5e1;font-weight:700">🗣️ ภาษาที่พูด</label>
+                <select id="vsLang" class="numfld" style="width:100%;margin:6px 0 0">
+                  <option value="th">ไทย</option>
+                  <option value="en">อังกฤษ (English)</option>
+                  <option value="zh-CN">จีน (中文)</option>
+                  <option value="ja">ญี่ปุ่น (日本語)</option>
+                  <option value="ko">เกาหลี (한국어)</option>
+                  <option value="vi">เวียดนาม (Tiếng Việt)</option>
+                  <option value="id">อินโดนีเซีย</option>
+                  <option value="es">สเปน (Español)</option>
+                  <option value="fr">ฝรั่งเศส (Français)</option>
+                  <option value="de">เยอรมัน (Deutsch)</option>
+                  <option value="hi">ฮินดี (हिन्दी)</option>
+                  <option value="ar">อาหรับ (العربية)</option>
+                </select>
+              </div>
               <label style="font-size:13px;color:#cbd5e1;font-weight:700">Description <span style="color:#f87171">*</span></label>
               <textarea id="vsPrompt" maxlength="4000" class="numfld" style="width:100%;min-height:120px;margin:6px 0 2px" placeholder="อธิบายวิดีโอที่อยากได้… (ไทย/อังกฤษ)"></textarea>
               <div style="text-align:right;font-size:11px;color:#64748b" id="vsCount">0 / 4,000</div>
@@ -4200,7 +4217,12 @@ async function veoOpenVoiceKey(){
     const block = { provider:$("vk_prov").value }; if (key) block.key = key;
     await postJSON("/api/content/media-keys", { voice: block });
     const out = $("vk_testout"); out.textContent = "⏳ กำลังสร้างเสียงตัวอย่าง…";
-    const r = await postJSON("/api/tts/preview", { text:"สวัสดีค่ะ นี่คือตัวอย่างเสียงพูด ทดสอบ หนึ่ง สอง สาม" });
+    const lang = ($("vsLang") && $("vsLang").value) || "th";
+    const samples = { th:"สวัสดีค่ะ นี่คือตัวอย่างเสียงพูด ทดสอบ หนึ่ง สอง สาม", en:"Hello, this is a voice sample test, one two three.",
+      "zh-CN":"你好，这是语音示例测试。", ja:"こんにちは、これは音声サンプルのテストです。", ko:"안녕하세요, 음성 샘플 테스트입니다.",
+      vi:"Xin chào, đây là bản thử giọng nói.", id:"Halo, ini contoh suara.", es:"Hola, esta es una prueba de voz.",
+      fr:"Bonjour, ceci est un test vocal.", de:"Hallo, dies ist ein Sprachtest.", hi:"नमस्ते, यह आवाज़ का नमूना है।", ar:"مرحبا، هذه عينة صوتية." };
+    const r = await postJSON("/api/tts/preview", { text: samples[lang] || samples.th, lang });
     if (r.error){ if (r.out_of_credits){ showCreditPopup(r.service, r.error); } out.textContent = "❌ "+r.error; return; }
     out.innerHTML = `✅ กำลังใช้เสียง: <b>${escapeHtml(r.provider||"")}</b>`;
     try { const a = new Audio(r.audio); a.play(); } catch(e){}
@@ -4219,6 +4241,7 @@ function veoOpenGen(modelId, name){
     if (m.avatar){ $("vsHint").style.display="block"; $("vsHint").innerHTML = "🗣️ โมเดลนี้ <b>พูดได้</b> — พิมพ์บทพูดในช่องบน ระบบแปลงเป็นเสียง + ขยับปากให้ · อยากให้เสียง<b>ลื่น</b>ขึ้น กดปุ่มล่างตั้งเสียง Neural"; }
     else { $("vsHint").style.display="block"; $("vsHint").innerHTML = "ℹ️ โมเดลนี้สร้าง <b>ภาพเคลื่อนไหวอย่างเดียว ไม่มีเสียงพูด</b> — ถ้าอยากให้คน <b>พูดได้</b> กลับไปเลือกการ์ด <b>🗣️ Talking Avatar</b>"; }
   }
+  if ($("vsLangWrap")) $("vsLangWrap").style.display = m.avatar ? "block" : "none";
   if ($("vsVoiceKey")){
     $("vsVoiceKey").style.display = m.avatar ? "inline-block" : "none";
     if (m.avatar){ fetch("/api/content/media-keys").then(r=>r.json()).then(d=>veoUpdateVoiceBtn((d.selection||{}).voice||{})).catch(()=>{}); }
@@ -4321,7 +4344,8 @@ if ($("vsBack")){
     if (_vsMode === "v2v" && !_vsVid){ toastNote("อัปโหลดวิดีโอต้นฉบับก่อน","#f59e0b"); return; }
     const b=$("vsGen"),o=b.textContent; b.disabled=true; b.textContent="⏳ กำลังส่งงาน…";
     const payload = { model_id:_vsModelId, prompt, aspect_ratio:_vsAr, resolution:$("vsReso").value, mode:_vsMode,
-      fps:parseInt($("vsFps").value)||24, fixed_camera:$("vsFixedCam").checked, generate_audio:$("vsAudio").checked };
+      fps:parseInt($("vsFps").value)||24, fixed_camera:$("vsFixedCam").checked, generate_audio:$("vsAudio").checked,
+      voice_lang: ($("vsLang") && $("vsLang").value) || "th" };
     if (_vsMode === "i2v") payload.image = _vsImage;
     if (_vsMode === "v2v") payload.video = _vsVid;
     const r = await postJSON("/api/veo/generate", payload);

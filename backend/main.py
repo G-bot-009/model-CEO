@@ -2179,7 +2179,8 @@ async def tts(text: str = "", lang: str = "th"):
 async def tts_preview(p: dict) -> dict:
     """Preview the exact voice the Talking Avatar will use (so you can verify ElevenLabs is active)."""
     text = (p.get("text") or "สวัสดีค่ะ นี่คือตัวอย่างเสียงพูดจากระบบ").strip()[:200]
-    uri, credit, used = await _best_speech_uri(text, "th")
+    lang = (p.get("lang") or "th").strip() or "th"
+    uri, credit, used = await _best_speech_uri(text, lang)
     if credit:
         return {"error": f"เครดิต {credit} หมด", "out_of_credits": True, "service": credit}
     if not uri:
@@ -2535,7 +2536,8 @@ async def veo_generate(p: dict) -> dict:
             return {"error": "อัปโหลดรูปคนก่อน"}
         if not prompt:
             return {"error": "พิมพ์ 'บทพูด' ในช่อง Description"}
-        audio_uri, voice_credit, _ = await _best_speech_uri(prompt, "th")
+        vlang = (p.get("voice_lang") or "th").strip() or "th"
+        audio_uri, voice_credit, _ = await _best_speech_uri(prompt, vlang)
         if voice_credit:
             return {"error": f"เครดิตเสียง {voice_credit} หมดแล้ว — เติมเงินที่ {voice_credit} แล้วลองใหม่ "
                              f"(หรือเอาคีย์เสียงออกเพื่อใช้เสียงฟรีชั่วคราว)",
