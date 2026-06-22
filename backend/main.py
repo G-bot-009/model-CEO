@@ -2396,8 +2396,11 @@ async def veo_generate(p: dict) -> dict:
     key = _video_key(m["prov"])
     if not key:
         return {"error": f"ยังไม่ได้ใส่คีย์ {_VEO_PROVIDERS[m['prov']]['name']} — กด 🔑 ที่การ์ดนี้ก่อน"}
+    ar = p.get("aspect_ratio") if p.get("aspect_ratio") in ("16:9", "9:16", "1:1") else "16:9"
+    reso = p.get("resolution") if p.get("resolution") in ("1080p", "720p") else "1080p"
     try:
-        job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt, m["endpoint"])
+        job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt,
+                                      m["endpoint"], ar, reso)
     except Exception as exc:
         return {"error": _friendly_err(exc)}
     tid = db.video_add(prompt, m["prov"], m["name"], job.get("task_id", ""))

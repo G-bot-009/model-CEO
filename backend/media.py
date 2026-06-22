@@ -115,22 +115,26 @@ def generate_image(provider: str, model: str, key: str, prompt: str) -> dict:
 
 
 # ------------------------------------------------------------------ video ----
-def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: str = "") -> dict:
+def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: str = "",
+                   aspect_ratio: str = "16:9", resolution: str = "1080p") -> dict:
     """Kick off a text-to-video job. Returns {task_id} (poll separately)."""
     if not key:
         raise RuntimeError("ยังไม่ได้ใส่คีย์วิดีโอ")
     p = (provider or "veo").lower()
+    ar = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1") else "16:9"
     if p == "veo":
         m = model or "veo-3.0-fast-generate-001"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:predictLongRunning?key={key}"
-        d = _post_json(url, {"instances": [{"prompt": prompt}]}, timeout=60)
+        d = _post_json(url, {"instances": [{"prompt": prompt}],
+                             "parameters": {"aspectRatio": ar}}, timeout=60)
         name = d.get("name")
         if not name:
             raise RuntimeError(f"Veo ไม่คืน operation: {str(d)[:160]}")
         return {"task_id": name}
     if p == "fal":
         ep = endpoint or "fal-ai/minimax/video-01"
-        d = _post_json(f"https://queue.fal.run/{ep}", {"prompt": prompt},
+        d = _post_json(f"https://queue.fal.run/{ep}",
+                       {"prompt": prompt, "aspect_ratio": ar, "resolution": resolution},
                        headers={"Authorization": f"Key {key}"}, timeout=60)
         status_url = d.get("status_url"); resp_url = d.get("response_url", "")
         if not status_url:

@@ -1390,7 +1390,49 @@
 
         <div id="veoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
 
-        <div class="panel" style="margin-top:16px"><h3>🎞️ วิดีโอที่สร้างไว้</h3>
+        <!-- generation studio (opens when you click Generate on a card) -->
+        <div id="veoStudio" style="display:none">
+          <button class="qbtn" id="vsBack" style="font-weight:700;margin-bottom:12px">← กลับไปเลือกโมเดล</button>
+          <div style="display:grid;grid-template-columns:minmax(320px,1fr) 1.2fr;gap:16px;align-items:start">
+            <div class="panel" style="margin:0">
+              <div style="font-weight:800;color:#fff;font-size:16px;margin-bottom:10px">🎬 <span id="vsTitle"></span></div>
+              <label style="font-size:13px;color:#cbd5e1;font-weight:700">Description <span style="color:#f87171">*</span></label>
+              <textarea id="vsPrompt" maxlength="4000" class="numfld" style="width:100%;min-height:120px;margin:6px 0 2px" placeholder="อธิบายวิดีโอที่อยากได้… (ไทย/อังกฤษ)"></textarea>
+              <div style="text-align:right;font-size:11px;color:#64748b" id="vsCount">0 / 4,000</div>
+
+              <div style="background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:12px;margin-top:10px">
+                <div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:8px">⚙️ Output Settings</div>
+                <label style="font-size:12px;color:#94a3b8">Aspect Ratio</label>
+                <div style="display:flex;gap:8px;margin:6px 0">
+                  <button class="qbtn vs-ar" data-ar="16:9" style="flex:1;font-weight:700">16:9</button>
+                  <button class="qbtn vs-ar" data-ar="9:16" style="flex:1;font-weight:700">9:16</button>
+                  <button class="qbtn vs-ar" data-ar="1:1" style="flex:1;font-weight:700">1:1</button>
+                </div>
+                <div style="font-size:12px;color:#94a3b8;margin-bottom:8px">Output size: <b id="vsSize" style="color:#cbd5e1">1920 × 1080 px</b></div>
+                <label style="font-size:12px;color:#94a3b8">Resolution</label>
+                <select id="vsReso" class="numfld" style="width:100%;margin:6px 0 0">
+                  <option value="1080p">1080p (Full HD)</option>
+                  <option value="720p">720p (HD)</option>
+                </select>
+              </div>
+
+              <div style="display:flex;gap:8px;margin-top:12px">
+                <button class="qbtn" id="vsReset" style="flex:1">รีเซ็ต</button>
+                <button class="send" id="vsGen" style="flex:2;padding:11px">✨ Generate</button>
+              </div>
+              <div style="font-size:11px;color:#6b7280;margin-top:8px">⚠️ ใช้เครดิต/คีย์ของผู้ให้บริการ · วิดีโอใช้เวลา ~1-3 นาที</div>
+            </div>
+
+            <div>
+              <div class="panel" style="margin:0;min-height:320px;display:flex;align-items:center;justify-content:center" id="vsPreview">
+                <div style="text-align:center;color:#64748b"><div style="font-size:40px">🎬</div>เลือกผลงานด้านล่างเพื่อพรีวิว<br>หรือกด Generate เพื่อสร้างใหม่</div>
+              </div>
+              <div id="vsThumbs" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:10px"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px" id="veoGalleryPanel"><h3>🎞️ วิดีโอที่สร้างไว้</h3>
           <div id="veoList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px"></div>
         </div>
       </section>
@@ -3961,7 +4003,7 @@ async function loadVeo(){
     } else if (!m.has_key){
       btn = `<button class="qbtn veo-key" data-prov="${m.prov}" style="width:100%;font-weight:700;background:#1e293b">🔑 ใส่คีย์ ${escapeHtml(m.provider_name)} ก่อน</button>`;
     } else {
-      btn = `<button class="send veo-gen" data-id="${m.id}" style="width:100%;padding:9px">✨ Generate</button>`;
+      btn = `<button class="send veo-gen" data-id="${m.id}" data-name="${escapeHtml(m.name)}" style="width:100%;padding:9px">✨ Generate</button>`;
     }
     return `<div class="panel" style="margin:0;display:flex;flex-direction:column;gap:8px;${m.connectable?'':'opacity:.85'}">
       <div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
@@ -3975,7 +4017,7 @@ async function loadVeo(){
       <div style="margin-top:auto">${btn}</div>
     </div>`;
   }).join("");
-  grid.querySelectorAll(".veo-gen").forEach(x => x.onclick = () => veoOpenGen(x.dataset.id));
+  grid.querySelectorAll(".veo-gen").forEach(x => x.onclick = () => veoOpenGen(x.dataset.id, x.dataset.name));
   grid.querySelectorAll(".veo-key").forEach(x => x.onclick = () => veoOpenKey(x.dataset.prov));
   veoRenderList(d.videos || []);
   veoStopPoll();
@@ -4001,23 +4043,64 @@ function veoOpenKey(prov){
   $("veo_clear").onclick = async () => { await postJSON("/api/veo/key/clear",{provider:prov}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadVeo(); };
   openModal("genModal");
 }
-function veoOpenGen(modelId){
-  $("genTitle").textContent = "🎬 สร้างวิดีโอ";
-  $("genBody").innerHTML = `
-    <p class="conn-note">อธิบายวิดีโอที่อยากได้ (ภาษาไทยหรืออังกฤษก็ได้)</p>
-    <textarea id="veo_prompt" style="width:100%;min-height:90px" placeholder="เช่น 'โดรนบินเหนือทะเลสีฟ้าใส ยามพระอาทิตย์ตก โทนภาพยนตร์ 4K'"></textarea>
-    <button class="save" id="veo_gen_go" style="width:100%;margin-top:10px">✨ Generate</button>
-    <div style="font-size:11px;color:#6b7280;margin-top:8px">⚠️ ใช้เครดิตของผู้ให้บริการ (คิดเงินตามคีย์ของคุณ) · วิดีโอใช้เวลา ~1-3 นาที</div>`;
-  $("veo_gen_go").onclick = async () => {
-    const prompt = $("veo_prompt").value.trim();
-    if (!prompt){ toastNote("ใส่คำอธิบายก่อน","#f59e0b"); return; }
-    const b=$("veo_gen_go"),o=b.textContent; b.disabled=true; b.textContent="⏳ กำลังส่งงาน…";
-    const r = await postJSON("/api/veo/generate", { model_id:modelId, prompt });
+let _vsModelId = null, _vsAr = "16:9";
+const _VS_SIZES = { "16:9":{ "1080p":"1920 × 1080 px", "720p":"1280 × 720 px" },
+                    "9:16":{ "1080p":"1080 × 1920 px", "720p":"720 × 1280 px" },
+                    "1:1": { "1080p":"1080 × 1080 px", "720p":"720 × 720 px" } };
+function vsUpdateSize(){ $("vsSize").textContent = (_VS_SIZES[_vsAr]||{})[$("vsReso").value] || ""; }
+function veoOpenGen(modelId, name){
+  _vsModelId = modelId; _vsAr = "16:9";
+  $("vsTitle").textContent = name || "สร้างวิดีโอ";
+  $("vsPrompt").value = ""; $("vsCount").textContent = "0 / 4,000"; $("vsReso").value = "1080p";
+  document.querySelectorAll(".vs-ar").forEach(b => b.classList.toggle("active", b.dataset.ar === "16:9"));
+  vsUpdateSize();
+  $("vsPreview").innerHTML = '<div style="text-align:center;color:#64748b"><div style="font-size:40px">🎬</div>กด Generate เพื่อสร้างวิดีโอใหม่</div>';
+  veoBuildThumbs();
+  $("veoGrid").style.display = "none"; $("veoGalleryPanel").style.display = "none";
+  $("veoStudio").style.display = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function veoCloseStudio(){
+  $("veoStudio").style.display = "none";
+  $("veoGrid").style.display = "grid"; $("veoGalleryPanel").style.display = "block";
+}
+async function veoBuildThumbs(){
+  let d; try { d = await (await fetch("/api/veo/catalog")).json(); } catch(e){ return; }
+  const t = $("vsThumbs"); if (!t) return;
+  t.innerHTML = (d.videos||[]).map(v => {
+    const inner = (v.status==="done"&&v.video_ref)
+      ? `<video src="${v.video_ref}" muted style="width:100%;height:80px;object-fit:cover;border-radius:8px;background:#000"></video>`
+      : `<div style="height:80px;border-radius:8px;background:#0b1220;border:1px solid #1e293b;display:flex;align-items:center;justify-content:center;font-size:11px;color:${v.status==='error'?'#fca5a5':'#94a3b8'}">${v.status==='error'?'❌':'⏳'}</div>`;
+    return `<div class="vs-thumb" data-ref="${v.status==='done'?v.video_ref:''}" data-prompt="${escapeHtml(v.prompt||'')}" style="cursor:pointer">${inner}</div>`;
+  }).join("") || '<div style="color:#64748b;font-size:12px;grid-column:1/-1">ยังไม่มีผลงาน</div>';
+  t.querySelectorAll(".vs-thumb").forEach(x => x.onclick = () => {
+    if (!x.dataset.ref){ toastNote("คลิปนี้ยังไม่เสร็จ/ผิดพลาด","#f59e0b"); return; }
+    $("vsPreview").innerHTML = `<video src="${x.dataset.ref}" controls autoplay playsinline style="width:100%;max-height:420px;border-radius:12px;background:#000"></video>`;
+  });
+}
+/* studio controls (static elements) */
+if ($("vsBack")){
+  $("vsBack").addEventListener("click", veoCloseStudio);
+  $("vsReso").addEventListener("change", vsUpdateSize);
+  $("vsPrompt").addEventListener("input", e => { $("vsCount").textContent = (e.target.value.length) + " / 4,000"; });
+  $("vsReset").addEventListener("click", () => { $("vsPrompt").value=""; $("vsCount").textContent="0 / 4,000"; });
+  document.querySelectorAll(".vs-ar").forEach(b => b.addEventListener("click", () => {
+    _vsAr = b.dataset.ar;
+    document.querySelectorAll(".vs-ar").forEach(x => x.classList.toggle("active", x===b));
+    vsUpdateSize();
+  }));
+  $("vsGen").addEventListener("click", async () => {
+    const prompt = $("vsPrompt").value.trim();
+    if (!prompt){ toastNote("ใส่ Description ก่อน","#f59e0b"); return; }
+    const b=$("vsGen"),o=b.textContent; b.disabled=true; b.textContent="⏳ กำลังส่งงาน…";
+    const r = await postJSON("/api/veo/generate", { model_id:_vsModelId, prompt, aspect_ratio:_vsAr, resolution:$("vsReso").value });
     b.disabled=false; b.textContent=o;
     if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
-    closeModal("genModal"); toastNote("เริ่มสร้างวิดีโอแล้ว 🎬 รอ 1-3 นาที","#22c55e"); loadVeo();
-  };
-  openModal("genModal");
+    toastNote("เริ่มสร้างวิดีโอแล้ว 🎬 รอ 1-3 นาที","#22c55e");
+    $("vsPreview").innerHTML = '<div style="text-align:center;color:#94a3b8"><div class="cf-dot"></div><div class="cf-dot"></div><div class="cf-dot"></div><div style="margin-top:8px">⏳ กำลังเรนเดอร์… จะขึ้นในแถบผลงานด้านล่างเมื่อเสร็จ</div></div>';
+    veoBuildThumbs();
+    veoStopPoll(); _veoPollTimer = setInterval(async () => { await veoPollPending(); veoBuildThumbs(); }, 12000);
+  });
 }
 function veoRenderList(vids){
   const list = $("veoList");
