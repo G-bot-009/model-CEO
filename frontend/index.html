@@ -1396,6 +1396,18 @@
           <div style="display:grid;grid-template-columns:minmax(320px,1fr) 1.2fr;gap:16px;align-items:start">
             <div class="panel" style="margin:0">
               <div style="font-weight:800;color:#fff;font-size:16px;margin-bottom:10px">🎬 <span id="vsTitle"></span></div>
+              <div id="vsTabs" style="display:flex;gap:6px;background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:4px;margin-bottom:12px">
+                <button class="qbtn vs-tab active" data-mode="t2v" style="flex:1;font-weight:700">🎬 Text to Video</button>
+                <button class="qbtn vs-tab" data-mode="i2v" style="flex:1;font-weight:700">🖼️ Image to Video</button>
+              </div>
+              <div id="vsFirstFrame" style="display:none;margin-bottom:12px">
+                <label style="font-size:13px;color:#cbd5e1;font-weight:700">First Frame <span style="color:#f87171">*</span></label>
+                <label style="display:block;border:2px dashed #334155;border-radius:12px;padding:18px;text-align:center;cursor:pointer;margin-top:6px;color:#94a3b8">
+                  <input id="vsImage" type="file" accept="image/*" style="display:none">
+                  <div id="vsImagePrompt"><div style="font-size:28px">⬆️</div><b style="color:#cbd5e1">อัปโหลดรูปเพื่อทำให้ขยับ</b><br><span style="font-size:11px">JPG, PNG, GIF, WebP · สูงสุด ~20MB</span></div>
+                  <img id="vsImagePrev" style="display:none;max-height:160px;border-radius:10px;margin:0 auto">
+                </label>
+              </div>
               <label style="font-size:13px;color:#cbd5e1;font-weight:700">Description <span style="color:#f87171">*</span></label>
               <textarea id="vsPrompt" maxlength="4000" class="numfld" style="width:100%;min-height:120px;margin:6px 0 2px" placeholder="อธิบายวิดีโอที่อยากได้… (ไทย/อังกฤษ)"></textarea>
               <div style="text-align:right;font-size:11px;color:#64748b" id="vsCount">0 / 4,000</div>
@@ -3987,9 +3999,11 @@ $("iaGo").addEventListener("click", async () => {
 let VEO_PROVS = {};
 let _veoPollTimer = null;
 function veoStopPoll(){ if (_veoPollTimer){ clearInterval(_veoPollTimer); _veoPollTimer = null; } }
+let _veoCat = {};
 async function loadVeo(){
   let d; try { d = await (await fetch("/api/veo/catalog")).json(); } catch(e){ return; }
   VEO_PROVS = d.providers || {};
+  _veoCat = {}; (d.catalog||[]).forEach(m => _veoCat[m.id] = m);
   const grid = $("veoGrid");
   grid.innerHTML = (d.catalog||[]).map(m => {
     const tags = (m.tags||[]).map(t => `<span class="tag" style="background:#1e293b;color:#cbd5e1">${escapeHtml(t)}</span>`).join(" ");
@@ -4043,17 +4057,29 @@ function veoOpenKey(prov){
   $("veo_clear").onclick = async () => { await postJSON("/api/veo/key/clear",{provider:prov}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadVeo(); };
   openModal("genModal");
 }
-let _vsModelId = null, _vsAr = "16:9";
+let _vsModelId = null, _vsAr = "16:9", _vsMode = "t2v", _vsImage = null;
 const _VS_SIZES = { "16:9":{ "1080p":"1920 × 1080 px", "720p":"1280 × 720 px" },
                     "9:16":{ "1080p":"1080 × 1920 px", "720p":"720 × 1280 px" },
                     "1:1": { "1080p":"1080 × 1080 px", "720p":"720 × 720 px" } };
 function vsUpdateSize(){ $("vsSize").textContent = (_VS_SIZES[_vsAr]||{})[$("vsReso").value] || ""; }
+function vsSetMode(mode){
+  const m = _veoCat[_vsModelId] || {};
+  if (mode === "i2v" && !m.i2v){ toastNote("โมเดลนี้ยังไม่รองรับ Image→Video","#f59e0b"); return; }
+  _vsMode = mode;
+  document.querySelectorAll(".vs-tab").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  $("vsFirstFrame").style.display = (mode === "i2v") ? "block" : "none";
+}
 function veoOpenGen(modelId, name){
-  _vsModelId = modelId; _vsAr = "16:9";
+  _vsModelId = modelId; _vsAr = "16:9"; _vsImage = null;
+  const m = _veoCat[modelId] || {};
   $("vsTitle").textContent = name || "สร้างวิดีโอ";
   $("vsPrompt").value = ""; $("vsCount").textContent = "0 / 4,000"; $("vsReso").value = "1080p";
   document.querySelectorAll(".vs-ar").forEach(b => b.classList.toggle("active", b.dataset.ar === "16:9"));
   vsUpdateSize();
+  // show I2V tab only if supported
+  $("vsTabs").querySelector('[data-mode="i2v"]').style.display = m.i2v ? "block" : "none";
+  $("vsImage").value = ""; $("vsImagePrev").style.display = "none"; $("vsImagePrompt").style.display = "block";
+  vsSetMode("t2v");
   $("vsPreview").innerHTML = '<div style="text-align:center;color:#64748b"><div style="font-size:40px">🎬</div>กด Generate เพื่อสร้างวิดีโอใหม่</div>';
   veoBuildThumbs();
   $("veoGrid").style.display = "none"; $("veoGalleryPanel").style.display = "none";
@@ -4089,11 +4115,21 @@ if ($("vsBack")){
     document.querySelectorAll(".vs-ar").forEach(x => x.classList.toggle("active", x===b));
     vsUpdateSize();
   }));
+  document.querySelectorAll(".vs-tab").forEach(b => b.addEventListener("click", () => vsSetMode(b.dataset.mode)));
+  $("vsImage").addEventListener("change", e => {
+    const f = e.target.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => { _vsImage = rd.result; $("vsImagePrev").src = rd.result; $("vsImagePrev").style.display="block"; $("vsImagePrompt").style.display="none"; };
+    rd.readAsDataURL(f);
+  });
   $("vsGen").addEventListener("click", async () => {
     const prompt = $("vsPrompt").value.trim();
     if (!prompt){ toastNote("ใส่ Description ก่อน","#f59e0b"); return; }
+    if (_vsMode === "i2v" && !_vsImage){ toastNote("อัปโหลดรูป First Frame ก่อน","#f59e0b"); return; }
     const b=$("vsGen"),o=b.textContent; b.disabled=true; b.textContent="⏳ กำลังส่งงาน…";
-    const r = await postJSON("/api/veo/generate", { model_id:_vsModelId, prompt, aspect_ratio:_vsAr, resolution:$("vsReso").value });
+    const payload = { model_id:_vsModelId, prompt, aspect_ratio:_vsAr, resolution:$("vsReso").value, mode:_vsMode };
+    if (_vsMode === "i2v") payload.image = _vsImage;
+    const r = await postJSON("/api/veo/generate", payload);
     b.disabled=false; b.textContent=o;
     if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
     toastNote("เริ่มสร้างวิดีโอแล้ว 🎬 รอ 1-3 นาที","#22c55e");

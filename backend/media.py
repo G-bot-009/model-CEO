@@ -115,27 +115,45 @@ def generate_image(provider: str, model: str, key: str, prompt: str) -> dict:
 
 
 # ------------------------------------------------------------------ video ----
+def _split_data_uri(uri: str):
+    """data:image/png;base64,xxxx → (mime, b64). Returns ('image/png', uri) if not a data URI."""
+    if uri.startswith("data:"):
+        try:
+            head, b64 = uri.split(",", 1)
+            return head.split(":", 1)[1].split(";", 1)[0] or "image/png", b64
+        except Exception:
+            return "image/png", ""
+    return "image/png", uri
+
+
 def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: str = "",
-                   aspect_ratio: str = "16:9", resolution: str = "1080p") -> dict:
-    """Kick off a text-to-video job. Returns {task_id} (poll separately)."""
+                   aspect_ratio: str = "16:9", resolution: str = "1080p",
+                   mode: str = "t2v", image: str = "") -> dict:
+    """Kick off a text/image-to-video job. Returns {task_id} (poll separately)."""
     if not key:
         raise RuntimeError("ยังไม่ได้ใส่คีย์วิดีโอ")
     p = (provider or "veo").lower()
     ar = aspect_ratio if aspect_ratio in ("16:9", "9:16", "1:1") else "16:9"
+    is_i2v = (mode == "i2v" and bool(image))
     if p == "veo":
         m = model or "veo-3.0-fast-generate-001"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:predictLongRunning?key={key}"
-        d = _post_json(url, {"instances": [{"prompt": prompt}],
-                             "parameters": {"aspectRatio": ar}}, timeout=60)
+        inst = {"prompt": prompt}
+        if is_i2v:
+            mime, b64 = _split_data_uri(image)
+            inst["image"] = {"bytesBase64Encoded": b64, "mimeType": mime}
+        d = _post_json(url, {"instances": [inst], "parameters": {"aspectRatio": ar}}, timeout=90)
         name = d.get("name")
         if not name:
             raise RuntimeError(f"Veo ไม่คืน operation: {str(d)[:160]}")
         return {"task_id": name}
     if p == "fal":
         ep = endpoint or "fal-ai/minimax/video-01"
-        d = _post_json(f"https://queue.fal.run/{ep}",
-                       {"prompt": prompt, "aspect_ratio": ar, "resolution": resolution},
-                       headers={"Authorization": f"Key {key}"}, timeout=60)
+        body = {"prompt": prompt, "aspect_ratio": ar, "resolution": resolution}
+        if is_i2v:
+            body["image_url"] = image   # fal accepts a data URI here
+        d = _post_json(f"https://queue.fal.run/{ep}", body,
+                       headers={"Authorization": f"Key {key}"}, timeout=90)
         status_url = d.get("status_url"); resp_url = d.get("response_url", "")
         if not status_url:
             raise RuntimeError(f"fal.ai ไม่คืน status_url: {str(d)[:160]}")

@@ -2336,6 +2336,21 @@ _VEO_CATALOG = [
 ]
 
 
+# models that also support Image→Video (first frame). fal needs an i2v endpoint.
+_VEO_I2V_VEO = {"veo3", "veo3fast", "veo31", "veo31fast"}
+_VEO_I2V_FAL = {
+    "seedance":           "fal-ai/bytedance/seedance/v1/pro/image-to-video",
+    "seedance-lite-t2v":  "fal-ai/bytedance/seedance/v1/lite/image-to-video",
+    "seedance-pro-multi": "fal-ai/bytedance/seedance/v1/pro/image-to-video",
+    "kling-t2v":          "fal-ai/kling-video/v2.1/master/image-to-video",
+    "hunyuan":            "fal-ai/hunyuan-video-image-to-video",
+}
+def _i2v_endpoint(model_id: str) -> str:
+    if model_id in _VEO_I2V_VEO:
+        return "veo"
+    return _VEO_I2V_FAL.get(model_id, "")
+
+
 def _video_key(provider: str) -> str:
     s = db.get_settings()
     k = s.get(f"media_vkey_{provider}", "")
@@ -2351,9 +2366,14 @@ async def veo_catalog() -> dict:
     cat = []
     for m in _VEO_CATALOG:
         connectable = m["ok"] and bool(m["prov"])
-        cat.append({**m, "provider_name": _VEO_PROVIDERS.get(m["prov"], {}).get("name", ""),
+        i2v = connectable and bool(_i2v_endpoint(m["id"]))
+        tags = list(m["tags"])
+        if i2v and "Image to Video" not in tags:
+            tags.append("Image to Video")
+        cat.append({**m, "tags": tags,
+                    "provider_name": _VEO_PROVIDERS.get(m["prov"], {}).get("name", ""),
                     "has_key": bool(_video_key(m["prov"])) if m["prov"] else False,
-                    "connectable": connectable})
+                    "connectable": connectable, "i2v": i2v})
     return {"catalog": cat, "providers": provs, "videos": db.video_list()}
 
 
@@ -2398,9 +2418,22 @@ async def veo_generate(p: dict) -> dict:
         return {"error": f"ยังไม่ได้ใส่คีย์ {_VEO_PROVIDERS[m['prov']]['name']} — กด 🔑 ที่การ์ดนี้ก่อน"}
     ar = p.get("aspect_ratio") if p.get("aspect_ratio") in ("16:9", "9:16", "1:1") else "16:9"
     reso = p.get("resolution") if p.get("resolution") in ("1080p", "720p") else "1080p"
+    mode = "i2v" if p.get("mode") == "i2v" else "t2v"
+    image = p.get("image", "") or ""
+    endpoint = m["endpoint"]
+    if mode == "i2v":
+        i2 = _i2v_endpoint(m["id"])
+        if not i2:
+            return {"error": "โมเดลนี้ยังไม่รองรับ Image→Video"}
+        if not image:
+            return {"error": "อัปโหลดรูป First Frame ก่อน"}
+        if len(image) > 30_000_000:
+            return {"error": "รูปใหญ่เกินไป (ไม่เกิน ~22MB)"}
+        if i2 != "veo":
+            endpoint = i2     # fal i2v endpoint
     try:
         job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt,
-                                      m["endpoint"], ar, reso)
+                                      endpoint, ar, reso, mode, image)
     except Exception as exc:
         return {"error": _friendly_err(exc)}
     tid = db.video_add(prompt, m["prov"], m["name"], job.get("task_id", ""))
