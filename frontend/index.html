@@ -1431,6 +1431,7 @@
               <textarea id="vsPrompt" maxlength="4000" class="numfld" style="width:100%;min-height:120px;margin:6px 0 2px" placeholder="อธิบายวิดีโอที่อยากได้… (ไทย/อังกฤษ)"></textarea>
               <div style="text-align:right;font-size:11px;color:#64748b" id="vsCount">0 / 4,000</div>
               <div id="vsHint" style="display:none;font-size:12px;color:#fbbf24;background:#78350f22;border:1px solid #f59e0b55;border-radius:8px;padding:8px;margin-top:4px"></div>
+              <button class="qbtn" id="vsVoiceKey" style="display:none;font-weight:700;margin-top:8px;background:#0e7490;color:#fff;border-color:#0e7490">🔊 ตั้งเสียงพากย์ Neural (ลื่นกว่า)</button>
 
               <div style="background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:12px;margin-top:10px">
                 <div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:8px">⚙️ Output Settings</div>
@@ -4123,6 +4124,32 @@ function vsSetMode(mode){
   $("vsFirstFrame").style.display = (mode === "i2v") ? "block" : "none";
   $("vsSourceVideo").style.display = (mode === "v2v") ? "block" : "none";
 }
+async function veoOpenVoiceKey(){
+  let d; try { d = await (await fetch("/api/content/media-keys")).json(); } catch(e){ d={providers:{},selection:{}}; }
+  const provs = (d.providers||{}).voice || [];
+  const sel = (d.selection||{}).voice || {};
+  $("genTitle").textContent = "🔊 ตั้งเสียงพากย์ Neural (ลื่น/เป็นธรรมชาติ)";
+  $("genBody").innerHTML = `
+    <p class="conn-note">ใส่คีย์เสียงคุณภาพสูง — Talking Avatar จะพูดลื่นขึ้นมาก (ElevenLabs ไทยลื่นสุด)<br>ถ้าไม่ใส่ ระบบใช้เสียงฟรี (Google) ให้</p>
+    <label>ผู้ให้บริการเสียง</label>
+    <select id="vk_prov">${provs.map(p=>`<option value="${p.id}" ${p.id===sel.provider?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}</select>
+    <div id="vk_get" style="font-size:11px;color:#6b7280;margin:-6px 0 10px"></div>
+    <label>API key</label><input id="vk_key" type="password" placeholder="${sel.has?'มีคีย์แล้ว — วางใหม่เพื่อเปลี่ยน':'วาง API key'}">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="save" id="vk_save" style="flex:1">บันทึกคีย์เสียง</button>
+      <button class="qbtn" id="vk_clear" style="flex:1;color:#f87171">ลบคีย์</button>
+    </div>`;
+  const setGet = () => { const pp=provs.find(x=>x.id===$("vk_prov").value); $("vk_get").innerHTML = pp?`ขอคีย์: <a href="${pp.get}" target="_blank" rel="noopener" style="color:#60a5fa">${pp.get}</a>`:""; };
+  setGet(); $("vk_prov").onchange = setGet;
+  $("vk_save").onclick = async () => {
+    const key = $("vk_key").value.trim();
+    const block = { provider:$("vk_prov").value }; if (key) block.key = key;
+    await postJSON("/api/content/media-keys", { voice: block });
+    closeModal("genModal"); toastNote("บันทึกเสียงพากย์แล้ว ✅ — ลองสร้าง Talking Avatar ใหม่","#22c55e");
+  };
+  $("vk_clear").onclick = async () => { await postJSON("/api/content/media-key/clear",{kind:"voice"}); closeModal("genModal"); toastNote("ลบคีย์เสียงแล้ว (กลับไปใช้เสียงฟรี)","#f59e0b"); };
+  openModal("genModal");
+}
 function veoOpenGen(modelId, name){
   _vsModelId = modelId; _vsAr = "16:9"; _vsImage = null;
   const m = _veoCat[modelId] || {};
@@ -4132,9 +4159,10 @@ function veoOpenGen(modelId, name){
     ? "พิมพ์ 'บทพูด' ที่อยากให้คนในรูปพูด (ภาษาไทย) เช่น: สวัสดีค่ะ วันนี้ร้านเรามีโปรโมชั่นพิเศษ ลดสูงสุด 50%"
     : "อธิบายวิดีโอที่อยากได้… (ไทย/อังกฤษ)";
   if ($("vsHint")){
-    if (m.avatar){ $("vsHint").style.display="block"; $("vsHint").innerHTML = "🗣️ โมเดลนี้ <b>พูดได้</b> — พิมพ์บทพูดในช่องบน ระบบจะแปลงเป็นเสียง + ขยับปากให้"; }
+    if (m.avatar){ $("vsHint").style.display="block"; $("vsHint").innerHTML = "🗣️ โมเดลนี้ <b>พูดได้</b> — พิมพ์บทพูดในช่องบน ระบบแปลงเป็นเสียง + ขยับปากให้ · อยากให้เสียง<b>ลื่น</b>ขึ้น กดปุ่มล่างตั้งเสียง Neural"; }
     else { $("vsHint").style.display="block"; $("vsHint").innerHTML = "ℹ️ โมเดลนี้สร้าง <b>ภาพเคลื่อนไหวอย่างเดียว ไม่มีเสียงพูด</b> — ถ้าอยากให้คน <b>พูดได้</b> กลับไปเลือกการ์ด <b>🗣️ Talking Avatar</b>"; }
   }
+  if ($("vsVoiceKey")) $("vsVoiceKey").style.display = m.avatar ? "inline-block" : "none";
   document.querySelectorAll(".vs-ar").forEach(b => b.classList.toggle("active", b.dataset.ar === "16:9"));
   vsUpdateSize();
   // key notice
@@ -4212,6 +4240,7 @@ if ($("vsBack")){
   }));
   document.querySelectorAll(".vs-tab").forEach(b => b.addEventListener("click", () => vsSetMode(b.dataset.mode)));
   $("vsKeyBtn").addEventListener("click", () => veoOpenKey($("vsKeyBtn").dataset.prov, true));
+  $("vsVoiceKey").addEventListener("click", veoOpenVoiceKey);
   $("vsImage").addEventListener("change", e => {
     const f = e.target.files[0]; if (!f) return;
     const rd = new FileReader();

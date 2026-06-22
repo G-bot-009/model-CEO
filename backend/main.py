@@ -2083,6 +2083,29 @@ async def content_run(p: dict) -> dict:
         return {"error": _friendly_err(exc)}
 
 
+async def _best_speech_uri(text: str, lang: str = "th"):
+    """Return a speech audio data URI. Prefers a Neural TTS (Voice AI key) for smoothness,
+    falls back to the free Google TTS. Returns '' on failure."""
+    import asyncio
+    import base64 as _b64
+    cfg = _media_cfg("voice")
+    if cfg.get("key"):
+        try:
+            out = await asyncio.to_thread(media.generate_voice, cfg["provider"], cfg["model"], cfg["key"], text, "")
+            b64 = (out.get("b64") or "").strip()
+            if len(b64) > 100:
+                return f"data:{out.get('mime','audio/mpeg')};base64,{b64}"
+        except Exception:
+            pass
+    try:
+        audio = await _google_tts_mp3(text, lang)
+    except Exception:
+        audio = b""
+    if audio:
+        return "data:audio/mpeg;base64," + _b64.b64encode(audio).decode()
+    return ""
+
+
 async def _google_tts_mp3(text: str, lang: str = "th") -> bytes:
     """Generate speech MP3 bytes from text via the public Google Translate TTS endpoint."""
     import httpx
@@ -2459,14 +2482,10 @@ async def veo_generate(p: dict) -> dict:
             return {"error": "อัปโหลดรูปคนก่อน"}
         if not prompt:
             return {"error": "พิมพ์ 'บทพูด' ในช่อง Description"}
-        import base64 as _b64
-        try:
-            audio = await _google_tts_mp3(prompt, "th")
-        except Exception:
-            audio = b""
-        if not audio:
+        audio_uri = await _best_speech_uri(prompt, "th")
+        if not audio_uri:
             return {"error": "สร้างเสียงพูดไม่สำเร็จ — ลองพิมพ์บทใหม่/สั้นลง"}
-        opts["audio"] = "data:audio/mpeg;base64," + _b64.b64encode(audio).decode()
+        opts["audio"] = audio_uri
         endpoint = _VEO_AVATAR[m["id"]]
     elif mode == "i2v":
         i2 = _i2v_endpoint(m["id"])
