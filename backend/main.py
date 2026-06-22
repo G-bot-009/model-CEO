@@ -3391,6 +3391,57 @@ async def ads_library_imitate(p: dict) -> dict:
             "video_prompt": data.get("video_prompt", "")}
 
 
+@app.post("/api/ads/library/imitate-image")
+async def ads_library_imitate_image(p: dict) -> dict:
+    """Look at an uploaded ad screenshot (AI vision) → analysis + caption + image/video prompts."""
+    import base64
+    img = (p.get("image") or "").strip()
+    brief = (p.get("brief") or "").strip()
+    if not img:
+        return {"error": "อัปโหลดสกรีนช็อตโฆษณาก่อน"}
+    if not brief:
+        return {"error": "ใส่โจทย์ธุรกิจของคุณก่อน"}
+    # parse data URI
+    media_type, b64 = "image/png", img
+    if img.startswith("data:"):
+        try:
+            head, b64 = img.split(",", 1)
+            media_type = head.split(":", 1)[1].split(";", 1)[0] or "image/png"
+        except Exception:
+            return {"error": "รูปไม่ถูกต้อง"}
+    # cap ~4.5MB of base64
+    if len(b64) > 6_000_000:
+        return {"error": "รูปใหญ่เกินไป — ย่อขนาดก่อน (ไม่เกิน ~4MB)"}
+    instruction = (
+        "ดูภาพโฆษณา Facebook ของคู่แข่งนี้ แล้ววิเคราะห์: องค์ประกอบภาพ/มุมกล้อง/โทนสี/อารมณ์/จุดขาย/ข้อความบนภาพ.\n"
+        f"ธุรกิจของผู้ใช้: {brief}\n"
+        "สร้างของ 'เลียนแบบสไตล์' ให้ผู้ใช้ (ห้ามลอกตรงๆ ปลอดภัยตามนโยบาย Meta).\n"
+        "ตอบ JSON อย่างเดียว: {\"analysis\":\"วิเคราะห์ภาพ 2-3 ข้อ (ไทย)\","
+        "\"captions\":[\"แคปชั่นใหม่ A (พาดหัว+เนื้อหา+CTA)\",\"แคปชั่นใหม่ B\"],"
+        "\"image_prompt\":\"prompt อังกฤษสร้างภาพสไตล์เดียวกันแต่เป็นสินค้า/บริการของผู้ใช้\","
+        "\"video_prompt\":\"prompt อังกฤษสร้างวิดีโอโฆษณาสั้นสไตล์เดียวกัน\"}"
+    )
+    try:
+        resp = await client_for_agent("marketing").messages.create(
+            model=model_for_agent("marketing"), max_tokens=1500,
+            **thinking_kwargs(model_for_agent("marketing")),
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                {"type": "text", "text": instruction},
+            ]}])
+        txt = next((b.text for b in resp.content if b.type == "text"), "{}")
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    data = _parse_json(txt) or {}
+    if not data:
+        return {"ok": True, "result": txt}
+    return {"ok": True,
+            "analysis": data.get("analysis", ""),
+            "captions": data.get("captions", []),
+            "image_prompt": data.get("image_prompt", ""),
+            "video_prompt": data.get("video_prompt", "")}
+
+
 # ============================== Auto Post Facebook (Pages) ===================
 @app.post("/api/fb/pages-connect")
 async def fb_pages_connect(p: dict) -> dict:

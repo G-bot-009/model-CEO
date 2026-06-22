@@ -837,8 +837,16 @@
 
         <div class="panel" style="margin-top:14px;border:1px solid #7c3aed55">
           <h3>🎨 เลียนแบบครีเอทีฟ (ภาพ/วิดีโอ) จากโฆษณาที่เห็น</h3>
-          <p style="color:#94a3b8;font-size:13px;margin:2px 0 10px">เปิดดูโฆษณาคู่แข่ง (จาก ID หรือเว็บ) → <b>คัดลอกข้อความ/อธิบายภาพที่เห็น</b> มาวางที่นี่ → AI จะวิเคราะห์ + เขียนแคปชั่นใหม่ + สร้าง “พรอมต์ภาพ” และ “พรอมต์วิดีโอ” ให้ กดปุ่มเดียวไปสร้างต่อใน Image AI / VEO AI ได้เลย (เป็นของธุรกิจคุณ ไม่ลอกตรงๆ)</p>
-          <textarea id="alImitateAd" class="numfld" style="width:100%;min-height:90px;margin:0 0 8px" placeholder="วางข้อความโฆษณาที่เห็น หรืออธิบายภาพ/วิดีโอของคู่แข่ง เช่น 'ภาพวิลล่าพูลริมทะเล โทนอุ่น มีข้อความโปรโมชั่นลด 50% มุมมองจากด้านบน'"></textarea>
+          <p style="color:#94a3b8;font-size:13px;margin:2px 0 10px"><b style="color:#a78bfa">วิธีง่ายสุด:</b> โฆษณาส่วนใหญ่เป็นรูป/วิดีโอไม่มีข้อความ → แค่ <b>แคปหน้าจอโฆษณานั้น แล้วอัปโหลด</b> ให้ AI ดูภาพเอง แล้ววิเคราะห์ + สร้างพรอมต์ภาพ/วิดีโอ + แคปชั่นให้เลย (ของธุรกิจคุณ ไม่ลอกตรงๆ)</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <label class="qbtn" style="font-weight:700;background:#7c3aed;color:#fff;border-color:#7c3aed;cursor:pointer">📷 อัปโหลดสกรีนช็อตโฆษณา
+              <input id="alShot" type="file" accept="image/*" style="display:none">
+            </label>
+            <span id="alShotName" style="font-size:12px;color:#94a3b8"></span>
+          </div>
+          <div id="alShotPrev" style="display:none;margin-bottom:8px"><img id="alShotImg" style="max-height:160px;border-radius:10px;border:1px solid #1e293b"></div>
+          <div style="font-size:12px;color:#64748b;margin:4px 0">— หรือ — วางข้อความ/อธิบายเอง (ถ้าโฆษณามีข้อความ)</div>
+          <textarea id="alImitateAd" class="numfld" style="width:100%;min-height:70px;margin:0 0 8px" placeholder="วางข้อความโฆษณา หรืออธิบายภาพที่เห็น (ไม่บังคับ ถ้าอัปโหลดรูปแล้ว)"></textarea>
           <div style="font-size:12px;color:#64748b;margin-bottom:6px">โจทย์ธุรกิจของคุณ ใช้ช่อง “โจทย์ธุรกิจ” เหนือผลการค้นหา ↑</div>
           <button class="send" id="alImitateGo" style="padding:10px 20px">✨ วิเคราะห์ + สร้างพรอมต์ภาพ/วิดีโอ</button>
           <div id="alImitateOut" style="font-size:13px;color:#cbd5e1;margin-top:12px;line-height:1.6"></div>
@@ -5083,15 +5091,24 @@ function alMakeVideo(prompt){
 }
 $("alGo").addEventListener("click", alSearch);
 $("alQuery").addEventListener("keydown", e => { if (e.key==="Enter") alSearch(); });
-/* standalone: imitate a creative from pasted text/description (works for ID-view too) */
+/* standalone: imitate a creative from an uploaded screenshot (AI vision) or pasted text */
+let _alShotData = null;
+$("alShot") && $("alShot").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { _alShotData = rd.result; $("alShotImg").src = rd.result; $("alShotPrev").style.display="block"; $("alShotName").textContent = f.name; };
+  rd.readAsDataURL(f);
+});
 $("alImitateGo") && $("alImitateGo").addEventListener("click", async () => {
   const ad = $("alImitateAd").value.trim();
   const brief = $("alBrief").value.trim();
-  if (!ad){ toastNote("วางข้อความ/คำอธิบายโฆษณาที่เห็นก่อน","#f59e0b"); return; }
-  if (!brief){ toastNote("ใส่โจทย์ธุรกิจของคุณ (ช่องเหนือปุ่มนี้)","#f59e0b"); return; }
-  const b=$("alImitateGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ AI กำลังคิด…";
+  if (!_alShotData && !ad){ toastNote("อัปโหลดสกรีนช็อตโฆษณา หรือวางข้อความก่อน","#f59e0b"); return; }
+  if (!brief){ toastNote("ใส่โจทย์ธุรกิจของคุณ (ช่อง “โจทย์ธุรกิจ” เหนือผลการค้นหา)","#f59e0b"); return; }
+  const b=$("alImitateGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ AI กำลังดู/คิด…";
   const out=$("alImitateOut"); out.innerHTML="";
-  const rr = await postJSON("/api/ads/library/imitate", { ad, brief });
+  const rr = _alShotData
+    ? await postJSON("/api/ads/library/imitate-image", { image:_alShotData, brief })
+    : await postJSON("/api/ads/library/imitate", { ad, brief });
   b.disabled=false; b.textContent=o;
   if (rr.error){ out.innerHTML = `<span style="color:#ef4444">${escapeHtml(rr.error)}</span>`; return; }
   alRenderImitate(out, rr);
