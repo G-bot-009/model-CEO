@@ -2479,7 +2479,8 @@ async def veo_catalog() -> dict:
                     "has_key": bool(_video_key(m["prov"])) if m["prov"] else False,
                     "connectable": connectable, "t2v": t2v, "i2v": i2v, "v2v": v2v,
                     "avatar": avatar})
-    return {"catalog": cat, "providers": provs, "videos": db.video_list()}
+    vids = [v for v in db.video_list() if v.get("provider") not in ("voiceover", "shotstack")]
+    return {"catalog": cat, "providers": provs, "videos": vids}
 
 
 # kept for backward compat (old UI)
@@ -2640,7 +2641,7 @@ async def editor_board() -> dict:
     key, env = _shotstack_cfg()
     clips = []
     for v in db.video_list(60):
-        if v.get("status") == "done" and (v.get("video_ref") or "").startswith("data:"):
+        if v.get("status") == "done" and (v.get("video_ref") or "").startswith("data:video"):
             clips.append({"id": v["id"], "prompt": v.get("prompt", ""),
                           "url": f"{_EDITOR_BASE}/api/editor/clip/{v['id']}",
                           "thumb": v.get("video_ref")})
@@ -2667,24 +2668,64 @@ async def editor_key_clear(p: dict) -> dict:
     return {"ok": True}
 
 
-def _build_timeline(clips: list, title: str, music: str, transition: bool) -> dict:
-    """Assemble a simple sequential Shotstack timeline from clip URLs."""
+def _split_captions(text: str, total: float, max_len: int = 60) -> list:
+    """Break subtitle text into timed bottom captions spread across the timeline."""
+    import re as _re
+    text = (text or "").strip()
+    if not text:
+        return []
+    # split on sentence punctuation, then pack into <=max_len chunks
+    parts = _re.split(r"(?<=[\.\!\?。！？\n])\s+|(?<=[ๆฯ])\s+", text)
+    lines, cur = [], ""
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if len(cur) + len(p) + 1 > max_len:
+            if cur:
+                lines.append(cur)
+            cur = p
+        else:
+            cur = (cur + " " + p).strip()
+    if cur:
+        lines.append(cur)
+    if not lines:
+        return []
+    seg = max(1.2, total / len(lines))
+    out = []
+    for i, ln in enumerate(lines):
+        out.append({"asset": {"type": "title", "text": ln, "style": "subtitle"},
+                    "start": round(i * seg, 2), "length": round(seg, 2)})
+    return out
+
+
+def _build_timeline(clips: list, title: str, music: str, transition: bool,
+                    captions: list = None, soundtrack_url: str = "") -> dict:
+    """Assemble a sequential Shotstack timeline with per-clip trim, title, captions, audio."""
     vclips, start = [], 0.0
     for c in clips:
-        url = c.get("url") if isinstance(c, dict) else c
-        secs = float(c.get("seconds", 5)) if isinstance(c, dict) else 5.0
-        clip = {"asset": {"type": "video", "src": url}, "start": round(start, 2), "length": secs}
+        if isinstance(c, dict):
+            url = c.get("url")
+            secs = float(c.get("length", c.get("seconds", 5)) or 5)
+            trim = float(c.get("trim", 0) or 0)
+        else:
+            url, secs, trim = c, 5.0, 0.0
+        clip = {"asset": {"type": "video", "src": url, "trim": trim}, "start": round(start, 2), "length": secs}
         if transition:
             clip["transition"] = {"in": "fade", "out": "fade"}
         vclips.append(clip)
         start += secs
-    tracks = [{"clips": vclips}]
+    tracks = []
+    if captions:                                  # captions on top
+        tracks.append({"clips": captions})
     if title:
-        tracks.insert(0, {"clips": [{"asset": {"type": "title", "text": title, "style": "minimal"},
-                                     "start": 0, "length": min(3.0, start or 3.0)}]})
+        tracks.append({"clips": [{"asset": {"type": "title", "text": title, "style": "minimal"},
+                                  "start": 0, "length": min(3.0, start or 3.0)}]})
+    tracks.append({"clips": vclips})
     tl = {"background": "#000000", "tracks": tracks}
-    if music:
-        tl["soundtrack"] = {"src": music, "effect": "fadeInFadeOut"}
+    src = soundtrack_url or music
+    if src:
+        tl["soundtrack"] = {"src": src, "effect": "fadeInFadeOut"}
     return tl
 
 
@@ -2727,8 +2768,33 @@ async def editor_render(p: dict) -> dict:
         clips = p.get("clips") or []
         if not clips:
             return {"error": "เพิ่มคลิปก่อน"}
+        total = sum(float((c.get("length", c.get("seconds", 5)) if isinstance(c, dict) else 5) or 5) for c in clips)
+        # 1) voiceover (ElevenLabs/Neural TTS) → host as a URL for Shotstack soundtrack
+        soundtrack_url = ""
+        vo = (p.get("voiceover_script") or "").strip()
+        if vo:
+            uri, credit, _u = await _best_speech_uri(vo, (p.get("voice_lang") or "th"))
+            if credit:
+                return {"error": f"เครดิตเสียง {credit} หมด — เติมเงินแล้วลองใหม่", "out_of_credits": True, "service": credit}
+            if uri:
+                aid = db.video_add("เสียงพากย์", "voiceover", "audio", "")
+                db.video_set_done(aid, "audio/mpeg", uri)
+                soundtrack_url = f"{_EDITOR_BASE}/api/editor/clip/{aid}"
+        # 2) subtitles (AI or from the voiceover script)
+        captions = None
+        if p.get("subtitles"):
+            sub = (p.get("subtitle_text") or vo or "").strip()
+            if not sub:
+                try:
+                    sub = await _claude_text("content", model_for_agent("content"),
+                                             "เขียนคำบรรยายซับสั้น ๆ ภาษาไทย 3-6 ประโยค สำหรับวิดีโอโปรโมท: "
+                                             + (p.get("title") or "วิดีโอ"), 400)
+                except Exception:
+                    sub = ""
+            captions = _split_captions(sub, total)
         timeline = _build_timeline(clips, (p.get("title") or "").strip(),
-                                   (p.get("music") or "").strip(), bool(p.get("transition", True)))
+                                   (p.get("music") or "").strip(), bool(p.get("transition", True)),
+                                   captions=captions, soundtrack_url=soundtrack_url)
     aspect = p.get("aspect") if p.get("aspect") in ("16:9", "9:16", "1:1") else "16:9"
     body = {"timeline": timeline, "output": {"format": "mp4", "aspectRatio": aspect}}
     try:
