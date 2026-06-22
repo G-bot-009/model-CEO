@@ -2299,34 +2299,73 @@ async def imageai_delete(p: dict) -> dict:
 
 
 # ================================ VEO AI (video) ============================
+# Catalog of video models. ok=True → generation works now (text→video) with the
+# provider's key. ok=False → can't connect (needs video/image input we don't take
+# yet, or no public API). "prov" maps to a real callable: veo|luma|minimax|fal.
+_VEO_PROVIDERS = {
+    "veo":     {"name": "Google Veo",  "get": "https://aistudio.google.com/apikey"},
+    "fal":     {"name": "fal.ai",      "get": "https://fal.ai/dashboard/keys"},
+    "luma":    {"name": "Luma",        "get": "https://lumalabs.ai/dream-machine/api"},
+    "minimax": {"name": "MiniMax",     "get": "https://www.minimax.io/"},
+}
+_VEO_CATALOG = [
+    {"id": "veo3",       "name": "Google Veo 3",            "prov": "veo",  "model": "veo-3.0-generate-001",      "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "วิดีโอคุณภาพสูงจาก Google มีเสียงในตัว (8 วิ)"},
+    {"id": "veo3fast",   "name": "Google Veo 3 Fast",       "prov": "veo",  "model": "veo-3.0-fast-generate-001", "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "Veo 3 เวอร์ชันเร็ว/ถูกกว่า"},
+    {"id": "luma",       "name": "Luma Dream Machine (Ray 2)","prov": "luma","model": "ray-2",                     "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "วิดีโอลื่น สมจริง จาก Luma"},
+    {"id": "minimax",    "name": "MiniMax Hailuo 02",       "prov": "minimax","model": "MiniMax-Hailuo-02",       "endpoint": "", "tags": ["Text to Video"], "ok": True,  "desc": "Hailuo คุณภาพดี ราคาคุ้ม"},
+    {"id": "seedance",   "name": "ByteDance Seedance Pro",  "prov": "fal",  "model": "seedance-pro",  "endpoint": "fal-ai/bytedance/seedance/v1/pro/text-to-video", "tags": ["Text to Video"], "ok": True, "desc": "Seedance ผ่าน fal.ai (ต้องใส่คีย์ fal.ai)"},
+    {"id": "hunyuan",    "name": "Hunyuan Video",           "prov": "fal",  "model": "hunyuan",       "endpoint": "fal-ai/hunyuan-video", "tags": ["Text to Video"], "ok": True, "desc": "Tencent Hunyuan ผ่าน fal.ai (ต้องใส่คีย์ fal.ai)"},
+    {"id": "kling-t2v",  "name": "Kling 2.1 (Text→Video)",  "prov": "fal",  "model": "kling-2.1",     "endpoint": "fal-ai/kling-video/v2.1/master/text-to-video", "tags": ["Text to Video"], "ok": True, "desc": "Kling ผ่าน fal.ai (ทดลอง — ถ้า error แจ้งได้)"},
+    {"id": "grok",       "name": "Grok Imagine (xAI)",      "prov": "",     "model": "", "endpoint": "", "tags": ["Text to Video"], "ok": False, "desc": "ยังไม่มี API สาธารณะให้เชื่อม (ใช้ได้เฉพาะในแอป X/Grok)"},
+    {"id": "dreamactor", "name": "Dream Actor 2",           "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดรูป + ยังไม่มี API ที่เชื่อมได้สาธารณะ"},
+    {"id": "kling-i2v",  "name": "Kling I2V / Avatar",      "prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลด 'รูปเริ่มต้น' — เมนูนี้รองรับ Text→Video ก่อน (กำลังพัฒนา)"},
+    {"id": "kling-v2v",  "name": "Kling Edit / Reference V2V","prov": "",    "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ต้องอัปโหลด 'วิดีโอต้นฉบับ' — กำลังพัฒนา"},
+    {"id": "foley",      "name": "Hunyuan Video Foley",     "prov": "",     "model": "", "endpoint": "", "tags": ["Video to Video"], "ok": False, "desc": "ใส่เสียงประกอบให้วิดีโอ — ต้องอัปโหลดวิดีโอ (กำลังพัฒนา)"},
+]
+
+
+def _video_key(provider: str) -> str:
+    s = db.get_settings()
+    k = s.get(f"media_vkey_{provider}", "")
+    if not k and provider == "veo":      # backward-compat with old single key
+        k = s.get("media_video_key", "")
+    return k
+
+
+@app.get("/api/veo/catalog")
+async def veo_catalog() -> dict:
+    s = db.get_settings()
+    provs = {pid: {**meta, "has": bool(_video_key(pid))} for pid, meta in _VEO_PROVIDERS.items()}
+    cat = []
+    for m in _VEO_CATALOG:
+        connectable = m["ok"] and bool(m["prov"])
+        cat.append({**m, "provider_name": _VEO_PROVIDERS.get(m["prov"], {}).get("name", ""),
+                    "has_key": bool(_video_key(m["prov"])) if m["prov"] else False,
+                    "connectable": connectable})
+    return {"catalog": cat, "providers": provs, "videos": db.video_list()}
+
+
+# kept for backward compat (old UI)
 @app.get("/api/veo/board")
 async def veo_board() -> dict:
-    c = _media_cfg("video")
-    return {
-        "providers": media.PROVIDERS["video"],
-        "selection": {"provider": c["provider"], "model": c["model"],
-                      "key": (c["key"][:4] + "…") if c["key"] else "", "has": bool(c["key"])},
-        "videos": db.video_list(),
-    }
+    return await veo_catalog()
 
 
 @app.post("/api/veo/key")
 async def veo_key_set(p: dict) -> dict:
-    upd = {}
-    if p.get("provider"):
-        upd["media_video_provider"] = p["provider"].strip()
-    if p.get("model") is not None:
-        upd["media_video_model"] = (p.get("model") or "").strip()
+    prov = (p.get("provider") or "").strip()
+    if not prov or prov not in _VEO_PROVIDERS:
+        return {"error": "ผู้ให้บริการไม่ถูกต้อง"}
     if p.get("key"):
-        upd["media_video_key"] = p["key"].strip()
-    if upd:
-        db.set_settings(upd)
+        db.set_settings({f"media_vkey_{prov}": p["key"].strip()})
     return {"ok": True}
 
 
 @app.post("/api/veo/key/clear")
 async def veo_key_clear(p: dict) -> dict:
-    db.set_settings({"media_video_key": ""})
+    prov = (p.get("provider") or "").strip()
+    if prov in _VEO_PROVIDERS:
+        db.set_settings({f"media_vkey_{prov}": ""})
     return {"ok": True}
 
 
@@ -2334,16 +2373,22 @@ async def veo_key_clear(p: dict) -> dict:
 async def veo_generate(p: dict) -> dict:
     import asyncio
     prompt = (p.get("prompt") or "").strip()
+    model_id = (p.get("model_id") or "").strip()
     if not prompt:
         return {"error": "ใส่คำอธิบายวิดีโอก่อน (เช่น 'โดรนบินเหนือทะเลตอนพระอาทิตย์ตก ภาพยนตร์')"}
-    cfg = _media_cfg("video")
-    if not cfg["key"]:
-        return {"error": "ยังไม่ได้ใส่คีย์ VEO AI — กด 🔑 ใส่คีย์ ก่อน"}
+    m = next((x for x in _VEO_CATALOG if x["id"] == model_id), None)
+    if not m:
+        return {"error": "ไม่พบโมเดลนี้"}
+    if not (m["ok"] and m["prov"]):
+        return {"error": f"โมเดลนี้ยังเชื่อมไม่ได้: {m['desc']}"}
+    key = _video_key(m["prov"])
+    if not key:
+        return {"error": f"ยังไม่ได้ใส่คีย์ {_VEO_PROVIDERS[m['prov']]['name']} — กด 🔑 ที่การ์ดนี้ก่อน"}
     try:
-        job = await asyncio.to_thread(media.generate_video, cfg["provider"], cfg["model"], cfg["key"], prompt)
+        job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt, m["endpoint"])
     except Exception as exc:
         return {"error": _friendly_err(exc)}
-    tid = db.video_add(prompt, cfg["provider"], cfg["model"], job.get("task_id", ""))
+    tid = db.video_add(prompt, m["prov"], m["name"], job.get("task_id", ""))
     return {"ok": True, "video": db.video_get(tid)}
 
 
@@ -2355,9 +2400,9 @@ async def veo_poll(p: dict) -> dict:
         return {"error": "ไม่พบงานวิดีโอ"}
     if v["status"] != "pending":
         return {"ok": True, "video": v}
-    cfg = _media_cfg("video")
+    key = _video_key(v["provider"])
     try:
-        res = await asyncio.to_thread(media.poll_video, v["provider"], v["model"], cfg["key"], v["task_id"])
+        res = await asyncio.to_thread(media.poll_video, v["provider"], v["model"], key, v["task_id"])
     except Exception as exc:
         return {"status": "pending", "warn": _friendly_err(exc), "video": v}
     if res.get("status") == "done":

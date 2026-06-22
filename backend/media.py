@@ -115,7 +115,7 @@ def generate_image(provider: str, model: str, key: str, prompt: str) -> dict:
 
 
 # ------------------------------------------------------------------ video ----
-def generate_video(provider: str, model: str, key: str, prompt: str) -> dict:
+def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: str = "") -> dict:
     """Kick off a text-to-video job. Returns {task_id} (poll separately)."""
     if not key:
         raise RuntimeError("ยังไม่ได้ใส่คีย์วิดีโอ")
@@ -128,6 +128,14 @@ def generate_video(provider: str, model: str, key: str, prompt: str) -> dict:
         if not name:
             raise RuntimeError(f"Veo ไม่คืน operation: {str(d)[:160]}")
         return {"task_id": name}
+    if p == "fal":
+        ep = endpoint or "fal-ai/minimax/video-01"
+        d = _post_json(f"https://queue.fal.run/{ep}", {"prompt": prompt},
+                       headers={"Authorization": f"Key {key}"}, timeout=60)
+        status_url = d.get("status_url"); resp_url = d.get("response_url", "")
+        if not status_url:
+            raise RuntimeError(f"fal.ai ไม่คืน status_url: {str(d)[:160]}")
+        return {"task_id": status_url + "|" + resp_url}
     if p == "luma":
         d = _post_json("https://api.lumalabs.ai/dream-machine/v1/generations",
                        {"prompt": prompt, "model": model or "ray-2"},
@@ -148,6 +156,23 @@ def generate_video(provider: str, model: str, key: str, prompt: str) -> dict:
 def poll_video(provider: str, model: str, key: str, task_id: str) -> dict:
     """Poll a video job. Returns {status:'pending'|'done'|'error', mime?, b64?, error?}."""
     p = (provider or "veo").lower()
+    if p == "fal":
+        status_url, _, resp_url = task_id.partition("|")
+        d = _get_json(status_url, headers={"Authorization": f"Key {key}"}, timeout=30)
+        st = (d.get("status") or "").upper()
+        if st in ("IN_QUEUE", "IN_PROGRESS", ""):
+            return {"status": "pending"}
+        if st != "COMPLETED":
+            return {"status": "error", "error": f"fal.ai: {st}"}
+        r = _get_json(resp_url or status_url, headers={"Authorization": f"Key {key}"}, timeout=30)
+        vid = r.get("video") or {}
+        url = vid.get("url") if isinstance(vid, dict) else None
+        if not url and isinstance(r.get("videos"), list) and r["videos"]:
+            url = (r["videos"][0] or {}).get("url")
+        if not url:
+            return {"status": "error", "error": "fal.ai ไม่คืนลิงก์วิดีโอ"}
+        raw = _get_bytes(url, timeout=120)
+        return {"status": "done", "mime": "video/mp4", "b64": base64.b64encode(raw).decode()}
     if p == "veo":
         d = _get_json(f"https://generativelanguage.googleapis.com/v1beta/{task_id}?key={key}", timeout=30)
         if not d.get("done"):

@@ -1385,28 +1385,12 @@
 
       <!-- VEO AI (video) -->
       <section class="view" id="view-veo">
-        <h2 style="color:#fff;margin:0 0 6px">🎬 VEO AI — สร้างวิดีโอจากข้อความ</h2>
-        <p style="color:#94a3b8;font-size:13px;margin:0 0 14px">พิมพ์คำอธิบาย → AI สร้างคลิปวิดีโอให้ (Google Veo / Luma / MiniMax) · ใช้คีย์ของคุณเอง · วิดีโอใช้เวลาสร้าง ~1-3 นาที ระบบจะอัปเดตให้อัตโนมัติ</p>
+        <h2 style="color:#fff;margin:0 0 6px">🎬 VEO AI — มาร์เก็ตเพลสโมเดลวิดีโอ</h2>
+        <p style="color:#94a3b8;font-size:13px;margin:0 0 14px">เลือกโมเดลแล้วกด Generate · ตัวที่ <b style="color:#34d399">✅ เชื่อมได้</b> ใช้คีย์ของคุณเองสร้างได้เลย · ตัว <b style="color:#fbbf24">🔒 ยังเชื่อมไม่ได้</b> มีเหตุผลกำกับ · วิดีโอใช้เวลา ~1-3 นาที (ระบบเช็กให้อัตโนมัติ)</p>
 
-        <div class="panel"><h3>🎚️ ผู้ให้บริการ + คีย์
-            <span style="flex:1"></span>
-            <span id="veoProvLabel" style="font-size:12px;color:#94a3b8"></span></h3>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select id="veoProvider" class="numfld" style="width:auto;margin:0"></select>
-            <select id="veoModel" class="numfld" style="width:auto;margin:0"></select>
-            <button class="qbtn" id="veoKeyBtn" style="font-weight:700">🔑 ใส่/แก้คีย์</button>
-            <span id="veoKeyState" style="font-size:12px"></span>
-          </div>
-          <div id="veoGetKey" style="font-size:11px;color:#64748b;margin-top:8px"></div>
-        </div>
+        <div id="veoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
 
-        <div class="panel"><h3>🎬 สร้างวิดีโอใหม่</h3>
-          <textarea id="veoPrompt" class="numfld" style="width:100%;min-height:80px;margin:0 0 8px" placeholder="อธิบายวิดีโอที่อยากได้ เช่น 'โดรนบินเหนือทะเลสีฟ้าใส ยามพระอาทิตย์ตก โทนภาพยนตร์' หรือ 'แมวส้มวิ่งเล่นในสวนดอกไม้ สโลว์โมชัน'"></textarea>
-          <button class="send" id="veoGo" style="padding:10px 20px">🎬 สร้างวิดีโอ</button>
-          <div style="font-size:11px;color:#64748b;margin-top:8px">⚠️ สร้างจริงต้องมีคีย์ + เครดิตของผู้ให้บริการ · วิดีโอใช้เวลา ~1-3 นาที (Veo คลิปสั้น ~8 วิ) · ระบบจะเช็กสถานะให้อัตโนมัติ</div>
-        </div>
-
-        <div class="panel"><h3>🎞️ วิดีโอที่สร้างไว้</h3>
+        <div class="panel" style="margin-top:16px"><h3>🎞️ วิดีโอที่สร้างไว้</h3>
           <div id="veoList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px"></div>
         </div>
       </section>
@@ -3957,29 +3941,83 @@ $("iaGo").addEventListener("click", async () => {
   else { toastNote("สร้างภาพสำเร็จ 🖼️","#22c55e"); $("iaPrompt").value=""; loadImageAI(); }
 });
 
-/* ---------- VEO AI (video) ---------- */
-let VEO_PROVIDERS = [];
+/* ---------- VEO AI (video marketplace) ---------- */
+let VEO_PROVS = {};
 let _veoPollTimer = null;
 function veoStopPoll(){ if (_veoPollTimer){ clearInterval(_veoPollTimer); _veoPollTimer = null; } }
 async function loadVeo(){
-  let d; try { d = await (await fetch("/api/veo/board")).json(); } catch(e){ return; }
-  VEO_PROVIDERS = d.providers || [];
-  const sel = d.selection || {};
-  $("veoProvider").innerHTML = VEO_PROVIDERS.map(p => `<option value="${p.id}" ${p.id===sel.provider?'selected':''}>${escapeHtml(p.name)}</option>`).join("");
-  veoFillModels(sel.model);
-  $("veoKeyState").textContent = sel.has ? "✅ มีคีย์แล้ว" : "⚠️ ยังไม่มีคีย์";
-  $("veoKeyState").style.color = sel.has ? "#22c55e" : "#f59e0b";
+  let d; try { d = await (await fetch("/api/veo/catalog")).json(); } catch(e){ return; }
+  VEO_PROVS = d.providers || {};
+  const grid = $("veoGrid");
+  grid.innerHTML = (d.catalog||[]).map(m => {
+    const tags = (m.tags||[]).map(t => `<span class="tag" style="background:#1e293b;color:#cbd5e1">${escapeHtml(t)}</span>`).join(" ");
+    const badge = m.connectable
+      ? `<span class="tag" style="background:#064e3b;color:#6ee7b7">✅ เชื่อมได้</span>`
+      : `<span class="tag" style="background:#7c2d12;color:#fdba74">🔒 ยังเชื่อมไม่ได้</span>`;
+    const keyState = m.prov ? (m.has_key ? `<span style="color:#34d399;font-size:11px">✅ มีคีย์</span>` : `<span style="color:#fbbf24;font-size:11px">⚠️ ยังไม่ใส่คีย์</span>`) : "";
+    let btn;
+    if (!m.connectable){
+      btn = `<button class="qbtn" disabled style="width:100%;opacity:.6;cursor:not-allowed">🔒 ยังเชื่อมไม่ได้</button>`;
+    } else if (!m.has_key){
+      btn = `<button class="qbtn veo-key" data-prov="${m.prov}" style="width:100%;font-weight:700;background:#1e293b">🔑 ใส่คีย์ ${escapeHtml(m.provider_name)} ก่อน</button>`;
+    } else {
+      btn = `<button class="send veo-gen" data-id="${m.id}" style="width:100%;padding:9px">✨ Generate</button>`;
+    }
+    return `<div class="panel" style="margin:0;display:flex;flex-direction:column;gap:8px;${m.connectable?'':'opacity:.85'}">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
+        <div style="font-weight:800;color:#fff;font-size:15px">🎬 ${escapeHtml(m.name)}</div>
+        <div style="text-align:right">${badge}</div>
+      </div>
+      <div style="font-size:12px;color:#94a3b8;line-height:1.5;min-height:34px">${escapeHtml(m.desc||"")}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        ${m.provider_name?`<span class="tag" style="background:#312e81;color:#c7d2fe">${escapeHtml(m.provider_name)}</span>`:""} ${tags} ${keyState}
+      </div>
+      <div style="margin-top:auto">${btn}</div>
+    </div>`;
+  }).join("");
+  grid.querySelectorAll(".veo-gen").forEach(x => x.onclick = () => veoOpenGen(x.dataset.id));
+  grid.querySelectorAll(".veo-key").forEach(x => x.onclick = () => veoOpenKey(x.dataset.prov));
   veoRenderList(d.videos || []);
-  // auto-poll pending videos
   veoStopPoll();
   if ((d.videos||[]).some(v => v.status === "pending")) _veoPollTimer = setInterval(veoPollPending, 12000);
 }
-function veoFillModels(selModel){
-  const p = VEO_PROVIDERS.find(x => x.id === $("veoProvider").value) || VEO_PROVIDERS[0];
-  $("veoModel").innerHTML = (p? p.models:[]).map(m => `<option value="${m}" ${m===selModel?'selected':''}>${escapeHtml(m)}</option>`).join("");
-  const cur = VEO_PROVIDERS.find(x => x.id === $("veoProvider").value);
-  $("veoProvLabel").textContent = cur ? ("คีย์ขอที่ " + cur.name) : "";
-  $("veoGetKey").innerHTML = cur ? `🔑 ขอคีย์ ${escapeHtml(cur.name)}: <a href="${cur.get}" target="_blank" rel="noopener" style="color:#60a5fa">${cur.get}</a>` : "";
+function veoOpenKey(prov){
+  const meta = VEO_PROVS[prov] || {};
+  $("genTitle").textContent = "ใส่คีย์ " + (meta.name||prov);
+  $("genBody").innerHTML = `
+    <p class="conn-note">วางคีย์ของ ${escapeHtml(meta.name||prov)} (เก็บในเซิร์ฟเวอร์ของคุณ) — คีย์เดียวใช้ได้กับทุกโมเดลของผู้ให้บริการนี้</p>
+    <a class="conn-doc" href="${meta.get||'#'}" target="_blank" rel="noopener">ขอคีย์ที่นี่ ↗</a>
+    <label>API key</label><input id="veo_key" type="password" placeholder="วาง API key">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="save" id="veo_save" style="flex:1">บันทึกคีย์</button>
+      <button class="qbtn" id="veo_clear" style="flex:1;color:#f87171">ลบคีย์</button>
+    </div>`;
+  $("veo_save").onclick = async () => {
+    const key = $("veo_key").value.trim();
+    if (!key){ toastNote("วางคีย์ก่อน","#f59e0b"); return; }
+    await postJSON("/api/veo/key", { provider:prov, key });
+    closeModal("genModal"); toastNote("บันทึกคีย์แล้ว ✅","#22c55e"); loadVeo();
+  };
+  $("veo_clear").onclick = async () => { await postJSON("/api/veo/key/clear",{provider:prov}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadVeo(); };
+  openModal("genModal");
+}
+function veoOpenGen(modelId){
+  $("genTitle").textContent = "🎬 สร้างวิดีโอ";
+  $("genBody").innerHTML = `
+    <p class="conn-note">อธิบายวิดีโอที่อยากได้ (ภาษาไทยหรืออังกฤษก็ได้)</p>
+    <textarea id="veo_prompt" style="width:100%;min-height:90px" placeholder="เช่น 'โดรนบินเหนือทะเลสีฟ้าใส ยามพระอาทิตย์ตก โทนภาพยนตร์ 4K'"></textarea>
+    <button class="save" id="veo_gen_go" style="width:100%;margin-top:10px">✨ Generate</button>
+    <div style="font-size:11px;color:#6b7280;margin-top:8px">⚠️ ใช้เครดิตของผู้ให้บริการ (คิดเงินตามคีย์ของคุณ) · วิดีโอใช้เวลา ~1-3 นาที</div>`;
+  $("veo_gen_go").onclick = async () => {
+    const prompt = $("veo_prompt").value.trim();
+    if (!prompt){ toastNote("ใส่คำอธิบายก่อน","#f59e0b"); return; }
+    const b=$("veo_gen_go"),o=b.textContent; b.disabled=true; b.textContent="⏳ กำลังส่งงาน…";
+    const r = await postJSON("/api/veo/generate", { model_id:modelId, prompt });
+    b.disabled=false; b.textContent=o;
+    if (r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
+    closeModal("genModal"); toastNote("เริ่มสร้างวิดีโอแล้ว 🎬 รอ 1-3 นาที","#22c55e"); loadVeo();
+  };
+  openModal("genModal");
 }
 function veoRenderList(vids){
   const list = $("veoList");
@@ -4007,45 +4045,14 @@ function veoRenderList(vids){
   list.querySelectorAll(".veo-del").forEach(x => x.onclick = async () => { await postJSON("/api/veo/delete",{id:+x.dataset.id}); loadVeo(); });
 }
 async function veoPollPending(){
-  let d; try { d = await (await fetch("/api/veo/board")).json(); } catch(e){ return; }
+  let d; try { d = await (await fetch("/api/veo/catalog")).json(); } catch(e){ return; }
   const pend = (d.videos||[]).filter(v => v.status === "pending");
   if (!pend.length){ veoStopPoll(); veoRenderList(d.videos||[]); return; }
   for (const v of pend){ try { await postJSON("/api/veo/poll",{id:v.id}); } catch(e){} }
-  let d2; try { d2 = await (await fetch("/api/veo/board")).json(); } catch(e){ return; }
+  let d2; try { d2 = await (await fetch("/api/veo/catalog")).json(); } catch(e){ return; }
   veoRenderList(d2.videos||[]);
   if (!(d2.videos||[]).some(v => v.status==="pending")) veoStopPoll();
 }
-$("veoProvider").addEventListener("change", () => { veoFillModels(); postJSON("/api/veo/key",{provider:$("veoProvider").value, model:$("veoModel").value}); });
-$("veoModel").addEventListener("change", () => postJSON("/api/veo/key",{provider:$("veoProvider").value, model:$("veoModel").value}));
-$("veoKeyBtn").addEventListener("click", () => {
-  const cur = VEO_PROVIDERS.find(x => x.id === $("veoProvider").value) || {};
-  $("genTitle").textContent = "คีย์ VEO AI — " + (cur.name||"");
-  $("genBody").innerHTML = `
-    <p class="conn-note">วางคีย์ของ ${escapeHtml(cur.name||"")} (เก็บไว้ในเซิร์ฟเวอร์ของคุณ)</p>
-    <a class="conn-doc" href="${cur.get||'#'}" target="_blank" rel="noopener">ขอคีย์ที่นี่ ↗</a>
-    <label>API key</label><input id="veo_key" type="password" placeholder="วาง API key">
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="save" id="veo_save" style="flex:1">บันทึกคีย์</button>
-      <button class="qbtn" id="veo_clear" style="flex:1;color:#f87171">ลบคีย์</button>
-    </div>`;
-  $("veo_save").onclick = async () => {
-    const key = $("veo_key").value.trim();
-    if (!key){ toastNote("วางคีย์ก่อน","#f59e0b"); return; }
-    await postJSON("/api/veo/key", { provider:$("veoProvider").value, model:$("veoModel").value, key });
-    closeModal("genModal"); toastNote("บันทึกคีย์ VEO AI แล้ว ✅","#22c55e"); loadVeo();
-  };
-  $("veo_clear").onclick = async () => { await postJSON("/api/veo/key/clear",{}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadVeo(); };
-  openModal("genModal");
-});
-$("veoGo").addEventListener("click", async () => {
-  const prompt = $("veoPrompt").value.trim();
-  if (!prompt){ toastNote("ใส่คำอธิบายวิดีโอก่อน","#f59e0b"); return; }
-  const b=$("veoGo"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังส่งงาน…";
-  const r=await postJSON("/api/veo/generate",{prompt});
-  b.disabled=false;b.textContent=o;
-  if(r.error){ toastNote("❌ "+r.error,"#ef4444"); return; }
-  toastNote("เริ่มสร้างวิดีโอแล้ว 🎬 รอ 1-3 นาที","#22c55e"); $("veoPrompt").value=""; loadVeo();
-});
 
 /* ---------- Projects ---------- */
 let PR_TEMPLATES = [];
