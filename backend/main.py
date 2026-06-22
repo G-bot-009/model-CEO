@@ -2101,12 +2101,19 @@ async def _best_speech_uri(text: str, lang: str = "th"):
                 return "", _voice_prov_name(cfg["provider"]), None   # surface credit popup
             # other errors → fall back to free TTS, but report the failure so user knows
             et = str(exc).lower()
-            if "401" in et or "unauthorized" in et or "invalid api key" in et:
-                reason = "คีย์ไม่ถูกต้อง/ไม่มีสิทธิ์ (401) — คัดลอกใหม่ หรือสร้างคีย์ใหม่แบบเปิดสิทธิ์ Text to Speech"
+            if "detected_unusual_activity" in et or "unusual activity" in et:
+                reason = ("ElevenLabs บล็อก API ของบัญชีนี้ (detected_unusual_activity) — "
+                          "มักเกิดกับบัญชีฟรี/ถูกแฟลก ลองอัปเกรดแพลน หรือทัก ElevenLabs support")
+            elif "missing_permissions" in et or "text_to_speech" in et:
+                reason = "คีย์ไม่มีสิทธิ์ Text to Speech — สร้างคีย์ใหม่แล้วเปิดสิทธิ์ Text to Speech"
+            elif "invalid_api_key" in et or "invalid api key" in et:
+                reason = "คีย์ไม่ถูกต้อง — คัดลอกใหม่ทั้งหมดจาก ElevenLabs"
+            elif "401" in et or "unauthorized" in et:
+                reason = "คีย์ไม่ถูกต้อง/ไม่มีสิทธิ์ (401) — " + (str(exc)[:120])
             elif "403" in et or "forbidden" in et:
-                reason = "คีย์ไม่มีสิทธิ์ใช้ Text to Speech (403)"
+                reason = "ไม่มีสิทธิ์ (403) — " + (str(exc)[:120])
             else:
-                reason = _friendly_err(exc)[:90]
+                reason = _friendly_err(exc)[:120]
             try:
                 audio = await _google_tts_mp3(text, lang)
             except Exception:

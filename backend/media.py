@@ -19,9 +19,24 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+import urllib.error
 import urllib.request
 
 _UA = "GOffice-media/1.0"
+
+
+def _read(req, timeout):
+    """urlopen + read; on HTTP error, surface the response body (real provider message)."""
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "ignore")[:400]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {e.code}: {body or e.reason}")
 
 # Catalog surfaced to the UI dropdowns (single source of truth)
 PROVIDERS = {
@@ -53,8 +68,7 @@ def _post_json(url, obj, headers=None, timeout=90) -> dict:
     if headers:
         h.update(headers)
     req = urllib.request.Request(url, data=json.dumps(obj).encode(), headers=h, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+    return json.loads(_read(req, timeout).decode())
 
 
 def _post_raw(url, obj, headers=None, timeout=90) -> bytes:
@@ -62,8 +76,7 @@ def _post_raw(url, obj, headers=None, timeout=90) -> bytes:
     if headers:
         h.update(headers)
     req = urllib.request.Request(url, data=json.dumps(obj).encode(), headers=h, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    return _read(req, timeout)
 
 
 def _post_multipart(url, fields, headers=None, timeout=120) -> bytes:
