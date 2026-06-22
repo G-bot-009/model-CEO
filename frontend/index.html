@@ -839,8 +839,8 @@
           <h3>🎨 เลียนแบบครีเอทีฟ (ภาพ/วิดีโอ) จากโฆษณาที่เห็น</h3>
           <p style="color:#94a3b8;font-size:13px;margin:2px 0 10px"><b style="color:#a78bfa">วิธีง่ายสุด:</b> โฆษณาส่วนใหญ่เป็นรูป/วิดีโอไม่มีข้อความ → แค่ <b>แคปหน้าจอโฆษณานั้น แล้วอัปโหลด</b> ให้ AI ดูภาพเอง แล้ววิเคราะห์ + สร้างพรอมต์ภาพ/วิดีโอ + แคปชั่นให้เลย (ของธุรกิจคุณ ไม่ลอกตรงๆ)</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-            <label class="qbtn" style="font-weight:700;background:#7c3aed;color:#fff;border-color:#7c3aed;cursor:pointer">📷 อัปโหลดสกรีนช็อตโฆษณา
-              <input id="alShot" type="file" accept="image/*" style="display:none">
+            <label class="qbtn" style="font-weight:700;background:#7c3aed;color:#fff;border-color:#7c3aed;cursor:pointer">📷🎬 อัปโหลดสกรีนช็อต/วิดีโอโฆษณา
+              <input id="alShot" type="file" accept="image/*,video/*" style="display:none">
             </label>
             <span id="alShotName" style="font-size:12px;color:#94a3b8"></span>
           </div>
@@ -5091,24 +5091,61 @@ function alMakeVideo(prompt){
 }
 $("alGo").addEventListener("click", alSearch);
 $("alQuery").addEventListener("keydown", e => { if (e.key==="Enter") alSearch(); });
-/* standalone: imitate a creative from an uploaded screenshot (AI vision) or pasted text */
-let _alShotData = null;
-$("alShot") && $("alShot").addEventListener("change", e => {
+/* standalone: imitate from a screenshot (image) OR a video (frames extracted in-browser) */
+let _alShotData = null, _alShotFrames = null, _alShotIsVideo = false;
+/* pull N evenly-spaced frames from a video file, fully client-side (no ffmpeg) */
+function alExtractFrames(file, n){
+  return new Promise(resolve => {
+    const v = document.createElement("video");
+    v.preload = "auto"; v.muted = true; v.playsInline = true;
+    v.src = URL.createObjectURL(file);
+    const frames = [];
+    v.onloadedmetadata = () => {
+      const dur = v.duration || 0;
+      const times = []; for (let i=0;i<n;i++) times.push(Math.max(0.05, dur*(i+0.5)/n));
+      let idx = 0;
+      const grab = () => {
+        const w = Math.min(640, v.videoWidth || 640);
+        const c = document.createElement("canvas");
+        c.width = w; c.height = Math.round(w * ((v.videoHeight||360)/(v.videoWidth||640)));
+        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+        frames.push(c.toDataURL("image/jpeg", 0.7));
+        idx++; if (idx < times.length) v.currentTime = times[idx]; else resolve(frames);
+      };
+      v.onseeked = grab;
+      v.currentTime = times[0];
+    };
+    v.onerror = () => resolve(frames);
+  });
+}
+$("alShot") && $("alShot").addEventListener("change", async e => {
   const f = e.target.files[0]; if (!f) return;
-  const rd = new FileReader();
-  rd.onload = () => { _alShotData = rd.result; $("alShotImg").src = rd.result; $("alShotPrev").style.display="block"; $("alShotName").textContent = f.name; };
-  rd.readAsDataURL(f);
+  _alShotData = null; _alShotFrames = null; _alShotIsVideo = false;
+  if (f.type.startsWith("video/")){
+    _alShotIsVideo = true;
+    $("alShotName").textContent = "⏳ กำลังดึงเฟรมจากวิดีโอ…";
+    const frames = await alExtractFrames(f, 4);
+    if (!frames.length){ $("alShotName").textContent = "อ่านวิดีโอไม่ได้ — ลองแคปเฟรมเป็นรูปแทน"; return; }
+    _alShotFrames = frames;
+    $("alShotImg").src = frames[0]; $("alShotPrev").style.display = "block";
+    $("alShotName").textContent = `🎬 วิดีโอ — ดึงมา ${frames.length} เฟรมให้ AI ดู`;
+  } else {
+    const rd = new FileReader();
+    rd.onload = () => { _alShotData = rd.result; $("alShotImg").src = rd.result; $("alShotPrev").style.display="block"; $("alShotName").textContent = "📷 " + f.name; };
+    rd.readAsDataURL(f);
+  }
 });
 $("alImitateGo") && $("alImitateGo").addEventListener("click", async () => {
   const ad = $("alImitateAd").value.trim();
   const brief = $("alBrief").value.trim();
-  if (!_alShotData && !ad){ toastNote("อัปโหลดสกรีนช็อตโฆษณา หรือวางข้อความก่อน","#f59e0b"); return; }
+  if (!_alShotData && !_alShotFrames && !ad){ toastNote("อัปโหลดสกรีนช็อต/วิดีโอ หรือวางข้อความก่อน","#f59e0b"); return; }
   if (!brief){ toastNote("ใส่โจทย์ธุรกิจของคุณ (ช่อง “โจทย์ธุรกิจ” เหนือผลการค้นหา)","#f59e0b"); return; }
   const b=$("alImitateGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ AI กำลังดู/คิด…";
   const out=$("alImitateOut"); out.innerHTML="";
-  const rr = _alShotData
-    ? await postJSON("/api/ads/library/imitate-image", { image:_alShotData, brief })
-    : await postJSON("/api/ads/library/imitate", { ad, brief });
+  let rr;
+  if (_alShotFrames) rr = await postJSON("/api/ads/library/imitate-image", { images:_alShotFrames, is_video:true, brief });
+  else if (_alShotData) rr = await postJSON("/api/ads/library/imitate-image", { image:_alShotData, brief });
+  else rr = await postJSON("/api/ads/library/imitate", { ad, brief });
   b.disabled=false; b.textContent=o;
   if (rr.error){ out.innerHTML = `<span style="color:#ef4444">${escapeHtml(rr.error)}</span>`; return; }
   alRenderImitate(out, rr);

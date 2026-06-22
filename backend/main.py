@@ -3393,42 +3393,55 @@ async def ads_library_imitate(p: dict) -> dict:
 
 @app.post("/api/ads/library/imitate-image")
 async def ads_library_imitate_image(p: dict) -> dict:
-    """Look at an uploaded ad screenshot (AI vision) → analysis + caption + image/video prompts."""
-    import base64
-    img = (p.get("image") or "").strip()
+    """Look at an uploaded ad screenshot or video frames (AI vision) → prompts."""
     brief = (p.get("brief") or "").strip()
-    if not img:
-        return {"error": "อัปโหลดสกรีนช็อตโฆษณาก่อน"}
     if not brief:
         return {"error": "ใส่โจทย์ธุรกิจของคุณก่อน"}
-    # parse data URI
-    media_type, b64 = "image/png", img
-    if img.startswith("data:"):
-        try:
-            head, b64 = img.split(",", 1)
-            media_type = head.split(":", 1)[1].split(";", 1)[0] or "image/png"
-        except Exception:
-            return {"error": "รูปไม่ถูกต้อง"}
-    # cap ~4.5MB of base64
-    if len(b64) > 6_000_000:
-        return {"error": "รูปใหญ่เกินไป — ย่อขนาดก่อน (ไม่เกิน ~4MB)"}
-    instruction = (
-        "ดูภาพโฆษณา Facebook ของคู่แข่งนี้ แล้ววิเคราะห์: องค์ประกอบภาพ/มุมกล้อง/โทนสี/อารมณ์/จุดขาย/ข้อความบนภาพ.\n"
-        f"ธุรกิจของผู้ใช้: {brief}\n"
-        "สร้างของ 'เลียนแบบสไตล์' ให้ผู้ใช้ (ห้ามลอกตรงๆ ปลอดภัยตามนโยบาย Meta).\n"
-        "ตอบ JSON อย่างเดียว: {\"analysis\":\"วิเคราะห์ภาพ 2-3 ข้อ (ไทย)\","
-        "\"captions\":[\"แคปชั่นใหม่ A (พาดหัว+เนื้อหา+CTA)\",\"แคปชั่นใหม่ B\"],"
-        "\"image_prompt\":\"prompt อังกฤษสร้างภาพสไตล์เดียวกันแต่เป็นสินค้า/บริการของผู้ใช้\","
-        "\"video_prompt\":\"prompt อังกฤษสร้างวิดีโอโฆษณาสั้นสไตล์เดียวกัน\"}"
-    )
+    raw_imgs = p.get("images") or ([p["image"]] if p.get("image") else [])
+    if not raw_imgs:
+        return {"error": "อัปโหลดสกรีนช็อต หรือวิดีโอโฆษณาก่อน"}
+    is_video = bool(p.get("is_video")) or len(raw_imgs) > 1
+    blocks, total = [], 0
+    for img in raw_imgs[:6]:
+        media_type, b64 = "image/png", img
+        if img.startswith("data:"):
+            try:
+                head, b64 = img.split(",", 1)
+                media_type = head.split(":", 1)[1].split(";", 1)[0] or "image/png"
+            except Exception:
+                continue
+        total += len(b64)
+        if total > 14_000_000:
+            break
+        blocks.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}})
+    if not blocks:
+        return {"error": "รูป/วิดีโอไม่ถูกต้อง หรือใหญ่เกินไป"}
+    if is_video:
+        instruction = (
+            f"ภาพเหล่านี้คือ 'เฟรมจากวิดีโอโฆษณา Facebook' ของคู่แข่ง เรียงตามเวลา ({len(blocks)} เฟรม).\n"
+            "วิเคราะห์การเคลื่อนไหว/ลำดับฉาก/มุมกล้อง/โทนสี/อารมณ์/จุดขาย/ข้อความบนจอ.\n"
+            f"ธุรกิจของผู้ใช้: {brief}\n"
+            "สร้างของ 'เลียนแบบสไตล์' (ห้ามลอกตรงๆ ปลอดภัยตามนโยบาย Meta).\n"
+            "ตอบ JSON อย่างเดียว: {\"analysis\":\"วิเคราะห์วิดีโอ 2-3 ข้อ (ไทย)\","
+            "\"captions\":[\"แคปชั่นใหม่ A\",\"แคปชั่นใหม่ B\"],"
+            "\"image_prompt\":\"prompt อังกฤษสร้างภาพปกสไตล์เดียวกัน ของผู้ใช้\","
+            "\"video_prompt\":\"prompt อังกฤษสร้างวิดีโอโฆษณาสั้นสไตล์เดียวกัน อธิบายฉาก/การเคลื่อนไหว/ลำดับ\"}"
+        )
+    else:
+        instruction = (
+            "ดูภาพโฆษณา Facebook ของคู่แข่งนี้ แล้ววิเคราะห์: องค์ประกอบภาพ/มุมกล้อง/โทนสี/อารมณ์/จุดขาย/ข้อความบนภาพ.\n"
+            f"ธุรกิจของผู้ใช้: {brief}\n"
+            "สร้างของ 'เลียนแบบสไตล์' ให้ผู้ใช้ (ห้ามลอกตรงๆ ปลอดภัยตามนโยบาย Meta).\n"
+            "ตอบ JSON อย่างเดียว: {\"analysis\":\"วิเคราะห์ภาพ 2-3 ข้อ (ไทย)\","
+            "\"captions\":[\"แคปชั่นใหม่ A (พาดหัว+เนื้อหา+CTA)\",\"แคปชั่นใหม่ B\"],"
+            "\"image_prompt\":\"prompt อังกฤษสร้างภาพสไตล์เดียวกันแต่เป็นสินค้า/บริการของผู้ใช้\","
+            "\"video_prompt\":\"prompt อังกฤษสร้างวิดีโอโฆษณาสั้นสไตล์เดียวกัน\"}"
+        )
     try:
         resp = await client_for_agent("marketing").messages.create(
             model=model_for_agent("marketing"), max_tokens=1500,
             **thinking_kwargs(model_for_agent("marketing")),
-            messages=[{"role": "user", "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-                {"type": "text", "text": instruction},
-            ]}])
+            messages=[{"role": "user", "content": blocks + [{"type": "text", "text": instruction}]}])
         txt = next((b.text for b in resp.content if b.type == "text"), "{}")
     except Exception as exc:
         return {"error": _friendly_err(exc)}
