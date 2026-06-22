@@ -2609,6 +2609,175 @@ async def veo_delete(p: dict) -> dict:
     return {"ok": True}
 
 
+# ============================= Video Editor AI (Shotstack) ===================
+_EDITOR_BASE = os.getenv("PUBLIC_URL", "https://iamceo.ai").rstrip("/")
+
+
+def _shotstack_cfg():
+    s = db.get_settings()
+    return s.get("shotstack_key", ""), (s.get("shotstack_env") or "stage")
+
+
+@app.get("/api/editor/clip/{cid}")
+async def editor_clip(cid: int):
+    """Serve a generated clip's bytes at a public URL so Shotstack can fetch it."""
+    from fastapi import Response
+    import base64
+    v = db.video_get(int(cid))
+    if not v or not (v.get("video_ref") or "").startswith("data:"):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        head, b64 = v["video_ref"].split(",", 1)
+        mime = head.split(":", 1)[1].split(";", 1)[0] or "video/mp4"
+        return Response(base64.b64decode(b64), media_type=mime,
+                        headers={"Cache-Control": "public, max-age=86400"})
+    except Exception:
+        return JSONResponse({"error": "bad clip"}, status_code=500)
+
+
+@app.get("/api/editor/board")
+async def editor_board() -> dict:
+    key, env = _shotstack_cfg()
+    clips = []
+    for v in db.video_list(60):
+        if v.get("status") == "done" and (v.get("video_ref") or "").startswith("data:"):
+            clips.append({"id": v["id"], "prompt": v.get("prompt", ""),
+                          "url": f"{_EDITOR_BASE}/api/editor/clip/{v['id']}",
+                          "thumb": v.get("video_ref")})
+    return {"has": bool(key), "env": env, "key": (key[:4] + "…") if key else "",
+            "clips": clips,
+            "renders": [v for v in db.video_list(60) if v.get("provider") == "shotstack"]}
+
+
+@app.post("/api/editor/key")
+async def editor_key(p: dict) -> dict:
+    upd = {}
+    if p.get("key"):
+        upd["shotstack_key"] = p["key"].strip()
+    if p.get("env") in ("stage", "v1"):
+        upd["shotstack_env"] = p["env"]
+    if upd:
+        db.set_settings(upd)
+    return {"ok": True}
+
+
+@app.post("/api/editor/key/clear")
+async def editor_key_clear(p: dict) -> dict:
+    db.set_settings({"shotstack_key": ""})
+    return {"ok": True}
+
+
+def _build_timeline(clips: list, title: str, music: str, transition: bool) -> dict:
+    """Assemble a simple sequential Shotstack timeline from clip URLs."""
+    vclips, start = [], 0.0
+    for c in clips:
+        url = c.get("url") if isinstance(c, dict) else c
+        secs = float(c.get("seconds", 5)) if isinstance(c, dict) else 5.0
+        clip = {"asset": {"type": "video", "src": url}, "start": round(start, 2), "length": secs}
+        if transition:
+            clip["transition"] = {"in": "fade", "out": "fade"}
+        vclips.append(clip)
+        start += secs
+    tracks = [{"clips": vclips}]
+    if title:
+        tracks.insert(0, {"clips": [{"asset": {"type": "title", "text": title, "style": "minimal"},
+                                     "start": 0, "length": min(3.0, start or 3.0)}]})
+    tl = {"background": "#000000", "tracks": tracks}
+    if music:
+        tl["soundtrack"] = {"src": music, "effect": "fadeInFadeOut"}
+    return tl
+
+
+@app.post("/api/editor/ai-build")
+async def editor_ai_build(p: dict) -> dict:
+    """Claude assembles a Shotstack timeline JSON from a brief + clip URLs."""
+    brief = (p.get("brief") or "").strip()
+    clips = p.get("clips") or []
+    if not clips:
+        return {"error": "เพิ่มคลิปอย่างน้อย 1 ตัวก่อน"}
+    urls = [c.get("url") if isinstance(c, dict) else c for c in clips]
+    prompt = (
+        "คุณเป็นเอดิเตอร์วิดีโอ ออกแบบ timeline แบบ Shotstack (JSON) จากคลิปที่ให้ "
+        "ให้มีการตัดต่อสวย ๆ มีทรานสิชัน fade ใส่ข้อความ/คำบรรยายสั้น ๆ ตามโจทย์.\n"
+        f"โจทย์: {brief or 'ตัดต่อรวมคลิปให้ลื่นไหล น่าสนใจ'}\n"
+        f"URL คลิป (เรียงตามลำดับ): {json.dumps(urls, ensure_ascii=False)}\n\n"
+        "ตอบ JSON อย่างเดียว เป็น timeline ของ Shotstack รูปแบบ: "
+        "{\"background\":\"#000000\",\"tracks\":[{\"clips\":[{\"asset\":{\"type\":\"video\",\"src\":\"URL\"},"
+        "\"start\":0,\"length\":5,\"transition\":{\"in\":\"fade\",\"out\":\"fade\"}}]}]} "
+        "(ใส่ title track ด้านบนถ้าต้องการข้อความ · ความยาวคลิปสมเหตุผล 3-6 วิ)"
+    )
+    try:
+        txt = await _claude_text("content", model_for_agent("content"), prompt, 1800)
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    tl = _parse_json(txt) or {}
+    if not tl.get("tracks"):
+        return {"error": "AI สร้าง timeline ไม่สำเร็จ ลองใหม่"}
+    return {"ok": True, "timeline": tl}
+
+
+@app.post("/api/editor/render")
+async def editor_render(p: dict) -> dict:
+    import httpx
+    key, env = _shotstack_cfg()
+    if not key:
+        return {"error": "ยังไม่ได้ใส่คีย์ Shotstack — กด 🔑 ใส่คีย์ ก่อน"}
+    timeline = p.get("timeline")
+    if not timeline:
+        clips = p.get("clips") or []
+        if not clips:
+            return {"error": "เพิ่มคลิปก่อน"}
+        timeline = _build_timeline(clips, (p.get("title") or "").strip(),
+                                   (p.get("music") or "").strip(), bool(p.get("transition", True)))
+    aspect = p.get("aspect") if p.get("aspect") in ("16:9", "9:16", "1:1") else "16:9"
+    body = {"timeline": timeline, "output": {"format": "mp4", "aspectRatio": aspect}}
+    try:
+        async with httpx.AsyncClient(timeout=40) as client:
+            r = await client.post(f"https://api.shotstack.io/{env}/render",
+                                  headers={"x-api-key": key, "Content-Type": "application/json"},
+                                  json=body)
+        if r.status_code >= 400:
+            return {"error": f"Shotstack {r.status_code}: {r.text[:200]}"}
+        rid = (r.json().get("response") or {}).get("id")
+        if not rid:
+            return {"error": "Shotstack ไม่คืน render id: " + r.text[:160]}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    tid = db.video_add(p.get("title") or "ตัดต่อวิดีโอ", "shotstack", env, rid)
+    return {"ok": True, "video": db.video_get(tid)}
+
+
+@app.post("/api/editor/poll")
+async def editor_poll(p: dict) -> dict:
+    import httpx
+    v = db.video_get(int(p.get("id")))
+    if not v:
+        return {"error": "ไม่พบงาน"}
+    if v["status"] != "pending":
+        return {"ok": True, "video": v}
+    key, _ = _shotstack_cfg()
+    env = v["model"] or "stage"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(f"https://api.shotstack.io/{env}/render/{v['task_id']}",
+                                 headers={"x-api-key": key})
+        d = (r.json().get("response") or {})
+        st = (d.get("status") or "").lower()
+        if st == "done" and d.get("url"):
+            db.video_set_done(v["id"], "video/mp4", d["url"])   # Shotstack returns a hosted URL
+        elif st == "failed":
+            db.video_set_error(v["id"])
+    except Exception as exc:
+        return {"status": "pending", "warn": _friendly_err(exc), "video": v}
+    return {"ok": True, "video": db.video_get(v["id"])}
+
+
+@app.post("/api/editor/delete")
+async def editor_delete(p: dict) -> dict:
+    db.video_delete(int(p.get("id")))
+    return {"ok": True}
+
+
 # ============================== WordPress writer ============================
 def _wp_cfg() -> dict:
     row = db.get_connector("WordPress")
