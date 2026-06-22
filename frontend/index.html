@@ -1530,8 +1530,10 @@
 
         <div class="panel"><h3>🎬 คลิปในไทม์ไลน์ (เรียงตามลำดับ)</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-            <input id="edClipUrl" class="numfld" style="flex:1;min-width:220px;margin:0" placeholder="วาง URL วิดีโอ (mp4) แล้วกดเพิ่ม">
-            <button class="qbtn" id="edAddUrl" style="font-weight:700">➕ เพิ่มคลิป</button>
+            <input id="edClipUrl" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="วาง URL วิดีโอ/รูป แล้วกดเพิ่ม">
+            <button class="qbtn" id="edAddUrl" style="font-weight:700">➕ วิดีโอ</button>
+            <button class="qbtn" id="edAddImg" style="font-weight:700">🖼️ รูป</button>
+            <button class="qbtn" id="edAddText" style="font-weight:700">🔤 ข้อความ</button>
             <button class="qbtn" id="edPickVeo" style="font-weight:700;color:#a78bfa">🎬 ดึงจาก VEO AI</button>
           </div>
           <div id="edClips" style="display:flex;flex-direction:column;gap:6px"></div>
@@ -1547,6 +1549,14 @@
               <input id="edTitle" class="numfld" style="margin:4px 0 0" placeholder="เช่น โปรโมชั่นพิเศษ"></div>
             <div class="fld"><label style="font-size:12px;color:#94a3b8">URL เพลงประกอบ (ไม่บังคับ)</label>
               <input id="edMusic" class="numfld" style="margin:4px 0 0" placeholder="URL ไฟล์ mp3"></div>
+            <div class="fld"><label style="font-size:12px;color:#94a3b8">ระดับเพลง (0-1)</label>
+              <input id="edMusicVol" type="number" min="0" max="1" step="0.1" class="numfld" style="margin:4px 0 0" placeholder="0.5"></div>
+            <div class="fld"><label style="font-size:12px;color:#94a3b8">ฟอร์แมตไฟล์</label>
+              <select id="edFormat" class="numfld" style="margin:4px 0 0"><option value="mp4">MP4 (วิดีโอ)</option><option value="gif">GIF</option><option value="webm">WebM</option></select></div>
+            <div class="fld"><label style="font-size:12px;color:#94a3b8">FPS</label>
+              <select id="edFps" class="numfld" style="margin:4px 0 0"><option value="">อัตโนมัติ</option><option value="24">24</option><option value="25">25</option><option value="30">30</option></select></div>
+            <div class="fld"><label style="font-size:12px;color:#94a3b8">คุณภาพ</label>
+              <select id="edQuality" class="numfld" style="margin:4px 0 0"><option value="">มาตรฐาน</option><option value="low">ต่ำ (เร็ว/ถูก)</option><option value="medium">กลาง</option><option value="high">สูง</option></select></div>
           </div>
           <input id="edBrief" class="numfld" style="width:100%;margin:10px 0 0" placeholder="โจทย์สำหรับ AI ตัดต่อ เช่น 'คลิปโปรโมทร้านกาแฟ สนุก จังหวะเร็ว มีคำบรรยาย'">
 
@@ -4485,26 +4495,50 @@ async function loadEditor(){
 }
 function edRenderClips(){
   const box = $("edClips");
+  const TRANS = ["none","fade","slideLeft","slideRight","slideUp","slideDown","wipeLeft","wipeRight","zoom","carouselLeft","reveal"];
+  const EFFECTS = ["none","zoomIn","zoomOut","slideLeft","slideRight","slideUp","slideDown"];
+  const FILTERS = ["none","boost","contrast","darken","greyscale","lighten","muted","negative"];
+  const POS = ["center","top","bottom","left","right","topLeft","topRight","bottomLeft","bottomRight"];
+  const FITS = ["crop","cover","contain","none"];
+  const opt = (arr,sel)=>arr.map(v=>`<option value="${v}" ${v===sel?'selected':''}>${v}</option>`).join("");
+  const icon = (t)=> t==="image"?"🖼️":(t==="text"?"🔤":"🎬");
   box.innerHTML = _edClips.length ? _edClips.map((c,i) => `
     <div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span style="color:#cbd5e1;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i+1}. ${escapeHtml(c.label||c.url)}</span>
+        <span style="color:#cbd5e1;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i+1}. ${icon(c.type)} ${escapeHtml(c.label||c.text||c.url||"")}</span>
         <span style="display:flex;gap:4px">
           <button class="qbtn ed-up" data-i="${i}" ${i===0?'disabled':''}>↑</button>
           <button class="qbtn ed-dn" data-i="${i}" ${i===_edClips.length-1?'disabled':''}>↓</button>
           <button class="qbtn ed-rm" data-i="${i}" style="color:#f87171">✕</button>
         </span>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;font-size:12px;color:#94a3b8">
-        ✂️ ตัด: เริ่มวินาทีที่ <input type="number" class="ed-trim numfld" data-i="${i}" value="${c.trim||0}" min="0" step="0.5" style="width:70px;margin:0;padding:4px 6px">
-        เล่นยาว (วิ) <input type="number" class="ed-len numfld" data-i="${i}" value="${c.length||5}" min="1" step="0.5" style="width:70px;margin:0;padding:4px 6px">
+      <div style="display:flex;gap:10px;align-items:center;font-size:12px;color:#94a3b8;flex-wrap:wrap">
+        ${c.type==="video"?`✂️ ตัดเริ่มที่ <input type="number" class="ed-f numfld" data-i="${i}" data-k="trim" value="${c.trim||0}" min="0" step="0.5" style="width:64px;margin:0;padding:4px 6px">`:""}
+        ยาว(วิ) <input type="number" class="ed-f numfld" data-i="${i}" data-k="length" value="${c.length||5}" min="1" step="0.5" style="width:64px;margin:0;padding:4px 6px">
+        ${c.type==="text"?`ข้อความ <input class="ed-f numfld" data-i="${i}" data-k="text" value="${escapeHtml(c.text||'')}" style="width:160px;margin:0;padding:4px 6px">`:""}
       </div>
-    </div>`).join("") : '<div style="color:#64748b;font-size:13px">ยังไม่มีคลิป — เพิ่ม URL หรือดึงจาก VEO AI</div>';
+      <details style="font-size:12px;color:#94a3b8">
+        <summary style="cursor:pointer;list-style:none">⚙️ ขั้นสูง (ทรานสิชัน/เอฟเฟกต์/ฟิลเตอร์/ตำแหน่ง)</summary>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;margin-top:6px">
+          <label>ทรานสิชันเข้า<select class="ed-f numfld" data-i="${i}" data-k="transition_in" style="margin:2px 0 0;padding:4px">${opt(TRANS,c.transition_in||"none")}</select></label>
+          <label>ทรานสิชันออก<select class="ed-f numfld" data-i="${i}" data-k="transition_out" style="margin:2px 0 0;padding:4px">${opt(TRANS,c.transition_out||"none")}</select></label>
+          <label>เอฟเฟกต์<select class="ed-f numfld" data-i="${i}" data-k="effect" style="margin:2px 0 0;padding:4px">${opt(EFFECTS,c.effect||"none")}</select></label>
+          <label>ฟิลเตอร์<select class="ed-f numfld" data-i="${i}" data-k="filter" style="margin:2px 0 0;padding:4px">${opt(FILTERS,c.filter||"none")}</select></label>
+          <label>ตำแหน่ง<select class="ed-f numfld" data-i="${i}" data-k="position" style="margin:2px 0 0;padding:4px">${opt(POS,c.position||"center")}</select></label>
+          ${c.type!=="text"?`<label>การพอดี(fit)<select class="ed-f numfld" data-i="${i}" data-k="fit" style="margin:2px 0 0;padding:4px">${opt(FITS,c.fit||"crop")}</select></label>`:""}
+          <label>ขนาด scale<input type="number" class="ed-f numfld" data-i="${i}" data-k="scale" value="${c.scale||1}" min="0.1" max="3" step="0.1" style="margin:2px 0 0;padding:4px"></label>
+          <label>ความทึบ opacity<input type="number" class="ed-f numfld" data-i="${i}" data-k="opacity" value="${c.opacity!=null?c.opacity:1}" min="0" max="1" step="0.1" style="margin:2px 0 0;padding:4px"></label>
+          ${c.type==="video"?`<label>เสียงคลิป(0-1)<input type="number" class="ed-f numfld" data-i="${i}" data-k="volume" value="${c.volume!=null?c.volume:1}" min="0" max="1" step="0.1" style="margin:2px 0 0;padding:4px"></label>`:""}
+        </div>
+      </details>
+    </div>`).join("") : '<div style="color:#64748b;font-size:13px">ยังไม่มีคลิป — เพิ่ม วิดีโอ/รูป/ข้อความ หรือดึงจาก VEO AI</div>';
   box.querySelectorAll(".ed-up").forEach(x=>x.onclick=()=>{const i=+x.dataset.i;[_edClips[i-1],_edClips[i]]=[_edClips[i],_edClips[i-1]];edRenderClips();});
   box.querySelectorAll(".ed-dn").forEach(x=>x.onclick=()=>{const i=+x.dataset.i;[_edClips[i+1],_edClips[i]]=[_edClips[i],_edClips[i+1]];edRenderClips();});
   box.querySelectorAll(".ed-rm").forEach(x=>x.onclick=()=>{_edClips.splice(+x.dataset.i,1);edRenderClips();});
-  box.querySelectorAll(".ed-trim").forEach(x=>x.onchange=()=>{_edClips[+x.dataset.i].trim=parseFloat(x.value)||0;});
-  box.querySelectorAll(".ed-len").forEach(x=>x.onchange=()=>{_edClips[+x.dataset.i].length=parseFloat(x.value)||5;});
+  box.querySelectorAll(".ed-f").forEach(x=>x.onchange=()=>{
+    const i=+x.dataset.i, k=x.dataset.k, t=x.type;
+    _edClips[i][k] = (t==="number") ? (parseFloat(x.value)||0) : x.value;
+  });
 }
 function edRenderList(rs){
   $("edRenders").innerHTML = rs.length ? rs.map(t=>{
@@ -4531,13 +4565,21 @@ async function edPollPending(){
 }
 $("edAddUrl") && $("edAddUrl").addEventListener("click",()=>{
   const u=$("edClipUrl").value.trim(); if(!u){toastNote("วาง URL ก่อน","#f59e0b");return;}
-  _edClips.push({url:u,label:u.split("/").pop()}); $("edClipUrl").value=""; edRenderClips();
+  _edClips.push({type:"video",url:u,label:u.split("/").pop(),length:5,trim:0}); $("edClipUrl").value=""; edRenderClips();
+});
+$("edAddImg") && $("edAddImg").addEventListener("click",()=>{
+  const u=$("edClipUrl").value.trim(); if(!u){toastNote("วาง URL รูปก่อน","#f59e0b");return;}
+  _edClips.push({type:"image",url:u,label:u.split("/").pop(),length:3}); $("edClipUrl").value=""; edRenderClips();
+});
+$("edAddText") && $("edAddText").addEventListener("click",()=>{
+  const t=prompt("พิมพ์ข้อความที่จะแสดง:"); if(!t)return;
+  _edClips.push({type:"text",text:t,label:t,length:3,style:"minimal"}); edRenderClips();
 });
 $("edPickVeo") && $("edPickVeo").addEventListener("click",()=>{
   if(!_edVeoClips.length){toastNote("ยังไม่มีคลิปใน VEO AI — สร้างก่อน","#f59e0b");return;}
   $("genTitle").textContent="🎬 เลือกคลิปจาก VEO AI";
   $("genBody").innerHTML = _edVeoClips.map(c=>`<label style="display:flex;gap:8px;align-items:center;padding:6px;cursor:pointer"><input type="checkbox" class="veopick" value="${c.url}" data-label="${escapeHtml((c.prompt||'clip').slice(0,30))}"><video src="${c.thumb}" muted style="width:80px;height:50px;object-fit:cover;border-radius:6px;background:#000"></video><span style="font-size:12px">${escapeHtml((c.prompt||'').slice(0,40))}</span></label>`).join("") + `<button class="save" id="veopick_add" style="width:100%;margin-top:10px">เพิ่มที่เลือก</button>`;
-  $("veopick_add").onclick=()=>{document.querySelectorAll(".veopick:checked").forEach(x=>_edClips.push({url:x.value,label:x.dataset.label}));closeModal("genModal");edRenderClips();};
+  $("veopick_add").onclick=()=>{document.querySelectorAll(".veopick:checked").forEach(x=>_edClips.push({type:"video",url:x.value,label:x.dataset.label,length:5,trim:0}));closeModal("genModal");edRenderClips();};
   openModal("genModal");
 });
 $("edKeyBtn") && $("edKeyBtn").addEventListener("click",()=>{
@@ -4560,9 +4602,10 @@ async function edDoRender(useAi){
     r=await postJSON("/api/editor/render",{timeline:b.timeline,aspect:$("edAspect").value,title:$("edTitle").value.trim()});
   } else {
     r=await postJSON("/api/editor/render",{clips:_edClips,aspect:$("edAspect").value,title:$("edTitle").value.trim(),
-      music:$("edMusic").value.trim(),transition:$("edTrans").value==="1",
+      music:$("edMusic").value.trim(),music_volume:$("edMusicVol").value,transition:$("edTrans").value==="1",
       voiceover_script:$("edVo").value.trim(),voice_lang:$("edVoLang").value,
-      subtitles:$("edSubs").checked,subtitle_text:$("edSubText").value.trim()});
+      subtitles:$("edSubs").checked,subtitle_text:$("edSubText").value.trim(),
+      format:$("edFormat").value,fps:$("edFps").value,quality:$("edQuality").value});
   }
   btn.disabled=false;btn.textContent=o;
   if(r.error){ if(r.out_of_credits){showCreditPopup(r.service,r.error);} else toastNote("❌ "+r.error,"#ef4444"); return; }

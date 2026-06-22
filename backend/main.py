@@ -2699,24 +2699,57 @@ def _split_captions(text: str, total: float, max_len: int = 60) -> list:
     return out
 
 
+def _shot_clip(c, start: float):
+    """Build one Shotstack clip honoring the full set of options the API supports."""
+    if not isinstance(c, dict):
+        c = {"url": c}
+    typ = c.get("type", "video")
+    length = float(c.get("length", c.get("seconds", 5)) or 5)
+    if typ == "text":
+        asset = {"type": "title", "text": c.get("text", ""), "style": c.get("style", "minimal")}
+    elif typ == "image":
+        asset = {"type": "image", "src": c.get("url")}
+    else:
+        asset = {"type": "video", "src": c.get("url"), "trim": float(c.get("trim", 0) or 0)}
+        if c.get("volume") is not None:
+            asset["volume"] = max(0.0, min(1.0, float(c.get("volume"))))
+    clip = {"asset": asset, "start": round(start, 2), "length": length}
+    ti, to = c.get("transition_in"), c.get("transition_out")
+    tr = {}
+    if ti and ti != "none":
+        tr["in"] = ti
+    if to and to != "none":
+        tr["out"] = to
+    if tr:
+        clip["transition"] = tr
+    if c.get("effect") and c["effect"] != "none":
+        clip["effect"] = c["effect"]
+    if c.get("filter") and c["filter"] != "none":
+        clip["filter"] = c["filter"]
+    if c.get("position"):
+        clip["position"] = c["position"]
+    if c.get("scale"):
+        clip["scale"] = float(c["scale"])
+    if c.get("opacity") is not None:
+        clip["opacity"] = max(0.0, min(1.0, float(c["opacity"])))
+    if c.get("fit"):
+        clip["fit"] = c["fit"]
+    return clip, length
+
+
 def _build_timeline(clips: list, title: str, music: str, transition: bool,
-                    captions: list = None, soundtrack_url: str = "") -> dict:
-    """Assemble a sequential Shotstack timeline with per-clip trim, title, captions, audio."""
+                    captions: list = None, soundtrack_url: str = "",
+                    music_volume: float = None) -> dict:
+    """Assemble a sequential Shotstack timeline (video/image/text clips + overlays)."""
     vclips, start = [], 0.0
     for c in clips:
-        if isinstance(c, dict):
-            url = c.get("url")
-            secs = float(c.get("length", c.get("seconds", 5)) or 5)
-            trim = float(c.get("trim", 0) or 0)
-        else:
-            url, secs, trim = c, 5.0, 0.0
-        clip = {"asset": {"type": "video", "src": url, "trim": trim}, "start": round(start, 2), "length": secs}
-        if transition:
-            clip["transition"] = {"in": "fade", "out": "fade"}
+        if transition and isinstance(c, dict) and not c.get("transition_in") and not c.get("transition_out"):
+            c = {**c, "transition_in": "fade", "transition_out": "fade"}
+        clip, length = _shot_clip(c, start)
         vclips.append(clip)
-        start += secs
+        start += length
     tracks = []
-    if captions:                                  # captions on top
+    if captions:
         tracks.append({"clips": captions})
     if title:
         tracks.append({"clips": [{"asset": {"type": "title", "text": title, "style": "minimal"},
@@ -2725,7 +2758,10 @@ def _build_timeline(clips: list, title: str, music: str, transition: bool,
     tl = {"background": "#000000", "tracks": tracks}
     src = soundtrack_url or music
     if src:
-        tl["soundtrack"] = {"src": src, "effect": "fadeInFadeOut"}
+        st = {"src": src, "effect": "fadeInFadeOut"}
+        if music_volume is not None:
+            st["volume"] = max(0.0, min(1.0, float(music_volume)))
+        tl["soundtrack"] = st
     return tl
 
 
@@ -2792,11 +2828,21 @@ async def editor_render(p: dict) -> dict:
                 except Exception:
                     sub = ""
             captions = _split_captions(sub, total)
+        mvol = p.get("music_volume")
         timeline = _build_timeline(clips, (p.get("title") or "").strip(),
                                    (p.get("music") or "").strip(), bool(p.get("transition", True)),
-                                   captions=captions, soundtrack_url=soundtrack_url)
+                                   captions=captions, soundtrack_url=soundtrack_url,
+                                   music_volume=float(mvol) if mvol not in (None, "") else None)
     aspect = p.get("aspect") if p.get("aspect") in ("16:9", "9:16", "1:1") else "16:9"
-    body = {"timeline": timeline, "output": {"format": "mp4", "aspectRatio": aspect}}
+    fmt = p.get("format") if p.get("format") in ("mp4", "gif", "webm") else "mp4"
+    output = {"format": fmt, "aspectRatio": aspect}
+    if p.get("fps") in (12, 15, 24, 25, 30, "12", "15", "24", "25", "30"):
+        output["fps"] = int(p["fps"])
+    if p.get("quality") in ("low", "medium", "high"):
+        output["quality"] = p["quality"]
+    if p.get("resolution") in ("preview", "mobile", "sd", "hd", "1080"):
+        output["resolution"] = p["resolution"]
+    body = {"timeline": timeline, "output": output}
     try:
         async with httpx.AsyncClient(timeout=40) as client:
             r = await client.post(f"https://api.shotstack.io/{env}/render",
