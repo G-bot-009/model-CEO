@@ -827,9 +827,10 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <input id="alQuery" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="🔍 คำค้น เช่น ชื่อแบรนด์/สินค้า/คู่แข่ง หรือคำหลัก">
             <button class="send" id="alGo" style="padding:10px 20px">🔎 ค้นหา</button>
+            <a id="alOpenFb" href="#" target="_blank" rel="noopener" class="qbtn" style="font-weight:700;background:#1877F2;color:#fff;border-color:#1877F2;text-decoration:none;display:inline-flex;align-items:center">↗ เปิดในเว็บ Facebook</a>
           </div>
           <input id="alBrief" class="numfld" style="width:100%;margin:8px 0 0" placeholder="โจทย์ธุรกิจของคุณ (ให้ AI เขียนเลียนแบบ) เช่น บ้านพูลวิลล่า หัวหิน">
-          <div style="font-size:11px;color:#64748b;margin-top:6px">⚠️ Meta คืนโฆษณาหมวด “ประเด็นปัญหา การเลือกตั้ง หรือการเมือง” ได้เต็ม · โฆษณาทั่วไปบางประเทศจำกัด อาจได้น้อย/ว่าง · ต้องเชื่อมบัญชี Facebook ก่อน (ใช้ token ค้น)</div>
+          <div style="font-size:11px;color:#64748b;margin-top:6px">⚠️ <b>API คลังโฆษณา ≠ เว็บคลังโฆษณา</b> — API สาธารณะของ Meta ดึง “โฆษณาทั่วไป” ของไทยไม่ได้ (คืนเต็มเฉพาะหมวดการเมือง/ประเด็นสังคม) ถ้าค้นแล้วขึ้น error ให้กดปุ่ม <b>↗ เปิดในเว็บ Facebook</b> เพื่อดูผลจริง แล้วคัดลอกข้อความโฆษณามาวางช่องล่างให้ AI เขียนเลียนแบบ</div>
         </div>
         <div id="alResults" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
       </section>
@@ -4845,22 +4846,49 @@ const AL_COUNTRIES = [
   ["SA","ซาอุดีอาระเบีย"],["ZA","แอฟริกาใต้"],["GR","กรีซ"],["GL","กรีนแลนด์"],
 ];
 let _alCountriesReady = false;
+function alFbUrl(){
+  const country = ($("alCountry") && $("alCountry").value) || "TH";
+  const at = (($("alAdType") && $("alAdType").value) === "POLITICAL_AND_ISSUE_ADS") ? "political_and_issue_ads" : "all";
+  const q = encodeURIComponent(($("alQuery") && $("alQuery").value.trim()) || "");
+  return `https://www.facebook.com/ads/library/?active_status=active&ad_type=${at}&country=${country}&q=${q}&search_type=keyword_unordered&media_type=all`;
+}
+function alUpdateFbLink(){ const a = $("alOpenFb"); if (a) a.href = alFbUrl(); }
 function loadAdLibrary(){
-  if (_alCountriesReady) return;
-  const sel = $("alCountry"); if (!sel) return;
-  sel.innerHTML = AL_COUNTRIES.map(([c,n]) => `<option value="${c}">${n}</option>`).join("");
-  sel.value = "TH";
-  _alCountriesReady = true;
+  if (!_alCountriesReady){
+    const sel = $("alCountry");
+    if (sel){
+      sel.innerHTML = AL_COUNTRIES.map(([c,n]) => `<option value="${c}">${n}</option>`).join("");
+      sel.value = "TH";
+      _alCountriesReady = true;
+    }
+  }
+  alUpdateFbLink();
+  ["alCountry","alAdType","alQuery"].forEach(id => { const el = $(id); if (el && !el._alHooked){ el._alHooked = true; el.addEventListener("input", alUpdateFbLink); el.addEventListener("change", alUpdateFbLink); } });
 }
 async function alSearch(){
   const q = $("alQuery").value.trim();
+  alUpdateFbLink();
   if (!q){ toastNote("ใส่คำค้นก่อน","#f59e0b"); return; }
   const b=$("alGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ ค้นหา…";
   const r = await postJSON("/api/ads/library/search", { query:q, country:($("alCountry").value||"TH"), ad_type:($("alAdType").value||"ALL") });
   b.disabled=false; b.textContent=o;
   const box = $("alResults");
-  if (r.error){ box.innerHTML = `<div style="color:#f59e0b;grid-column:1/-1">${escapeHtml(r.error)}</div>`; return; }
-  if (!(r.ads||[]).length){ box.innerHTML = '<div style="color:#64748b;grid-column:1/-1">ไม่พบโฆษณา — ลองคำค้นอื่น หรือโฆษณาประเภทนี้ Meta อาจไม่เปิด API ในประเทศนี้</div>'; return; }
+  if (r.error){
+    const fb = alFbUrl();
+    box.innerHTML = `<div style="grid-column:1/-1;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:16px;color:#cbd5e1;line-height:1.7">
+      <div style="color:#f59e0b;font-weight:700;margin-bottom:6px">⚠️ ${escapeHtml(r.error)}</div>
+      <b>ทำไมเว็บ Facebook เจอ แต่ตรงนี้ไม่เจอ?</b><br>
+      เพราะ <b>“เว็บคลังโฆษณา”</b> กับ <b>“API คลังโฆษณา”</b> เป็นคนละระบบ — เว็บโชว์โฆษณาทั่วไปได้ทั้งหมด แต่ <b>API สาธารณะของ Meta จำกัด</b>: ดึง “โฆษณาทั่วไป” ของไทยไม่ได้ (คืนได้เต็มเฉพาะหมวดการเมือง/ประเด็นสังคม) — เป็นข้อจำกัดของ Meta เอง ไม่ใช่ระบบเราพัง<br><br>
+      👉 กดปุ่มนี้เพื่อดูผลจริงเหมือนในเว็บ แล้วคัดลอกข้อความโฆษณามาวางช่อง “โจทย์ธุรกิจ” ให้ AI เขียนเลียนแบบได้:<br>
+      <a href="${fb}" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;background:#1877F2;color:#fff;padding:9px 16px;border-radius:10px;text-decoration:none;font-weight:700">↗ เปิดดูในเว็บ Facebook Ad Library</a>
+    </div>`;
+    return;
+  }
+  if (!(r.ads||[]).length){
+    const fb = alFbUrl();
+    box.innerHTML = `<div style="color:#64748b;grid-column:1/-1">ไม่พบโฆษณาผ่าน API (ไทยมักดึงโฆษณาทั่วไปไม่ได้) — <a href="${fb}" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:700">↗ เปิดดูในเว็บ Facebook</a></div>`;
+    return;
+  }
   box.innerHTML = r.ads.map((a,i) => `
     <div style="background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:14px">
       <div style="font-weight:800;color:#fff">📘 ${escapeHtml(a.page||"(ไม่ทราบเพจ)")}</div>
