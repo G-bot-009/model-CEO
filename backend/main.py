@@ -2890,6 +2890,185 @@ async def editor_delete(p: dict) -> dict:
     return {"ok": True}
 
 
+# ============================== 3D Model AI (Meshy) ==========================
+_MESHY_BASE = "https://api.meshy.ai"
+_MESHY_STYLES = ["realistic", "sculpture"]
+
+
+def _meshy_key() -> str:
+    return db.get_settings().get("meshy_key", "")
+
+
+@app.get("/api/3d/board")
+async def m3d_board() -> dict:
+    key = _meshy_key()
+    out = []
+    for m in db.m3d_list(60):
+        row = {k: m.get(k) for k in ("id", "prompt", "kind", "art_style", "status", "thumb", "created_at")}
+        row["file_url"] = f"/api/files/{m['file_id']}" if m.get("file_id") else ""
+        try:
+            row["formats"] = json.loads(m.get("formats") or "{}")
+        except Exception:
+            row["formats"] = {}
+        out.append(row)
+    return {"has": bool(key), "key": (key[:6] + "…") if key else "",
+            "styles": _MESHY_STYLES, "models": out}
+
+
+@app.post("/api/3d/key")
+async def m3d_key(p: dict) -> dict:
+    if p.get("key"):
+        db.set_settings({"meshy_key": p["key"].strip()})
+    return {"ok": True}
+
+
+@app.post("/api/3d/key/clear")
+async def m3d_key_clear(p: dict) -> dict:
+    db.set_settings({"meshy_key": ""})
+    return {"ok": True}
+
+
+def _meshy_headers():
+    return {"Authorization": f"Bearer {_meshy_key()}", "Content-Type": "application/json"}
+
+
+@app.post("/api/3d/text")
+async def m3d_text(p: dict) -> dict:
+    import httpx
+    if not _meshy_key():
+        return {"error": "ยังไม่ได้ใส่คีย์ Meshy — กด 🔑 ใส่คีย์ ก่อน"}
+    prompt = (p.get("prompt") or "").strip()
+    if not prompt:
+        return {"error": "ใส่คำอธิบายโมเดล 3D ก่อน (เช่น 'แมวน้อยใส่หมวก สไตล์การ์ตูน')"}
+    style = p.get("art_style") if p.get("art_style") in _MESHY_STYLES else "realistic"
+    body = {"mode": "preview", "prompt": prompt, "art_style": style,
+            "negative_prompt": (p.get("negative_prompt") or "low quality, low poly")}
+    try:
+        async with httpx.AsyncClient(timeout=40) as c:
+            r = await c.post(f"{_MESHY_BASE}/openapi/v2/text-to-3d", headers=_meshy_headers(), json=body)
+        if r.status_code >= 400:
+            return {"error": f"Meshy {r.status_code}: {r.text[:200]}"}
+        tid = r.json().get("result")
+        if not tid:
+            return {"error": "Meshy ไม่คืน task id: " + r.text[:160]}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    rid = db.m3d_add(prompt, "text", style, tid)
+    return {"ok": True, "model": db.m3d_get(rid)}
+
+
+@app.post("/api/3d/image")
+async def m3d_image(p: dict) -> dict:
+    import httpx
+    if not _meshy_key():
+        return {"error": "ยังไม่ได้ใส่คีย์ Meshy — กด 🔑 ใส่คีย์ ก่อน"}
+    img = (p.get("image") or "").strip()
+    if not img:
+        return {"error": "อัปโหลดรูปก่อน"}
+    body = {"image_url": img, "enable_pbr": True}
+    try:
+        async with httpx.AsyncClient(timeout=40) as c:
+            r = await c.post(f"{_MESHY_BASE}/openapi/v1/image-to-3d", headers=_meshy_headers(), json=body)
+        if r.status_code >= 400:
+            return {"error": f"Meshy {r.status_code}: {r.text[:200]}"}
+        tid = r.json().get("result")
+        if not tid:
+            return {"error": "Meshy ไม่คืน task id: " + r.text[:160]}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    rid = db.m3d_add("จากรูปภาพ", "image", "", tid)
+    return {"ok": True, "model": db.m3d_get(rid)}
+
+
+@app.post("/api/3d/refine")
+async def m3d_refine(p: dict) -> dict:
+    """Texture/refine a finished preview model (text-to-3d only)."""
+    import httpx
+    m = db.m3d_get(int(p.get("id")))
+    if not m:
+        return {"error": "ไม่พบโมเดล"}
+    if not _meshy_key():
+        return {"error": "ยังไม่ได้ใส่คีย์ Meshy"}
+    body = {"mode": "refine", "preview_task_id": m["task_id"]}
+    try:
+        async with httpx.AsyncClient(timeout=40) as c:
+            r = await c.post(f"{_MESHY_BASE}/openapi/v2/text-to-3d", headers=_meshy_headers(), json=body)
+        if r.status_code >= 400:
+            return {"error": f"Meshy {r.status_code}: {r.text[:200]}"}
+        tid = r.json().get("result")
+        if not tid:
+            return {"error": "Meshy ไม่คืน task id"}
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    db.m3d_set_task(m["id"], tid, kind="refine")
+    return {"ok": True, "model": db.m3d_get(m["id"])}
+
+
+async def _m3d_fetch_status(m) -> dict:
+    import httpx
+    ep = "image-to-3d" if m["kind"] == "image" else "text-to-3d"
+    ver = "v1" if m["kind"] == "image" else "v2"
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.get(f"{_MESHY_BASE}/openapi/{ver}/{ep}/{m['task_id']}", headers=_meshy_headers())
+    return r.json()
+
+
+@app.post("/api/3d/poll")
+async def m3d_poll(p: dict) -> dict:
+    import httpx
+    m = db.m3d_get(int(p.get("id")))
+    if not m:
+        return {"error": "ไม่พบโมเดล"}
+    if m["status"] != "pending":
+        return {"ok": True, "model": m}
+    try:
+        d = await _m3d_fetch_status(m)
+    except Exception as exc:
+        return {"status": "pending", "warn": _friendly_err(exc), "model": m}
+    status = (d.get("status") or "").upper()
+    if status == "FAILED":
+        db.m3d_set_error(m["id"])
+        return {"ok": True, "model": db.m3d_get(m["id"])}
+    if status != "SUCCEEDED":
+        return {"ok": True, "model": m}     # still rendering
+    # download GLB to our storage (Meshy URLs expire) + keep thumbnail
+    urls = d.get("model_urls") or {}
+    glb = urls.get("glb")
+    file_id = ""
+    if glb:
+        try:
+            async with httpx.AsyncClient(timeout=120) as c:
+                gr = await c.get(glb)
+            if gr.status_code < 400 and gr.content:
+                SHARED_DIR.mkdir(exist_ok=True)
+                fid = secrets.token_hex(8)
+                dest = SHARED_DIR / f"{fid}__model.glb"
+                dest.write_bytes(gr.content)
+                db.add_file(fid, f"goffice-3d-{m['id']}.glb", "model/gltf-binary", str(dest))
+                file_id = fid
+        except Exception:
+            pass
+    thumb = ""
+    tu = d.get("thumbnail_url")
+    if tu:
+        try:
+            import base64
+            async with httpx.AsyncClient(timeout=30) as c:
+                tr = await c.get(tu)
+            if tr.status_code < 400 and tr.content and len(tr.content) < 600_000:
+                thumb = "data:image/png;base64," + base64.b64encode(tr.content).decode()
+        except Exception:
+            pass
+    db.m3d_set_done(m["id"], thumb, file_id, json.dumps(urls))
+    return {"ok": True, "model": db.m3d_get(m["id"])}
+
+
+@app.post("/api/3d/delete")
+async def m3d_delete(p: dict) -> dict:
+    db.m3d_delete(int(p.get("id")))
+    return {"ok": True}
+
+
 # ============================== WordPress writer ============================
 def _wp_cfg() -> dict:
     row = db.get_connector("WordPress")

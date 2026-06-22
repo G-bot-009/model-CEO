@@ -231,6 +231,11 @@ def init() -> None:
                 prompt TEXT, provider TEXT, model TEXT,
                 status TEXT, task_id TEXT, mime TEXT, video_ref TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS model3d_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prompt TEXT, kind TEXT, art_style TEXT, status TEXT,
+                task_id TEXT, thumb TEXT, file_id TEXT, formats TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS fb_pages (
                 page_id TEXT PRIMARY KEY, name TEXT, token TEXT,
                 autoreply INTEGER DEFAULT 0, last_seen TEXT, created_at TEXT
@@ -1558,6 +1563,46 @@ def video_set_error(tid) -> None:
 def video_delete(tid) -> None:
     with _conn() as c:
         c.execute("DELETE FROM video_tracks WHERE id=?", (tid,))
+
+
+# --- 3D Model AI (Meshy) ----------------------------------------------------
+def m3d_add(prompt, kind, art_style, task_id) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO model3d_tracks (prompt, kind, art_style, status, task_id, thumb, file_id, formats, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (prompt, kind, art_style, "pending", task_id, "", "", "", _now()))
+        return cur.lastrowid
+
+def m3d_list(limit=60) -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM model3d_tracks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+
+def m3d_get(tid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM model3d_tracks WHERE id=?", (tid,)).fetchone()
+    return dict(r) if r else None
+
+def m3d_set_done(tid, thumb, file_id, formats) -> None:
+    with _conn() as c:
+        c.execute("UPDATE model3d_tracks SET status='done', thumb=?, file_id=?, formats=? WHERE id=?",
+                  (thumb, file_id, formats, tid))
+
+def m3d_set_task(tid, task_id, kind=None) -> None:
+    with _conn() as c:
+        if kind:
+            c.execute("UPDATE model3d_tracks SET task_id=?, status='pending', kind=? WHERE id=?", (task_id, kind, tid))
+        else:
+            c.execute("UPDATE model3d_tracks SET task_id=?, status='pending' WHERE id=?", (task_id, tid))
+
+def m3d_set_error(tid) -> None:
+    with _conn() as c:
+        c.execute("UPDATE model3d_tracks SET status='error' WHERE id=?", (tid,))
+
+def m3d_delete(tid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM model3d_tracks WHERE id=?", (tid,))
 
 
 # --- Facebook Pages (Auto Post) ---------------------------------------------

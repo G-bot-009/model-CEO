@@ -507,6 +507,7 @@
       <div class="menu-item" data-view="imageai"><span class="ico">🖼️</span><span class="label">Image AI</span></div>
       <div class="menu-item" data-view="veo"><span class="ico">🎬</span><span class="label">VEO AI</span></div>
       <div class="menu-item" data-view="editor"><span class="ico">🎞️</span><span class="label">Video Editor AI</span></div>
+      <div class="menu-item" data-view="model3d"><span class="ico">🧊</span><span class="label">3D Model AI</span></div>
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
       <div class="menu-group" id="adsGroup">
         <div class="menu-item ads-parent" id="adsParent" data-view="ads">
@@ -1588,6 +1589,46 @@
 
         <div class="panel"><h3>🎞️ วิดีโอที่ตัดต่อแล้ว</h3>
           <div id="edRenders" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px"></div>
+        </div>
+      </section>
+
+      <!-- 3D MODEL AI -->
+      <section class="view" id="view-model3d">
+        <div class="panel" style="background:linear-gradient(135deg,#0891b2,#7c3aed);border:none">
+          <h3 style="color:#fff;margin:0">🧊 3D Model AI — สร้างโมเดล 3 มิติด้วย AI (Meshy)</h3>
+          <p style="color:#cffafe;font-size:13px;margin:8px 0 0">พิมพ์คำอธิบายหรืออัปโหลดรูป → ได้โมเดล 3D (.glb) หมุนดูได้ · <b>ระบบเซฟไฟล์เก็บให้ถาวร</b> (ลิงก์ Meshy หมดอายุ แต่ของเราเก็บไว้)</p>
+        </div>
+
+        <div class="panel"><h3>🔑 คีย์ Meshy <span style="flex:1"></span><span id="tdKeyState" style="font-size:12px"></span></h3>
+          <p style="color:#94a3b8;font-size:13px;margin:2px 0 8px">ขอคีย์ที่ <a href="https://www.meshy.ai/settings/api" target="_blank" rel="noopener" style="color:#67e8f9">meshy.ai → API</a> (มีเครดิตฟรีให้ลอง)</p>
+          <button class="qbtn" id="tdKeyBtn" style="font-weight:700">🔑 ใส่/แก้คีย์</button>
+        </div>
+
+        <div class="panel">
+          <div id="tdTabs" style="display:flex;gap:6px;background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:4px;margin-bottom:12px">
+            <button class="qbtn td-tab active" data-mode="text" style="flex:1;font-weight:700">📝 Text → 3D</button>
+            <button class="qbtn td-tab" data-mode="image" style="flex:1;font-weight:700">🖼️ Image → 3D</button>
+          </div>
+          <div id="tdTextBox">
+            <textarea id="tdPrompt" class="numfld" style="width:100%;min-height:80px;margin:0 0 8px" placeholder="อธิบายโมเดลที่อยากได้ เช่น 'แมวน้อยใส่หมวกพ่อมด สไตล์การ์ตูนน่ารัก'"></textarea>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="tdStyle" class="numfld" style="width:auto;margin:0"><option value="realistic">สมจริง (realistic)</option><option value="sculpture">ปั้น/ประติมากรรม (sculpture)</option></select>
+              <input id="tdNeg" class="numfld" style="flex:1;min-width:160px;margin:0" placeholder="ไม่เอาอะไร (negative) เช่น low quality">
+            </div>
+          </div>
+          <div id="tdImageBox" style="display:none">
+            <label style="display:block;border:2px dashed #334155;border-radius:12px;padding:18px;text-align:center;cursor:pointer;color:#94a3b8">
+              <input id="tdImage" type="file" accept="image/*" style="display:none">
+              <div id="tdImgPrompt"><div style="font-size:28px">⬆️</div><b style="color:#cbd5e1">อัปโหลดรูปเพื่อแปลงเป็น 3D</b><br><span style="font-size:11px">รูปสินค้า/ตัวละคร พื้นหลังโล่งได้ผลดีสุด</span></div>
+              <img id="tdImgPrev" style="display:none;max-height:160px;border-radius:10px;margin:0 auto">
+            </label>
+          </div>
+          <button class="send" id="tdGo" style="padding:10px 20px;margin-top:10px">🧊 สร้างโมเดล 3D</button>
+          <div style="font-size:11px;color:#64748b;margin-top:8px">⚠️ ใช้เครดิต Meshy · สร้าง ~1-3 นาที · ได้โมเดลแบบ preview (กดใส่เท็กซ์เจอร์ทีหลังได้)</div>
+        </div>
+
+        <div class="panel"><h3>🧊 โมเดลที่สร้างไว้ (เก็บถาวร)</h3>
+          <div id="tdList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px"></div>
         </div>
       </section>
 
@@ -4614,6 +4655,91 @@ async function edDoRender(useAi){
 $("edAiRender") && $("edAiRender").addEventListener("click",()=>edDoRender(true));
 $("edRender") && $("edRender").addEventListener("click",()=>edDoRender(false));
 
+/* ---------- 3D Model AI (Meshy) ---------- */
+let _tdMode = "text", _tdImg = null, _tdPollTimer = null, _tdMvLoaded = false;
+function tdStopPoll(){ if (_tdPollTimer){ clearInterval(_tdPollTimer); _tdPollTimer = null; } }
+function tdEnsureViewer(){
+  if (_tdMvLoaded) return;
+  _tdMvLoaded = true;
+  const s = document.createElement("script"); s.type = "module";
+  s.src = "https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js";
+  document.head.appendChild(s);
+}
+async function loadM3d(){
+  tdEnsureViewer();
+  let d; try { d = await (await fetch("/api/3d/board")).json(); } catch(e){ return; }
+  $("tdKeyState").textContent = d.has ? "✅ มีคีย์แล้ว" : "⚠️ ยังไม่มีคีย์";
+  $("tdKeyState").style.color = d.has ? "#22c55e" : "#f59e0b";
+  tdRenderList(d.models || []);
+  tdStopPoll();
+  if ((d.models||[]).some(m => m.status === "pending")) _tdPollTimer = setInterval(tdPollPending, 12000);
+}
+function tdRenderList(models){
+  $("tdList").innerHTML = models.length ? models.map(m => {
+    let body;
+    if (m.status === "done" && m.file_url){
+      body = `<model-viewer src="${m.file_url}" camera-controls auto-rotate ar style="width:100%;height:220px;background:#0b1220" poster="${m.thumb||''}"></model-viewer>`;
+    } else if (m.status === "error"){
+      body = `<div style="height:220px;display:flex;align-items:center;justify-content:center;color:#fca5a5;font-size:13px;text-align:center;padding:10px">❌ สร้างไม่สำเร็จ<br>(เช็กคีย์/เครดิต Meshy)</div>`;
+    } else {
+      body = `<div style="height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;gap:8px;font-size:13px"><div class="cf-dot"></div><div class="cf-dot"></div><div class="cf-dot"></div>⏳ กำลังปั้นโมเดล 3D… (1-3 นาที)</div>`;
+    }
+    const fmts = m.formats || {};
+    const dl = m.status==="done" ? [
+      m.file_url?`<a class="qbtn" href="${m.file_url}" download style="font-size:11px;padding:4px 8px">⬇️ GLB</a>`:"",
+      fmts.fbx?`<a class="qbtn" href="${fmts.fbx}" target="_blank" rel="noopener" style="font-size:11px;padding:4px 8px">FBX</a>`:"",
+      fmts.obj?`<a class="qbtn" href="${fmts.obj}" target="_blank" rel="noopener" style="font-size:11px;padding:4px 8px">OBJ</a>`:"",
+      fmts.usdz?`<a class="qbtn" href="${fmts.usdz}" target="_blank" rel="noopener" style="font-size:11px;padding:4px 8px">USDZ</a>`:"",
+    ].join("") : "";
+    const refine = (m.status==="done" && m.kind!=="image" && m.kind!=="refine") ? `<button class="qbtn td-refine" data-id="${m.id}" style="font-size:11px;padding:4px 8px;color:#a78bfa">✨ ใส่เท็กซ์เจอร์</button>` : "";
+    return `<div style="border:1px solid #1e293b;border-radius:12px;overflow:hidden;background:#0b1220">${body}
+      <div style="padding:9px">
+        <div style="font-size:12px;color:#cbd5e1;line-height:1.4;max-height:34px;overflow:hidden">${escapeHtml(m.prompt||"")}</div>
+        <div style="font-size:10px;color:#64748b;margin-top:3px">${escapeHtml(m.kind||"")} ${m.art_style?'· '+escapeHtml(m.art_style):''} · ${(m.created_at||'').replace('T',' ').slice(5,16)}</div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${dl}${refine}<button class="qbtn td-del" data-id="${m.id}" style="font-size:11px;padding:4px 8px;color:#f87171">🗑️</button></div>
+      </div></div>`;
+  }).join("") : '<div style="color:#64748b">ยังไม่มีโมเดล — พิมพ์/อัปรูปแล้วกดสร้าง</div>';
+  $("tdList").querySelectorAll(".td-del").forEach(x=>x.onclick=async()=>{await postJSON("/api/3d/delete",{id:+x.dataset.id});loadM3d();});
+  $("tdList").querySelectorAll(".td-refine").forEach(x=>x.onclick=async()=>{const r=await postJSON("/api/3d/refine",{id:+x.dataset.id});if(r.error){toastNote("❌ "+r.error,"#ef4444");return;}toastNote("เริ่มใส่เท็กซ์เจอร์แล้ว ✨","#22c55e");loadM3d();});
+}
+async function tdPollPending(){
+  let d; try { d=await (await fetch("/api/3d/board")).json(); } catch(e){ return; }
+  const pend=(d.models||[]).filter(m=>m.status==="pending");
+  if(!pend.length){ tdStopPoll(); tdRenderList(d.models||[]); return; }
+  for(const m of pend){ try{ await postJSON("/api/3d/poll",{id:m.id}); }catch(e){} }
+  let d2; try { d2=await (await fetch("/api/3d/board")).json(); } catch(e){ return; }
+  tdRenderList(d2.models||[]);
+  if(!(d2.models||[]).some(m=>m.status==="pending")) tdStopPoll();
+}
+document.querySelectorAll(".td-tab").forEach(b=>b.addEventListener("click",()=>{
+  _tdMode=b.dataset.mode;
+  document.querySelectorAll(".td-tab").forEach(x=>x.classList.toggle("active",x===b));
+  $("tdTextBox").style.display=_tdMode==="text"?"block":"none";
+  $("tdImageBox").style.display=_tdMode==="image"?"block":"none";
+}));
+$("tdImage") && $("tdImage").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const rd=new FileReader(); rd.onload=()=>{_tdImg=rd.result;$("tdImgPrev").src=rd.result;$("tdImgPrev").style.display="block";$("tdImgPrompt").style.display="none";}; rd.readAsDataURL(f);
+});
+$("tdKeyBtn") && $("tdKeyBtn").addEventListener("click",()=>{
+  $("genTitle").textContent="🔑 คีย์ Meshy";
+  $("genBody").innerHTML=`<p class="conn-note">ขอคีย์ที่ <a class="conn-doc" href="https://www.meshy.ai/settings/api" target="_blank" rel="noopener">meshy.ai → API ↗</a> (มีเครดิตฟรี)</p>
+    <label>API key</label><input id="td_key" type="password" placeholder="วาง API key">
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="save" id="td_save" style="flex:1">บันทึก</button><button class="qbtn" id="td_clear" style="flex:1;color:#f87171">ลบคีย์</button></div>`;
+  $("td_save").onclick=async()=>{const k=$("td_key").value.trim();if(!k){toastNote("วางคีย์ก่อน","#f59e0b");return;}await postJSON("/api/3d/key",{key:k});closeModal("genModal");toastNote("บันทึกคีย์ Meshy แล้ว ✅","#22c55e");loadM3d();};
+  $("td_clear").onclick=async()=>{await postJSON("/api/3d/key/clear",{});closeModal("genModal");toastNote("ลบคีย์แล้ว","#f59e0b");loadM3d();};
+  openModal("genModal");
+});
+$("tdGo") && $("tdGo").addEventListener("click",async()=>{
+  const b=$("tdGo"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังส่ง…";
+  let r;
+  if(_tdMode==="image"){ if(!_tdImg){b.disabled=false;b.textContent=o;toastNote("อัปโหลดรูปก่อน","#f59e0b");return;} r=await postJSON("/api/3d/image",{image:_tdImg}); }
+  else { const pr=$("tdPrompt").value.trim(); if(!pr){b.disabled=false;b.textContent=o;toastNote("ใส่คำอธิบายก่อน","#f59e0b");return;} r=await postJSON("/api/3d/text",{prompt:pr,art_style:$("tdStyle").value,negative_prompt:$("tdNeg").value.trim()}); }
+  b.disabled=false;b.textContent=o;
+  if(r.error){ if(r.out_of_credits){showCreditPopup(r.service,r.error);} else toastNote("❌ "+r.error,"#ef4444"); return; }
+  toastNote("เริ่มสร้างโมเดล 3D แล้ว 🧊 รอ 1-3 นาที","#22c55e"); loadM3d();
+});
+
 /* ---------- Projects ---------- */
 let PR_TEMPLATES = [];
 const PR_ST = { pending:["#1e293b","#94a3b8","รอรัน"], running:["#78350f","#fbbf24","กำลังรัน"], done:["#064e3b","#6ee7b7","เสร็จ"], failed:["#7f1d1d","#fca5a5","⚠️ API มีปัญหา"] };
@@ -5363,6 +5489,7 @@ function showView(v) {
   if (v === "imageai") loadImageAI();
   if (v === "veo") loadVeo(); else veoStopPoll();
   if (v === "editor") loadEditor(); else edStopPoll();
+  if (v === "model3d") loadM3d(); else tdStopPoll();
   if (v === "bio") loadBio();
   if (v === "ads") loadAds();
   if (v === "adlibrary") loadAdLibrary();
