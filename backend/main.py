@@ -3466,29 +3466,6 @@ _AD_IMITATE_PROMPT = (
 )
 
 
-@app.post("/api/warm/plan")
-async def warm_plan(p: dict) -> dict:
-    """AI builds a policy-safe Facebook warm-up plan (real human activity, gradual budget)."""
-    kind = {"ad_account": "บัญชีโฆษณาใหม่", "page": "เพจใหม่",
-            "profile": "บัญชีส่วนตัวสำหรับยิงแอด"}.get(p.get("type"), "บัญชีโฆษณาใหม่")
-    goal = (p.get("goal") or "").strip()
-    prompt = (
-        "วางแผน 'วอร์ม' Facebook อย่างปลอดภัยและถูกนโยบาย Meta (ทำกิจกรรมจริงด้วยมือ ไม่ใช้บอท ไม่ปั๊มไลก์ปลอม) "
-        f"สำหรับ: {kind}\nธุรกิจ/เป้าหมาย: {goal or 'ทั่วไป'}\n"
-        "เน้น: ตั้งโปรไฟล์/เพจให้ครบ, ยืนยันตัวตน/ธุรกิจ, โพสต์คอนเทนต์จริงสม่ำเสมอ, มีปฏิสัมพันธ์จริง, "
-        "เริ่มยิงงบน้อยแล้วค่อยเพิ่มทีละน้อย, ตั้งบัตร/บิลให้เรียบร้อย, หลีกเลี่ยงพฤติกรรมเสี่ยง.\n"
-        "ตอบ JSON อย่างเดียว: {\"days\":[{\"day\":1,\"title\":\"หัวข้อวันนั้น\",\"tasks\":[\"งานที่ต้องทำจริง\"]}],"
-        "\"tips\":[\"ข้อควรระวัง/เคล็ดลับ\"]}  (ทำ 7-14 วัน)"
-    )
-    try:
-        txt = await _claude_text("marketing", model_for_agent("marketing"), prompt, 1800)
-    except Exception as exc:
-        return {"error": _friendly_err(exc)}
-    data = _parse_json(txt) or {}
-    return {"ok": True, "days": data.get("days", []), "tips": data.get("tips", []),
-            "raw": "" if data else txt}
-
-
 @app.post("/api/ads/library/imitate")
 async def ads_library_imitate(p: dict) -> dict:
     ad = (p.get("ad") or "").strip()
