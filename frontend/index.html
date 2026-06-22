@@ -826,7 +826,7 @@
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input id="alQuery" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="🔍 คำค้น เช่น ชื่อแบรนด์/สินค้า/คู่แข่ง หรือคำหลัก">
+            <input id="alQuery" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="🔍 คำค้น (ชื่อแบรนด์/สินค้า) หรือใส่ ID คลังโฆษณา เช่น 1305159054936445">
             <button class="send" id="alGo" style="padding:10px 20px">🔎 ค้นหา</button>
             <a id="alOpenFb" href="#" target="_blank" rel="noopener" class="qbtn" style="font-weight:700;background:#1877F2;color:#fff;border-color:#1877F2;text-decoration:none;display:inline-flex;align-items:center">↗ เปิดในเว็บ Facebook</a>
           </div>
@@ -4969,7 +4969,10 @@ let _alCountriesReady = false;
 function alFbUrl(){
   const country = ($("alCountry") && $("alCountry").value) || "TH";
   const at = (($("alAdType") && $("alAdType").value) === "POLITICAL_AND_ISSUE_ADS") ? "political_and_issue_ads" : "all";
-  const q = encodeURIComponent(($("alQuery") && $("alQuery").value.trim()) || "");
+  const raw = (($("alQuery") && $("alQuery").value.trim()) || "");
+  // if it's a pure numeric Ad Library ID, open that specific ad directly
+  if (/^\d{6,}$/.test(raw)) return `https://www.facebook.com/ads/library/?id=${raw}`;
+  const q = encodeURIComponent(raw);
   return `https://www.facebook.com/ads/library/?active_status=active&ad_type=${at}&country=${country}&q=${q}&search_type=keyword_unordered&media_type=all`;
 }
 function alUpdateFbLink(){ const a = $("alOpenFb"); if (a) a.href = alFbUrl(); }
@@ -4989,6 +4992,17 @@ async function alSearch(){
   const q = $("alQuery").value.trim();
   alUpdateFbLink();
   if (!q){ toastNote("ใส่คำค้นก่อน","#f59e0b"); return; }
+  // numeric Ad Library ID → open the exact ad on Facebook (API can't fetch by ID)
+  if (/^\d{6,}$/.test(q)){
+    const fb = `https://www.facebook.com/ads/library/?id=${q}`;
+    $("alResults").innerHTML = `<div style="grid-column:1/-1;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:16px;color:#cbd5e1;line-height:1.7">
+      <b style="color:#fff">🔎 ค้นด้วย ID คลังโฆษณา: ${escapeHtml(q)}</b><br>
+      API สาธารณะของ Meta <b>ดึงโฆษณาตาม ID โดยตรงไม่ได้</b> (เป็น endpoint สำหรับค้นคำ) — แต่เปิดดูโฆษณานั้นตรง ๆ บนเว็บได้เลย:<br>
+      <a href="${fb}" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;background:#1877F2;color:#fff;padding:9px 16px;border-radius:10px;text-decoration:none;font-weight:700">↗ เปิดดูโฆษณา ID นี้บน Facebook</a>
+      <div style="font-size:12px;color:#64748b;margin-top:10px">เปิดแล้วคัดลอกข้อความโฆษณามาวางช่อง “โจทย์ธุรกิจ” ด้านล่าง ให้ AI วิเคราะห์/เขียนเลียนแบบได้</div>
+    </div>`;
+    return;
+  }
   const b=$("alGo"),o=b.textContent; b.disabled=true; b.textContent="⏳ ค้นหา…";
   const r = await postJSON("/api/ads/library/search", { query:q, country:($("alCountry").value||"TH"), ad_type:($("alAdType").value||"ALL") });
   b.disabled=false; b.textContent=o;
