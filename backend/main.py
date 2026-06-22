@@ -2084,9 +2084,9 @@ async def content_run(p: dict) -> dict:
 
 
 async def _best_speech_uri(text: str, lang: str = "th"):
-    """Return (data_uri, credit_provider_name). Prefers Neural TTS (Voice AI key);
-    if the voice provider is out of credits, returns ('', provider_name) so the UI can
-    show a clear popup. Otherwise falls back to free Google TTS."""
+    """Return (data_uri, credit_provider_name, used_label). Prefers Neural TTS (Voice AI key);
+    if the voice provider is out of credits, returns ('', provider_name, None) so the UI can
+    show a popup. Otherwise falls back to free Google TTS. used_label = which voice actually ran."""
     import asyncio
     import base64 as _b64
     cfg = _media_cfg("voice")
@@ -2095,18 +2095,26 @@ async def _best_speech_uri(text: str, lang: str = "th"):
             out = await asyncio.to_thread(media.generate_voice, cfg["provider"], cfg["model"], cfg["key"], text, "")
             b64 = (out.get("b64") or "").strip()
             if len(b64) > 100:
-                return f"data:{out.get('mime','audio/mpeg')};base64,{b64}", None
+                return f"data:{out.get('mime','audio/mpeg')};base64,{b64}", None, _voice_prov_name(cfg["provider"])
         except Exception as exc:
             if _is_credit_err(exc):
-                return "", _voice_prov_name(cfg["provider"])   # surface credit popup
-            # other errors → silently fall back to free TTS
+                return "", _voice_prov_name(cfg["provider"]), None   # surface credit popup
+            # other errors → fall back to free TTS, but report the failure so user knows
+            try:
+                audio = await _google_tts_mp3(text, lang)
+            except Exception:
+                audio = b""
+            if audio:
+                return ("data:audio/mpeg;base64," + _b64.b64encode(audio).decode(), None,
+                        f"Google (ฟรี) — {_voice_prov_name(cfg['provider'])} ใช้ไม่ได้: {_friendly_err(exc)[:80]}")
+            return "", None, None
     try:
         audio = await _google_tts_mp3(text, lang)
     except Exception:
         audio = b""
     if audio:
-        return "data:audio/mpeg;base64," + _b64.b64encode(audio).decode(), None
-    return "", None
+        return "data:audio/mpeg;base64," + _b64.b64encode(audio).decode(), None, "Google (ฟรี)"
+    return "", None, None
 
 
 async def _google_tts_mp3(text: str, lang: str = "th") -> bytes:
@@ -2151,6 +2159,18 @@ async def tts(text: str = "", lang: str = "th"):
         return Response(b"", media_type="audio/mpeg", status_code=204)
     return Response(audio, media_type="audio/mpeg",
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.post("/api/tts/preview")
+async def tts_preview(p: dict) -> dict:
+    """Preview the exact voice the Talking Avatar will use (so you can verify ElevenLabs is active)."""
+    text = (p.get("text") or "สวัสดีค่ะ นี่คือตัวอย่างเสียงพูดจากระบบ").strip()[:200]
+    uri, credit, used = await _best_speech_uri(text, "th")
+    if credit:
+        return {"error": f"เครดิต {credit} หมด", "out_of_credits": True, "service": credit}
+    if not uri:
+        return {"error": "สร้างเสียงตัวอย่างไม่สำเร็จ"}
+    return {"ok": True, "audio": uri, "provider": used or "Google (ฟรี)"}
 
 
 @app.post("/api/content/post/approve")
@@ -2501,7 +2521,7 @@ async def veo_generate(p: dict) -> dict:
             return {"error": "อัปโหลดรูปคนก่อน"}
         if not prompt:
             return {"error": "พิมพ์ 'บทพูด' ในช่อง Description"}
-        audio_uri, voice_credit = await _best_speech_uri(prompt, "th")
+        audio_uri, voice_credit, _ = await _best_speech_uri(prompt, "th")
         if voice_credit:
             return {"error": f"เครดิตเสียง {voice_credit} หมดแล้ว — เติมเงินที่ {voice_credit} แล้วลองใหม่ "
                              f"(หรือเอาคีย์เสียงออกเพื่อใช้เสียงฟรีชั่วคราว)",

@@ -4159,7 +4159,9 @@ async function veoOpenVoiceKey(){
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="save" id="vk_save" style="flex:1">บันทึกคีย์เสียง</button>
       <button class="qbtn" id="vk_clear" style="flex:1;color:#f87171">ลบคีย์</button>
-    </div>`;
+    </div>
+    <button class="qbtn" id="vk_test" style="width:100%;margin-top:8px;font-weight:700;background:#0e7490;color:#fff;border-color:#0e7490">🔊 ทดสอบเสียง (ฟังว่าใช้ตัวไหนจริง)</button>
+    <div id="vk_testout" style="font-size:12px;color:#374151;margin-top:8px;text-align:center"></div>`;
   const setGet = () => { const pp=provs.find(x=>x.id===$("vk_prov").value); $("vk_get").innerHTML = pp?`ขอคีย์: <a href="${pp.get}" target="_blank" rel="noopener" style="color:#60a5fa">${pp.get}</a>`:""; };
   setGet(); $("vk_prov").onchange = setGet;
   $("vk_save").onclick = async () => {
@@ -4169,6 +4171,17 @@ async function veoOpenVoiceKey(){
     closeModal("genModal"); toastNote("บันทึกเสียงพากย์แล้ว ✅ — ลองสร้าง Talking Avatar ใหม่","#22c55e");
   };
   $("vk_clear").onclick = async () => { await postJSON("/api/content/media-key/clear",{kind:"voice"}); closeModal("genModal"); toastNote("ลบคีย์เสียงแล้ว (กลับไปใช้เสียงฟรี)","#f59e0b"); };
+  $("vk_test").onclick = async () => {
+    // save current selection first so the test reflects what you just entered
+    const key = $("vk_key").value.trim();
+    const block = { provider:$("vk_prov").value }; if (key) block.key = key;
+    await postJSON("/api/content/media-keys", { voice: block });
+    const out = $("vk_testout"); out.textContent = "⏳ กำลังสร้างเสียงตัวอย่าง…";
+    const r = await postJSON("/api/tts/preview", { text:"สวัสดีค่ะ นี่คือตัวอย่างเสียงพูด ทดสอบ หนึ่ง สอง สาม" });
+    if (r.error){ if (r.out_of_credits){ showCreditPopup(r.service, r.error); } out.textContent = "❌ "+r.error; return; }
+    out.innerHTML = `✅ กำลังใช้เสียง: <b>${escapeHtml(r.provider||"")}</b>`;
+    try { const a = new Audio(r.audio); a.play(); } catch(e){}
+  };
   openModal("genModal");
 }
 function veoOpenGen(modelId, name){
