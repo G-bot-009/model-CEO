@@ -226,6 +226,11 @@ def init() -> None:
                 prompt TEXT, provider TEXT, model TEXT,
                 mime TEXT, image_ref TEXT, created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS video_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prompt TEXT, provider TEXT, model TEXT,
+                status TEXT, task_id TEXT, mime TEXT, video_ref TEXT, created_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS fb_pages (
                 page_id TEXT PRIMARY KEY, name TEXT, token TEXT,
                 autoreply INTEGER DEFAULT 0, last_seen TEXT, created_at TEXT
@@ -1520,6 +1525,39 @@ def image_list(limit=40) -> list[dict]:
 def image_delete(tid) -> None:
     with _conn() as c:
         c.execute("DELETE FROM image_tracks WHERE id=?", (tid,))
+
+
+# --- VEO / video tracks -----------------------------------------------------
+def video_add(prompt, provider, model, task_id) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO video_tracks (prompt, provider, model, status, task_id, mime, video_ref, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (prompt, provider, model, "pending", task_id, "", "", _now()))
+        return cur.lastrowid
+
+def video_list(limit=40) -> list[dict]:
+    with _conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM video_tracks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+
+def video_get(tid) -> "Optional[dict]":
+    with _conn() as c:
+        r = c.execute("SELECT * FROM video_tracks WHERE id=?", (tid,)).fetchone()
+    return dict(r) if r else None
+
+def video_set_done(tid, mime, video_ref) -> None:
+    with _conn() as c:
+        c.execute("UPDATE video_tracks SET status='done', mime=?, video_ref=? WHERE id=?",
+                  (mime, video_ref, tid))
+
+def video_set_error(tid) -> None:
+    with _conn() as c:
+        c.execute("UPDATE video_tracks SET status='error' WHERE id=?", (tid,))
+
+def video_delete(tid) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM video_tracks WHERE id=?", (tid,))
 
 
 # --- Facebook Pages (Auto Post) ---------------------------------------------

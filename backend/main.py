@@ -2298,6 +2298,85 @@ async def imageai_delete(p: dict) -> dict:
     return {"ok": True}
 
 
+# ================================ VEO AI (video) ============================
+@app.get("/api/veo/board")
+async def veo_board() -> dict:
+    c = _media_cfg("video")
+    return {
+        "providers": media.PROVIDERS["video"],
+        "selection": {"provider": c["provider"], "model": c["model"],
+                      "key": (c["key"][:4] + "…") if c["key"] else "", "has": bool(c["key"])},
+        "videos": db.video_list(),
+    }
+
+
+@app.post("/api/veo/key")
+async def veo_key_set(p: dict) -> dict:
+    upd = {}
+    if p.get("provider"):
+        upd["media_video_provider"] = p["provider"].strip()
+    if p.get("model") is not None:
+        upd["media_video_model"] = (p.get("model") or "").strip()
+    if p.get("key"):
+        upd["media_video_key"] = p["key"].strip()
+    if upd:
+        db.set_settings(upd)
+    return {"ok": True}
+
+
+@app.post("/api/veo/key/clear")
+async def veo_key_clear(p: dict) -> dict:
+    db.set_settings({"media_video_key": ""})
+    return {"ok": True}
+
+
+@app.post("/api/veo/generate")
+async def veo_generate(p: dict) -> dict:
+    import asyncio
+    prompt = (p.get("prompt") or "").strip()
+    if not prompt:
+        return {"error": "ใส่คำอธิบายวิดีโอก่อน (เช่น 'โดรนบินเหนือทะเลตอนพระอาทิตย์ตก ภาพยนตร์')"}
+    cfg = _media_cfg("video")
+    if not cfg["key"]:
+        return {"error": "ยังไม่ได้ใส่คีย์ VEO AI — กด 🔑 ใส่คีย์ ก่อน"}
+    try:
+        job = await asyncio.to_thread(media.generate_video, cfg["provider"], cfg["model"], cfg["key"], prompt)
+    except Exception as exc:
+        return {"error": _friendly_err(exc)}
+    tid = db.video_add(prompt, cfg["provider"], cfg["model"], job.get("task_id", ""))
+    return {"ok": True, "video": db.video_get(tid)}
+
+
+@app.post("/api/veo/poll")
+async def veo_poll(p: dict) -> dict:
+    import asyncio
+    v = db.video_get(int(p.get("id")))
+    if not v:
+        return {"error": "ไม่พบงานวิดีโอ"}
+    if v["status"] != "pending":
+        return {"ok": True, "video": v}
+    cfg = _media_cfg("video")
+    try:
+        res = await asyncio.to_thread(media.poll_video, v["provider"], v["model"], cfg["key"], v["task_id"])
+    except Exception as exc:
+        return {"status": "pending", "warn": _friendly_err(exc), "video": v}
+    if res.get("status") == "done":
+        b64 = (res.get("b64") or "").strip()
+        if len(b64) < 100:
+            db.video_set_error(v["id"]); return {"ok": True, "video": db.video_get(v["id"])}
+        ref = f"data:{res.get('mime','video/mp4')};base64,{b64}"
+        db.video_set_done(v["id"], res.get("mime", "video/mp4"), ref)
+    elif res.get("status") == "error":
+        db.video_set_error(v["id"])
+    return {"ok": True, "video": db.video_get(v["id"])}
+
+
+@app.post("/api/veo/delete")
+async def veo_delete(p: dict) -> dict:
+    db.video_delete(int(p.get("id")))
+    return {"ok": True}
+
+
 # ============================== WordPress writer ============================
 def _wp_cfg() -> dict:
     row = db.get_connector("WordPress")

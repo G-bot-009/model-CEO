@@ -31,8 +31,9 @@ PROVIDERS = {
         {"id": "stability", "name": "Stability AI",        "models": ["sd3.5-large", "core"],                          "get": "https://platform.stability.ai/account/keys"},
     ],
     "video": [
-        {"id": "minimax",   "name": "MiniMax (Hailuo)",    "models": ["MiniMax-Hailuo-02"],                            "get": "https://www.minimax.io/"},
+        {"id": "veo",       "name": "Google Veo",          "models": ["veo-3.0-fast-generate-001", "veo-3.0-generate-001"], "get": "https://aistudio.google.com/apikey"},
         {"id": "luma",      "name": "Luma Dream Machine",  "models": ["ray-2"],                                        "get": "https://lumalabs.ai/dream-machine/api"},
+        {"id": "minimax",   "name": "MiniMax (Hailuo)",    "models": ["MiniMax-Hailuo-02"],                            "get": "https://www.minimax.io/"},
     ],
     "voice": [
         {"id": "gemini",     "name": "Gemini TTS",         "models": ["gemini-2.5-flash-preview-tts"],                 "get": "https://aistudio.google.com/apikey"},
@@ -118,7 +119,15 @@ def generate_video(provider: str, model: str, key: str, prompt: str) -> dict:
     """Kick off a text-to-video job. Returns {task_id} (poll separately)."""
     if not key:
         raise RuntimeError("ยังไม่ได้ใส่คีย์วิดีโอ")
-    p = (provider or "minimax").lower()
+    p = (provider or "veo").lower()
+    if p == "veo":
+        m = model or "veo-3.0-fast-generate-001"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:predictLongRunning?key={key}"
+        d = _post_json(url, {"instances": [{"prompt": prompt}]}, timeout=60)
+        name = d.get("name")
+        if not name:
+            raise RuntimeError(f"Veo ไม่คืน operation: {str(d)[:160]}")
+        return {"task_id": name}
     if p == "luma":
         d = _post_json("https://api.lumalabs.ai/dream-machine/v1/generations",
                        {"prompt": prompt, "model": model or "ray-2"},
@@ -134,6 +143,55 @@ def generate_video(provider: str, model: str, key: str, prompt: str) -> dict:
     if not tid:
         raise RuntimeError(f"MiniMax ไม่คืน task_id: {str(d)[:120]}")
     return {"task_id": tid}
+
+
+def poll_video(provider: str, model: str, key: str, task_id: str) -> dict:
+    """Poll a video job. Returns {status:'pending'|'done'|'error', mime?, b64?, error?}."""
+    p = (provider or "veo").lower()
+    if p == "veo":
+        d = _get_json(f"https://generativelanguage.googleapis.com/v1beta/{task_id}?key={key}", timeout=30)
+        if not d.get("done"):
+            return {"status": "pending"}
+        if d.get("error"):
+            return {"status": "error", "error": str(d["error"])[:180]}
+        resp = d.get("response", {}) or {}
+        samples = ((resp.get("generateVideoResponse") or {}).get("generatedSamples")
+                   or resp.get("generatedSamples") or [])
+        uri = (samples[0].get("video", {}) or {}).get("uri") if samples else None
+        if not uri:
+            return {"status": "error", "error": "Veo ไม่คืนไฟล์วิดีโอ"}
+        sep = "&" if "?" in uri else "?"
+        raw = _get_bytes(uri + f"{sep}key={key}", timeout=120)
+        return {"status": "done", "mime": "video/mp4", "b64": base64.b64encode(raw).decode()}
+    if p == "luma":
+        d = _get_json(f"https://api.lumalabs.ai/dream-machine/v1/generations/{task_id}",
+                      headers={"Authorization": f"Bearer {key}"}, timeout=30)
+        state = d.get("state")
+        if state == "failed":
+            return {"status": "error", "error": d.get("failure_reason") or "Luma ล้มเหลว"}
+        url = (d.get("assets") or {}).get("video")
+        if state != "completed" or not url:
+            return {"status": "pending"}
+        raw = _get_bytes(url, timeout=120)
+        return {"status": "done", "mime": "video/mp4", "b64": base64.b64encode(raw).decode()}
+    # MiniMax: query status → retrieve file url
+    d = _get_json(f"https://api.minimax.io/v1/query/video_generation?task_id={task_id}",
+                  headers={"Authorization": f"Bearer {key}"}, timeout=30)
+    status = d.get("status") or (d.get("data") or {}).get("status") or ""
+    if status.lower() in ("queueing", "preparing", "processing", "queuing"):
+        return {"status": "pending"}
+    if status.lower() == "fail":
+        return {"status": "error", "error": "MiniMax สร้างไม่สำเร็จ"}
+    file_id = d.get("file_id") or (d.get("data") or {}).get("file_id")
+    if not file_id:
+        return {"status": "pending"}
+    f = _get_json(f"https://api.minimax.io/v1/files/retrieve?file_id={file_id}",
+                  headers={"Authorization": f"Bearer {key}"}, timeout=30)
+    url = ((f.get("file") or {}).get("download_url"))
+    if not url:
+        return {"status": "error", "error": "MiniMax ไม่คืนลิงก์ไฟล์"}
+    raw = _get_bytes(url, timeout=120)
+    return {"status": "done", "mime": "video/mp4", "b64": base64.b64encode(raw).decode()}
 
 
 # ------------------------------------------------------------------ voice ----
