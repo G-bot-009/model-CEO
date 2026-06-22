@@ -160,9 +160,12 @@ def generate_video(provider: str, model: str, key: str, prompt: str, endpoint: s
             body["fps"] = int(opts["fps"])
         if "generate_audio" in opts:
             body["generate_audio"] = bool(opts["generate_audio"])
-        if is_i2v:
+        if opts.get("audio"):
+            # Talking Avatar: image + speech audio → lip-synced talking video
+            body = {"image_url": image, "audio_url": opts["audio"]}
+        elif is_i2v:
             body["image_url"] = image   # fal accepts a data URI here
-        if mode == "v2v" and opts.get("video"):
+        elif mode == "v2v" and opts.get("video"):
             body["video_url"] = opts["video"]   # fal accepts a data URI here
         d = _post_json(f"https://queue.fal.run/{ep}", body,
                        headers={"Authorization": f"Key {key}"}, timeout=90)

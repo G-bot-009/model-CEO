@@ -2083,17 +2083,13 @@ async def content_run(p: dict) -> dict:
         return {"error": _friendly_err(exc)}
 
 
-@app.get("/api/tts")
-async def tts(text: str = "", lang: str = "th"):
-    """Server-side text-to-speech (returns MP3). Reliable audio playback on mobile.
-    Uses the public Google Translate TTS endpoint; chunks long text to stay within limits."""
+async def _google_tts_mp3(text: str, lang: str = "th") -> bytes:
+    """Generate speech MP3 bytes from text via the public Google Translate TTS endpoint."""
     import httpx
     import urllib.parse
-    from fastapi import Response
     txt = (text or "").strip()[:900]
     if not txt:
-        return Response(b"", media_type="audio/mpeg")
-    # split into <=180-char chunks on word boundaries
+        return b""
     chunks, cur = [], ""
     for w in txt.split(" "):
         if len(cur) + len(w) + 1 > 180:
@@ -2106,17 +2102,26 @@ async def tts(text: str = "", lang: str = "th"):
         chunks.append(cur)
     audio = b""
     headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36"}
+    async with httpx.AsyncClient(timeout=25, headers=headers, follow_redirects=True) as client:
+        for ch in chunks[:6]:
+            q = urllib.parse.urlencode({"ie": "UTF-8", "tl": lang, "client": "tw-ob", "q": ch})
+            r = await client.get("https://translate.google.com/translate_tts?" + q)
+            if r.status_code < 400 and r.content:
+                audio += r.content
+    return audio
+
+
+@app.get("/api/tts")
+async def tts(text: str = "", lang: str = "th"):
+    """Server-side text-to-speech (returns MP3). Reliable audio playback on mobile."""
+    from fastapi import Response
+    if not (text or "").strip():
+        return Response(b"", media_type="audio/mpeg")
     try:
-        async with httpx.AsyncClient(timeout=20, headers=headers, follow_redirects=True) as client:
-            for ch in chunks[:6]:
-                q = urllib.parse.urlencode({"ie": "UTF-8", "tl": lang, "client": "tw-ob", "q": ch})
-                r = await client.get("https://translate.google.com/translate_tts?" + q)
-                if r.status_code < 400 and r.content:
-                    audio += r.content
+        audio = await _google_tts_mp3(text, lang)
     except Exception:
-        pass
+        audio = b""
     if not audio:
-        # signal the client to fall back to the browser's built-in voice
         return Response(b"", media_type="audio/mpeg", status_code=204)
     return Response(audio, media_type="audio/mpeg",
                     headers={"Cache-Control": "public, max-age=86400"})
@@ -2333,7 +2338,10 @@ _VEO_CATALOG = [
     {"id": "seedance-lite-i2v", "name": "Seedance 1.0 Lite (I2V)", "prov": "fal", "model": "seedance-lite-i2v", "endpoint": "", "tags": ["Image to Video"], "ok": True, "desc": "Seedance Lite Image→Video ผ่าน fal.ai (อัปโหลดรูป)"},
     {"id": "veo31-flf",   "name": "VEO 3.1 First-Last Frame","prov": "",     "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดเฟรมแรก+เฟรมสุดท้าย (กำลังพัฒนา)"},
     {"id": "veo31-ref",   "name": "VEO 3.1 Reference to Video","prov": "",   "model": "", "endpoint": "", "tags": ["Image to Video"], "ok": False, "desc": "ต้องอัปโหลดรูปอ้างอิง (กำลังพัฒนา)"},
+    {"id": "talkavatar",  "name": "🗣️ Talking Avatar (คนพูดได้)", "prov": "fal", "model": "talkavatar", "endpoint": "", "tags": ["Image to Video"], "ok": True, "desc": "ใส่รูปคน + พิมพ์บทพูด → คนในรูปพูด+ขยับปากตรงเสียง (ระบบแปลงบทเป็นเสียงให้ · ผ่าน fal.ai)"},
 ]
+# model_id → fal avatar/lipsync endpoint (image + generated speech → talking video)
+_VEO_AVATAR = {"talkavatar": "fal-ai/kling-video/v1/pro/ai-avatar"}
 
 
 # models that also support Image→Video (first frame). fal needs an i2v endpoint.
@@ -2379,10 +2387,11 @@ async def veo_catalog() -> dict:
     cat = []
     for m in _VEO_CATALOG:
         connectable = m["ok"] and bool(m["prov"])
-        i2v = connectable and bool(_i2v_endpoint(m["id"]))
+        avatar = m["id"] in _VEO_AVATAR
+        i2v = connectable and (bool(_i2v_endpoint(m["id"])) or avatar)
         v2v = connectable and bool(_v2v_endpoint(m["id"]))
-        # text→video only if the provider has a text endpoint
-        t2v = connectable and (m["prov"] in ("veo", "luma", "minimax") or bool(m["endpoint"]))
+        # text→video only if the provider has a text endpoint (avatar = image+script only)
+        t2v = connectable and not avatar and (m["prov"] in ("veo", "luma", "minimax") or bool(m["endpoint"]))
         tags = []
         if t2v: tags.append("Text to Video")
         if i2v: tags.append("Image to Video")
@@ -2391,7 +2400,8 @@ async def veo_catalog() -> dict:
         cat.append({**m, "tags": tags,
                     "provider_name": _VEO_PROVIDERS.get(m["prov"], {}).get("name", ""),
                     "has_key": bool(_video_key(m["prov"])) if m["prov"] else False,
-                    "connectable": connectable, "t2v": t2v, "i2v": i2v, "v2v": v2v})
+                    "connectable": connectable, "t2v": t2v, "i2v": i2v, "v2v": v2v,
+                    "avatar": avatar})
     return {"catalog": cat, "providers": provs, "videos": db.video_list()}
 
 
@@ -2440,7 +2450,25 @@ async def veo_generate(p: dict) -> dict:
     image = p.get("image", "") or ""
     video = p.get("video", "") or ""
     endpoint = m["endpoint"]
-    if mode == "i2v":
+    opts = {"fps": int(p.get("fps") or 24),
+            "fixed_camera": bool(p.get("fixed_camera")),
+            "generate_audio": bool(p.get("generate_audio", True))}
+    if mode == "i2v" and m["id"] in _VEO_AVATAR:
+        # Talking Avatar: image + script → TTS speech → lip-sync video
+        if not image:
+            return {"error": "อัปโหลดรูปคนก่อน"}
+        if not prompt:
+            return {"error": "พิมพ์ 'บทพูด' ในช่อง Description"}
+        import base64 as _b64
+        try:
+            audio = await _google_tts_mp3(prompt, "th")
+        except Exception:
+            audio = b""
+        if not audio:
+            return {"error": "สร้างเสียงพูดไม่สำเร็จ — ลองพิมพ์บทใหม่/สั้นลง"}
+        opts["audio"] = "data:audio/mpeg;base64," + _b64.b64encode(audio).decode()
+        endpoint = _VEO_AVATAR[m["id"]]
+    elif mode == "i2v":
         i2 = _i2v_endpoint(m["id"])
         if not i2:
             return {"error": "โมเดลนี้ยังไม่รองรับ Image→Video"}
@@ -2459,9 +2487,6 @@ async def veo_generate(p: dict) -> dict:
         if len(video) > 40_000_000:
             return {"error": "วิดีโอใหญ่เกินไป (ไม่เกิน ~28MB) — ตัดให้สั้นลงก่อน"}
         endpoint = v2
-    opts = {"fps": int(p.get("fps") or 24),
-            "fixed_camera": bool(p.get("fixed_camera")),
-            "generate_audio": bool(p.get("generate_audio", True))}
     opts["video"] = video
     try:
         job = await asyncio.to_thread(media.generate_video, m["prov"], m["model"], key, prompt,

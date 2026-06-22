@@ -4127,6 +4127,9 @@ function veoOpenGen(modelId, name){
   const m = _veoCat[modelId] || {};
   $("vsTitle").textContent = name || "สร้างวิดีโอ";
   $("vsPrompt").value = ""; $("vsCount").textContent = "0 / 4,000"; $("vsReso").value = "1080p";
+  $("vsPrompt").placeholder = m.avatar
+    ? "พิมพ์ 'บทพูด' ที่อยากให้คนในรูปพูด (ภาษาไทย) เช่น: สวัสดีค่ะ วันนี้ร้านเรามีโปรโมชั่นพิเศษ ลดสูงสุด 50%"
+    : "อธิบายวิดีโอที่อยากได้… (ไทย/อังกฤษ)";
   document.querySelectorAll(".vs-ar").forEach(b => b.classList.toggle("active", b.dataset.ar === "16:9"));
   vsUpdateSize();
   // key notice
