@@ -2734,6 +2734,8 @@ def _shot_clip(c, start: float):
         clip["opacity"] = max(0.0, min(1.0, float(c["opacity"])))
     if c.get("fit"):
         clip["fit"] = c["fit"]
+    if c.get("flip") in ("horizontal", "vertical", "both"):
+        clip["transform"] = {"flip": c["flip"]}
     return clip, length
 
 

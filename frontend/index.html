@@ -1562,8 +1562,19 @@
 
         <!-- timeline -->
         <div class="panel" id="edTimelinePanel">
-          <h3 style="font-size:15px">🎬 ไทม์ไลน์ <span style="font-size:11px;color:#64748b;font-weight:400">— ลากเรียงลำดับ / ลากสื่อจากคลังมาวาง / คลิกเพื่อแก้</span></h3>
-          <div id="edClips" style="display:flex;gap:8px;overflow-x:auto;min-height:96px;padding:8px;border:2px dashed #334155;border-radius:12px;align-items:stretch"></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <h3 style="font-size:15px;margin:0">🎬 ไทม์ไลน์</h3>
+            <span style="flex:1"></span>
+            <span id="edToolbar" style="display:flex;gap:4px">
+              <button class="qbtn ed-tb" id="edTbDup" title="ทำซ้ำคลิปที่เลือก" disabled>⧉ ทำซ้ำ</button>
+              <button class="qbtn ed-tb" id="edTbFlip" title="พลิกแนวนอน" disabled>↔️ พลิก</button>
+              <button class="qbtn ed-tb" id="edTbMinus" title="ลดความยาว 1 วิ" disabled>➖</button>
+              <button class="qbtn ed-tb" id="edTbPlus" title="เพิ่มความยาว 1 วิ" disabled>➕</button>
+              <button class="qbtn ed-tb" id="edTbDel" title="ลบคลิป" style="color:#f87171" disabled>🗑️</button>
+            </span>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:6px">ลากเรียงลำดับ · ลากสื่อจากคลังมาวาง · คลิกคลิปเพื่อเลือก/แก้</div>
+          <div id="edClips" style="display:flex;gap:6px;overflow-x:auto;min-height:104px;padding:8px;border:2px dashed #334155;border-radius:12px;align-items:stretch;background:#070b14"></div>
         </div>
 
         <div class="panel"><details><summary style="cursor:pointer;font-weight:800;color:#fff;list-style:none">⚙️ ตั้งค่าเพิ่มเติม (คีย์ / เพลง / พากย์ / ซับ / Output)</summary>
@@ -4573,15 +4584,17 @@ async function loadEditor(){
 function edAddMedia(item){ item.id=++_edMid; _edMedia.unshift(item); edRenderMedia(); }
 function edRenderMedia(){
   const box = $("edMedia"); if (!box) return;
-  box.innerHTML = _edMedia.length ? _edMedia.map(m=>`
-    <div class="ed-media" draggable="true" data-mid="${m.id}" style="border:1px solid #1e293b;border-radius:8px;overflow:hidden;background:#0b1220;cursor:grab">
+  box.innerHTML = _edMedia.length ? _edMedia.map(m=>{
+    const added = _edClips.some(c=>c.url===m.url);
+    return `<div class="ed-media" draggable="true" data-mid="${m.id}" style="border:1px solid #1e293b;border-radius:8px;overflow:hidden;background:#0b1220;cursor:grab;position:relative">
+      ${added?'<span style="position:absolute;top:3px;left:3px;background:#16a34a;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:5px;z-index:1">เพิ่มแล้ว</span>':''}
       ${m.type==="audio" ? `<div style="height:60px;display:flex;align-items:center;justify-content:center;font-size:24px">🎵</div>`
         : `<video src="${m.thumb||m.url}" muted style="width:100%;height:60px;object-fit:cover;background:#000"></video>`}
       <div style="padding:5px;display:flex;justify-content:space-between;align-items:center;gap:4px">
         <span style="font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escapeHtml(m.name||"")}</span>
         <button class="qbtn ed-madd" data-mid="${m.id}" style="font-size:11px;padding:2px 7px">➕</button>
       </div>
-    </div>`).join("") : '<div style="color:#64748b;font-size:12px;grid-column:1/-1">ยังไม่มีสื่อ — อัปโหลด/ดึงจาก VDO AI</div>';
+    </div>`;}).join("") : '<div style="color:#64748b;font-size:12px;grid-column:1/-1">ยังไม่มีสื่อ — อัปโหลด/ดึงจาก VDO AI</div>';
   box.querySelectorAll(".ed-media").forEach(el=>el.addEventListener("dragstart",e=>e.dataTransfer.setData("mid",el.dataset.mid)));
   box.querySelectorAll(".ed-madd").forEach(x=>x.onclick=()=>edTimelineAddByMid(+x.dataset.mid));
 }
@@ -4593,16 +4606,22 @@ function edTimelineAddByMid(mid){
 }
 function edRenderClips(){
   const box = $("edClips");
-  box.innerHTML = _edClips.length ? _edClips.map((c,i)=>`
-    <div class="ed-block" draggable="true" data-i="${i}" style="flex:0 0 120px;border:2px solid ${i===_edSel?'#7c3aed':'#1e293b'};border-radius:10px;overflow:hidden;background:#0b1220;cursor:grab;position:relative">
-      ${c.type==="text"?`<div style="height:64px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#cbd5e1;text-align:center;padding:4px">🔤 ${escapeHtml((c.text||'').slice(0,30))}</div>`
-        : c.type==="image"?`<div style="height:64px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#111">🖼️</div>`
-        : `<video src="${c.url}" muted style="width:100%;height:64px;object-fit:cover;background:#000"></video>`}
-      <div style="padding:4px 6px;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:10px;color:#94a3b8">${i+1} · ${c.length||5}s</span>
-        <button class="qbtn ed-rm" data-i="${i}" style="font-size:10px;padding:1px 5px;color:#f87171">✕</button>
+  box.innerHTML = _edClips.length ? _edClips.map((c,i)=>{
+    const w = Math.max(90, Math.min(220, Math.round((c.length||5)*22)));  // width ~ duration (filmstrip)
+    const strip = c.type==="text"
+      ? `<div style="height:70px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#cbd5e1;text-align:center;padding:4px;background:#1e1b4b">🔤 ${escapeHtml((c.text||'').slice(0,40))}</div>`
+      : c.type==="image"
+      ? `<div style="height:70px;background:#111 center/cover" >${c.url&&c.url.startsWith('http')?`<img src="${c.url}" style="width:100%;height:70px;object-fit:cover">`:'<div style="height:70px;display:flex;align-items:center;justify-content:center;font-size:24px">🖼️</div>'}</div>`
+      : `<div style="height:70px;background:#000 url('${c.url}');background-size:cover;background-repeat:repeat-x;background-position:center"><video src="${c.url}" muted style="width:100%;height:70px;object-fit:cover;opacity:.95"></video></div>`;
+    return `<div class="ed-block" draggable="true" data-i="${i}" style="flex:0 0 ${w}px;border:2px solid ${i===_edSel?'#22d3ee':'#1e293b'};border-radius:8px;overflow:hidden;background:#0b1220;cursor:grab;position:relative">
+      ${strip}
+      <div style="padding:3px 6px;display:flex;justify-content:space-between;align-items:center;background:#0b1220">
+        <span style="font-size:10px;color:#94a3b8">${i+1} · ${c.length||5}s${c.flip?' · ↔':''}</span>
+        <button class="qbtn ed-rm" data-i="${i}" style="font-size:10px;padding:0 5px;color:#f87171">✕</button>
       </div>
-    </div>`).join("") : '<div style="color:#64748b;font-size:13px;margin:auto">ลากสื่อจากคลังมาวางที่นี่ หรือกด ➕ บนการ์ดสื่อ</div>';
+    </div>`;}).join("") : '<div style="color:#64748b;font-size:13px;margin:auto">ลากสื่อจากคลังมาวางที่นี่ หรือกด ➕ บนการ์ดสื่อ</div>';
+  const onSel = _edSel>=0 && _edSel<_edClips.length;
+  document.querySelectorAll(".ed-tb").forEach(b=>b.disabled=!onSel);
   box.querySelectorAll(".ed-block").forEach(el=>{
     el.addEventListener("dragstart",e=>e.dataTransfer.setData("tidx",el.dataset.i));
     el.addEventListener("dragover",e=>e.preventDefault());
@@ -4751,6 +4770,13 @@ async function edDoRender(useAi){
 $("edAiRender") && $("edAiRender").addEventListener("click",()=>edDoRender(true));
 $("edAiRender2") && $("edAiRender2").addEventListener("click",()=>edDoRender(true));
 $("edRender") && $("edRender").addEventListener("click",()=>edDoRender(false));
+/* clip toolbar (acts on selected clip) */
+function edSelClip(){ return (_edSel>=0&&_edSel<_edClips.length)?_edClips[_edSel]:null; }
+$("edTbDup") && $("edTbDup").addEventListener("click",()=>{const c=edSelClip();if(!c)return;_edClips.splice(_edSel+1,0,{...c});_edSel++;edRenderClips();edRenderMedia();});
+$("edTbDel") && $("edTbDel").addEventListener("click",()=>{if(_edSel<0)return;_edClips.splice(_edSel,1);_edSel=-1;edRenderClips();edRenderMedia();});
+$("edTbFlip") && $("edTbFlip").addEventListener("click",()=>{const c=edSelClip();if(!c)return;c.flip=c.flip==="horizontal"?"":"horizontal";edShowProps(_edSel);edRenderClips();});
+$("edTbPlus") && $("edTbPlus").addEventListener("click",()=>{const c=edSelClip();if(!c)return;c.length=(c.length||5)+1;edShowProps(_edSel);edRenderClips();});
+$("edTbMinus") && $("edTbMinus").addEventListener("click",()=>{const c=edSelClip();if(!c)return;c.length=Math.max(1,(c.length||5)-1);edShowProps(_edSel);edRenderClips();});
 
 /* ---------- 3D Model AI (Meshy) ---------- */
 let _tdMode = "text", _tdImg = null, _tdPollTimer = null, _tdMvLoaded = false;
