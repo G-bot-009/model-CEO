@@ -1575,7 +1575,7 @@
           </div>
           <div style="font-size:11px;color:#64748b;margin-bottom:6px">ลากเรียงลำดับ · ลากสื่อจากคลังมาวาง · คลิกคลิปเพื่อเลือก/แก้ · ความกว้าง = ความยาวคลิป</div>
           <div id="edTrack" style="overflow-x:auto;border:2px dashed #334155;border-radius:12px;background:#070b14;padding:8px 10px 12px">
-            <div id="edRuler" style="position:relative;height:16px;margin-bottom:5px;min-width:100%"></div>
+            <div id="edRuler" style="position:relative;height:22px;margin-bottom:6px;min-width:100%;background:#0e1626;border-radius:6px;border:1px solid #1e293b"></div>
             <div id="edClips" style="position:relative;display:flex;gap:0;min-height:86px;align-items:stretch;min-width:100%"></div>
           </div>
         </div>
@@ -4667,14 +4667,14 @@ function edRenderRuler(){
   const width=Math.round(total*ED_PPS);
   // label spacing: aim for a tick label roughly every ~55px
   const step=Math.max(1, Math.round(55/ED_PPS));   // seconds between labels
-  let html=`<div style="position:absolute;left:0;top:0;height:100%;width:${width}px;border-top:1px solid #1e293b"></div>`;
+  let html="";
   for(let s=0;s<=Math.ceil(total);s++){
     const x=s*ED_PPS, major=(s%step===0);
-    html+=`<div style="position:absolute;left:${x}px;top:0;width:1px;height:${major?'10px':'5px'};background:${major?'#475569':'#1e293b'}"></div>`;
+    html+=`<div style="position:absolute;left:${x}px;bottom:0;width:${major?'2px':'1px'};height:${major?'12px':'6px'};background:${major?'#64748b':'#334155'}"></div>`;
     if(major){ const mm=String(Math.floor(s/60)).padStart(2,'0'), ss=String(s%60).padStart(2,'0');
-      html+=`<div style="position:absolute;left:${x+3}px;top:0;font-size:9px;color:#64748b;white-space:nowrap">${mm}:${ss}</div>`; }
+      html+=`<div style="position:absolute;left:${x+4}px;top:1px;font-size:10px;font-weight:600;color:#94a3b8;white-space:nowrap">${mm}:${ss}</div>`; }
   }
-  r.style.width=width+"px"; r.innerHTML=html;
+  r.style.width=Math.max(width, 200)+"px"; r.innerHTML=html;
 }
 function edMovePlayhead(t){
   const ph=$("edPlayhead"); if(!ph) return;

@@ -261,7 +261,10 @@ async def index(request: Request):
     # gate the dashboard behind login (local single-user)
     if request.cookies.get("mf_auth") != _auth_token():
         return RedirectResponse("/login")
-    return FileResponse(FRONTEND_DIR / "index.html")
+    # always revalidate so UI updates show up without a manual hard-refresh
+    # (ETag still yields a tiny 304 when unchanged, so this stays cheap)
+    return FileResponse(FRONTEND_DIR / "index.html",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 @app.get("/tailwind.css")
