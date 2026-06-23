@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ToonOffice · Multi-Agent OS</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -2081,7 +2081,11 @@ const Office3D = (function () {
 
   function init(agents) {
     container = document.getElementById("scene3d");
-    if (!THREEok()) { container.innerHTML = '<div class="scene-fallback">โหลด 3D ไม่สำเร็จ (ตรวจการเชื่อมต่ออินเทอร์เน็ต) — ส่วนอื่นของแดชบอร์ดยังใช้งานได้ปกติ</div>'; return; }
+    if (!THREEok()) {
+      // three.js is deferred — if it hasn't executed yet, wait for window load then retry once
+      if (!init._retried) { init._retried = true; window.addEventListener("load", () => init(agents), { once:true }); return; }
+      container.innerHTML = '<div class="scene-fallback">โหลด 3D ไม่สำเร็จ (ตรวจการเชื่อมต่ออินเทอร์เน็ต) — ส่วนอื่นของแดชบอร์ดยังใช้งานได้ปกติ</div>'; return;
+    }
     const W = container.clientWidth, H = container.clientHeight;
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("threeCanvas"), antialias:true });
     renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(W,H);
