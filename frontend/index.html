@@ -4596,7 +4596,7 @@ function edRenderMedia(){
   box.innerHTML = _edMedia.length ? _edMedia.map(m=>{
     const added = _edClips.some(c=>c.url===m.url);
     return `<div class="ed-media" draggable="true" data-mid="${m.id}" style="border:1px solid #1e293b;border-radius:8px;overflow:hidden;background:#0b1220;cursor:grab;position:relative">
-      ${added?'<span style="position:absolute;top:2px;right:2px;background:rgba(22,163,74,.92);color:#fff;font-size:8px;font-weight:700;line-height:1;padding:1px 3px;border-radius:4px;z-index:1">✓ ใช้</span>':''}
+      ${added?'<span style="position:absolute;top:3px;left:3px;background:rgba(22,163,74,.92);color:#fff;font-size:9px;font-weight:600;line-height:1;padding:2px 5px;border-radius:4px;z-index:1">เพิ่มแล้ว</span>':''}
       ${m.type==="audio" ? `<div style="height:60px;display:flex;align-items:center;justify-content:center;font-size:24px">🎵</div>`
         : `<video src="${m.thumb||m.url}" muted style="width:100%;height:60px;object-fit:cover;background:#000"></video>`}
       <div style="padding:5px;display:flex;justify-content:space-between;align-items:center;gap:4px">
@@ -4640,64 +4640,81 @@ function edRenderClips(){
     el.addEventListener("click",e=>{ if(e.target.classList.contains("ed-rm"))return; _edSel=+el.dataset.i; edRenderClips(); edShowProps(_edSel); });
   });
   box.querySelectorAll(".ed-rm").forEach(x=>x.onclick=(e)=>{e.stopPropagation();const i=+x.dataset.i;_edClips.splice(i,1);if(_edSel>=_edClips.length)_edSel=-1;edRenderClips();edShowProps(_edSel);});
+  edSyncStage();   // keep the preview stage in sync with the timeline (no-op while playing)
   if (_edSel>=0 && _edSel<_edClips.length) edShowProps(_edSel);
   else { if($("edProps"))$("edProps").innerHTML=""; if(!_edClips.length){ edPvStop(); if($("edPvInfo"))$("edPvInfo").textContent="เลือก/เพิ่มคลิปแล้วกดเล่น"; } }
   box.ondragover=e=>e.preventDefault();
   box.ondrop=e=>{e.preventDefault();const mid=e.dataTransfer.getData("mid");const t=e.dataTransfer.getData("tidx");
     if(mid)edTimelineAddByMid(+mid); else if(t!==""){const from=+t;const it=_edClips.splice(from,1)[0];_edClips.push(it);edRenderClips();}};
 }
-/* ----- sequential preview player (plays the whole timeline) ----- */
-let _edPv = { playing:false, idx:0, timer:null, built:false };
+/* ----- sequential preview player (CapCut-style: each clip preloaded in its own stacked element) ----- */
+let _edPv = { playing:false, idx:0, timer:null, built:false, sig:"" };
 function edBuildPlayer(){
   if (_edPv.built) return;
   const pv = $("edPreview"); if (!pv) return;
   pv.style.background = "transparent";
   pv.innerHTML = `
-    <div style="position:relative;width:100%;background:#000;border-radius:8px;overflow:hidden">
-      <video id="edPvVideo" playsinline style="width:100%;max-height:300px;display:block;background:#000"></video>
-      <div id="edPvOverlay" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#000;color:#fff;text-align:center;padding:20px;font-size:20px"></div>
-    </div>
+    <div id="edPvStage" style="position:relative;width:100%;height:300px;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
       <button class="qbtn" id="edPvPlay" style="font-weight:700">▶ เล่นทั้งหมด</button>
       <span id="edPvInfo" style="font-size:12px;color:#94a3b8">เลือก/เพิ่มคลิปแล้วกดเล่น</span>
     </div>`;
   $("edPvPlay").onclick = ()=> _edPv.playing ? edPvStop() : edPvPlayFrom(_edSel>=0?_edSel:0);
   _edPv.built = true;
+  edSyncStage();
 }
+function edClipSig(){ return _edClips.map(c=>`${c.type}~${c.url||''}~${(c.text||'').slice(0,20)}`).join("|"); }
+function edSyncStage(){
+  // (re)build one stacked element per clip — only when the clip set changed and not mid-playback
+  if (_edPv.playing) return;
+  const stage=$("edPvStage"); if(!stage) return;
+  const sig=edClipSig();
+  if (sig===_edPv.sig) return;
+  _edPv.sig=sig;
+  const base="position:absolute;inset:0;width:100%;height:100%;background:#000";
+  stage.innerHTML = _edClips.length ? _edClips.map((c,i)=>{
+    if(c.type==="video") return `<video data-ci="${i}" src="${c.url}" playsinline preload="auto" muted style="${base};object-fit:contain;display:none"></video>`;
+    if(c.type==="image")  return `<img data-ci="${i}" src="${c.url}" style="${base};object-fit:contain;display:none">`;
+    return `<div data-ci="${i}" style="${base};display:none;align-items:center;justify-content:center;color:#fff;text-align:center;padding:20px;font-size:20px">🔤 ${escapeHtml(c.text||'')}</div>`;
+  }).join("") : '<div style="color:#64748b;font-size:13px">เลือก/เพิ่มคลิปแล้วกดเล่น</div>';
+}
+function edStageEl(i){ const s=$("edPvStage"); return s?s.querySelector(`[data-ci="${i}"]`):null; }
+function edPvHideAll(){ const s=$("edPvStage"); if(!s)return; s.querySelectorAll("[data-ci]").forEach(el=>{ el.style.display="none"; if(el.tagName==="VIDEO"){try{el.pause();}catch(e){}} }); }
 function edPvStop(){
   _edPv.playing=false; if(_edPv.timer){clearTimeout(_edPv.timer);_edPv.timer=null;}
-  const v=$("edPvVideo"); if(v){v.ontimeupdate=null;v.onended=null;v.onloadedmetadata=null;try{v.pause();}catch(e){}}
+  const cur=edStageEl(_edPv.idx); if(cur&&cur.tagName==="VIDEO"){cur.ontimeupdate=null;cur.onended=null;cur.onerror=null;try{cur.pause();}catch(e){}}
   if($("edPvPlay"))$("edPvPlay").textContent="▶ เล่นทั้งหมด";
 }
-function edPvPlayFrom(s){ if(!_edClips.length)return; edPvStop(); _edPv.playing=true; if($("edPvPlay"))$("edPvPlay").textContent="⏸ หยุด"; edPvPlayClip(s||0); }
+function edPvPlayFrom(s){ if(!_edClips.length)return; edSyncStage(); edPvStop(); _edPv.playing=true; if($("edPvPlay"))$("edPvPlay").textContent="⏸ หยุด"; edPvPlayClip(s||0); }
 function edPvPlayClip(i){
   if(!_edPv.playing) return;
-  if(i>=_edClips.length){ edPvStop(); if($("edPvInfo"))$("edPvInfo").textContent="จบแล้ว"; return; }
+  if(_edPv.timer){clearTimeout(_edPv.timer);_edPv.timer=null;}
+  if(i>=_edClips.length){ edPvStop(); if($("edPvInfo"))$("edPvInfo").textContent="จบแล้ว ✓"; return; }
   _edPv.idx=i; _edSel=i; edRenderClips();
-  const c=_edClips[i], v=$("edPvVideo"), o=$("edPvOverlay");
+  edPvHideAll();
+  const c=_edClips[i], el=edStageEl(i);
   if($("edPvInfo"))$("edPvInfo").textContent=`กำลังเล่นคลิป ${i+1}/${_edClips.length}`;
+  if(!el){ _edPv.timer=setTimeout(()=>edPvPlayClip(i+1),300); return; }
+  el.style.display = (c.type==="text") ? "flex" : "block";
   if(c.type==="video"){
-    o.style.display="none"; v.style.display="block";
     const end=(c.trim||0)+(c.length||5);
-    let advanced=false; const next=()=>{ if(advanced)return; advanced=true; v.ontimeupdate=null;v.onended=null;v.onerror=null; edPvPlayClip(i+1); };
-    v.onended=next;
-    v.onerror=()=>{ if($("edPvInfo"))$("edPvInfo").textContent=`คลิป ${i+1} โหลดไม่ได้ (ข้าม)`; next(); };
-    v.onloadedmetadata=()=>{ try{v.currentTime=c.trim||0;}catch(e){}
-      const p=v.play(); if(p&&p.catch)p.catch(()=>{ v.muted=true; v.play().catch(()=>{}); }); };
-    v.ontimeupdate=()=>{ if(v.currentTime>=end) next(); };
-    v.src=c.url; v.load();
-    // safety: if nothing loads within ~8s, skip to next so it never hangs
-    _edPv.timer=setTimeout(()=>{ if(!advanced && (v.readyState<2)) next(); }, 8000);
+    let advanced=false; const next=()=>{ if(advanced)return; advanced=true; el.ontimeupdate=null;el.onended=null;el.onerror=null; edPvPlayClip(i+1); };
+    el.onended=next;
+    el.onerror=()=>{ if($("edPvInfo"))$("edPvInfo").textContent=`คลิป ${i+1} โหลดไม่ได้ (ข้าม)`; next(); };
+    el.ontimeupdate=()=>{ if(el.currentTime>=end) next(); };
+    const start=()=>{ try{el.currentTime=c.trim||0;}catch(e){} el.muted=false; const p=el.play(); if(p&&p.catch)p.catch(()=>{ el.muted=true; el.play().catch(()=>{}); }); };
+    if(el.readyState>=1) start(); else { el.onloadedmetadata=start; try{el.load();}catch(e){} }
+    // safety: never hang on a clip that won't decode
+    _edPv.timer=setTimeout(()=>{ if(!advanced && el.readyState<2) next(); }, 8000);
   } else {
-    v.pause(); v.style.display="none"; o.style.display="flex";
-    o.innerHTML = c.type==="text" ? `🔤 ${escapeHtml(c.text||'')}` : `<img src="${c.url}" style="max-width:100%;max-height:280px">`;
     _edPv.timer=setTimeout(()=>edPvPlayClip(i+1), (c.length||3)*1000);
   }
 }
 function edPvShow(i){   // show a single clip (paused) when selected
-  edPvStop(); const c=_edClips[i], v=$("edPvVideo"), o=$("edPvOverlay"); if(!c||!v)return;
-  if(c.type==="video"){ o.style.display="none"; v.style.display="block"; v.onloadedmetadata=()=>{try{v.currentTime=c.trim||0;}catch(e){}}; v.src=c.url; v.load(); }
-  else { v.pause(); v.style.display="none"; o.style.display="flex"; o.innerHTML=c.type==="text"?`🔤 ${escapeHtml(c.text||'')}`:`<img src="${c.url}" style="max-width:100%;max-height:280px">`; }
+  edPvStop(); edSyncStage(); edPvHideAll();
+  const c=_edClips[i], el=edStageEl(i); if(!c||!el)return;
+  el.style.display = (c.type==="text") ? "flex" : "block";
+  if(c.type==="video"){ const seek=()=>{try{el.currentTime=c.trim||0;}catch(e){}}; if(el.readyState>=1)seek(); else el.onloadedmetadata=seek; }
   if($("edPvInfo"))$("edPvInfo").textContent=`คลิป ${i+1}/${_edClips.length} — กด ▶ เล่นทั้งหมด`;
 }
 function edShowProps(i){
