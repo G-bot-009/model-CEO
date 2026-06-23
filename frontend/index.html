@@ -4588,7 +4588,7 @@ function edRenderMedia(){
   box.innerHTML = _edMedia.length ? _edMedia.map(m=>{
     const added = _edClips.some(c=>c.url===m.url);
     return `<div class="ed-media" draggable="true" data-mid="${m.id}" style="border:1px solid #1e293b;border-radius:8px;overflow:hidden;background:#0b1220;cursor:grab;position:relative">
-      ${added?'<span style="position:absolute;top:3px;left:3px;background:#16a34a;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:5px;z-index:1">เพิ่มแล้ว</span>':''}
+      ${added?'<span style="position:absolute;top:2px;right:2px;background:rgba(22,163,74,.92);color:#fff;font-size:8px;font-weight:700;line-height:1;padding:1px 3px;border-radius:4px;z-index:1">✓ ใช้</span>':''}
       ${m.type==="audio" ? `<div style="height:60px;display:flex;align-items:center;justify-content:center;font-size:24px">🎵</div>`
         : `<video src="${m.thumb||m.url}" muted style="width:100%;height:60px;object-fit:cover;background:#000"></video>`}
       <div style="padding:5px;display:flex;justify-content:space-between;align-items:center;gap:4px">
@@ -4671,10 +4671,15 @@ function edPvPlayClip(i){
   if(c.type==="video"){
     o.style.display="none"; v.style.display="block";
     const end=(c.trim||0)+(c.length||5);
-    v.onended=()=>edPvPlayClip(i+1);
-    v.onloadedmetadata=()=>{ try{v.currentTime=c.trim||0;}catch(e){} v.play().catch(()=>{}); };
-    v.ontimeupdate=()=>{ if(v.currentTime>=end){ v.ontimeupdate=null; edPvPlayClip(i+1); } };
+    let advanced=false; const next=()=>{ if(advanced)return; advanced=true; v.ontimeupdate=null;v.onended=null;v.onerror=null; edPvPlayClip(i+1); };
+    v.onended=next;
+    v.onerror=()=>{ if($("edPvInfo"))$("edPvInfo").textContent=`คลิป ${i+1} โหลดไม่ได้ (ข้าม)`; next(); };
+    v.onloadedmetadata=()=>{ try{v.currentTime=c.trim||0;}catch(e){}
+      const p=v.play(); if(p&&p.catch)p.catch(()=>{ v.muted=true; v.play().catch(()=>{}); }); };
+    v.ontimeupdate=()=>{ if(v.currentTime>=end) next(); };
     v.src=c.url; v.load();
+    // safety: if nothing loads within ~8s, skip to next so it never hangs
+    _edPv.timer=setTimeout(()=>{ if(!advanced && (v.readyState<2)) next(); }, 8000);
   } else {
     v.pause(); v.style.display="none"; o.style.display="flex";
     o.innerHTML = c.type==="text" ? `🔤 ${escapeHtml(c.text||'')}` : `<img src="${c.url}" style="max-width:100%;max-height:280px">`;
