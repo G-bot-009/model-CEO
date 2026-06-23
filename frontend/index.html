@@ -4733,13 +4733,27 @@ async function edPollPending(){
   edRenderList(d2.renders||[]);
   if(!(d2.renders||[]).some(v=>v.status==="pending")) edStopPoll();
 }
+function edBadUrl(u){
+  const low=u.toLowerCase();
+  // webpage links (not direct media files) — these won't play
+  if(/facebook\.com|youtube\.com|youtu\.be|tiktok\.com|instagram\.com|\/ads\/library/.test(low)) return "page";
+  // not a recognizable media file and not our own hosted file
+  const isFile=/\.(mp4|mov|webm|m4v|gif|jpe?g|png|webp)(\?|$)/.test(low);
+  const isOurs=low.includes("/api/files/")||low.includes("/api/editor/clip/");
+  if(!isFile && !isOurs) return "maybe";
+  return "";
+}
 $("edAddUrl") && $("edAddUrl").addEventListener("click",()=>{
   const u=$("edClipUrl").value.trim(); if(!u){toastNote("วาง URL ก่อน","#f59e0b");return;}
-  edAddMedia({type:"video",url:u,thumb:u,name:u.split("/").pop()}); $("edClipUrl").value=""; toastNote("เพิ่มเข้าคลังสื่อแล้ว","#22c55e");
+  const bad=edBadUrl(u);
+  if(bad==="page"){ toastNote("❌ นี่คือลิงก์หน้าเว็บ ไม่ใช่ไฟล์วิดีโอ — ต้องใช้ลิงก์ที่ลงท้าย .mp4 หรือกด 📁 อัปโหลดจากเครื่อง","#ef4444"); return; }
+  if(bad==="maybe" && !confirm("URL นี้อาจไม่ใช่ไฟล์วิดีโอโดยตรง (.mp4) — เพิ่มต่อไหม?")) return;
+  edAddMedia({type:"video",url:u,thumb:u,name:u.split("/").pop()||"video"}); $("edClipUrl").value=""; toastNote("เพิ่มเข้าคลังสื่อแล้ว","#22c55e");
 });
 $("edAddImg") && $("edAddImg").addEventListener("click",()=>{
   const u=$("edClipUrl").value.trim(); if(!u){toastNote("วาง URL รูปก่อน","#f59e0b");return;}
-  edAddMedia({type:"image",url:u,thumb:"",name:u.split("/").pop()}); $("edClipUrl").value=""; toastNote("เพิ่มรูปเข้าคลังสื่อแล้ว","#22c55e");
+  if(edBadUrl(u)==="page"){ toastNote("❌ นี่คือลิงก์หน้าเว็บ ไม่ใช่ไฟล์รูป — ใช้ลิงก์ .jpg/.png หรือ 📁 อัปโหลด","#ef4444"); return; }
+  edAddMedia({type:"image",url:u,thumb:"",name:u.split("/").pop()||"image"}); $("edClipUrl").value=""; toastNote("เพิ่มรูปเข้าคลังสื่อแล้ว","#22c55e");
 });
 $("edAddText") && $("edAddText").addEventListener("click",()=>{
   const t=prompt("พิมพ์ข้อความที่จะแสดง:"); if(!t)return;
