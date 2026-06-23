@@ -504,7 +504,7 @@
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
       <div class="menu-group" id="studioGroup">
-        <div class="menu-item ads-parent" id="studioParent" data-view="imageai">
+        <div class="menu-item ads-parent" id="studioParent">
           <span class="ico">🎨</span><span class="label">Studio AI</span>
           <span class="caret" id="studioCaret">▸</span>
         </div>
@@ -6619,7 +6619,7 @@ $("menu").addEventListener("click", e => {
   const it=e.target.closest(".menu-item");
   if (it){
     if (it.id === "adsParent") $("adsGroup").classList.add("open");
-    if (it.id === "studioParent") $("studioGroup").classList.add("open");
+    if (it.id === "studioParent"){ $("studioGroup").classList.add("open"); showView("imageai"); return; }
     showView(it.dataset.view);
   }
 });
