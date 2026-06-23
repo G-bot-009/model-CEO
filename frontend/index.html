@@ -40,7 +40,7 @@
   .menu-item .caret { margin-left:auto; font-size:11px; transition:transform .18s; opacity:.7; }
   .menu-group.open .ads-parent .caret { transform:rotate(90deg); }
   .submenu { overflow:hidden; max-height:0; transition:max-height .22s ease; }
-  .menu-group.open .submenu { max-height:140px; }
+  .menu-group.open .submenu { max-height:320px; }
   .submenu-item { padding-left:30px; font-size:13px; }
   .submenu-item .ico { font-size:15px; }
   .vs-switch { position:relative; display:inline-block; width:42px; height:24px; flex:0 0 auto; }
@@ -503,11 +503,19 @@
       <div class="menu-item" data-view="automation"><span class="ico">🚀</span><span class="label">Automation</span></div>
       <div class="menu-item" data-view="tradebot"><span class="ico">🤖</span><span class="label">บอทเทรด (Bot)</span></div>
       <div class="menu-item" data-view="content"><span class="ico">🏭</span><span class="label">โรงงานคอนเทนต์</span></div>
-      <div class="menu-item" data-view="music"><span class="ico">🎵</span><span class="label">Music AI</span></div>
-      <div class="menu-item" data-view="imageai"><span class="ico">🖼️</span><span class="label">Image AI</span></div>
-      <div class="menu-item" data-view="veo"><span class="ico">🎬</span><span class="label">VEO AI</span></div>
-      <div class="menu-item" data-view="editor"><span class="ico">🎞️</span><span class="label">Video Editor AI</span></div>
-      <div class="menu-item" data-view="model3d"><span class="ico">🧊</span><span class="label">3D Model AI</span></div>
+      <div class="menu-group" id="studioGroup">
+        <div class="menu-item ads-parent" id="studioParent" data-view="imageai">
+          <span class="ico">🎨</span><span class="label">Studio AI</span>
+          <span class="caret" id="studioCaret">▸</span>
+        </div>
+        <div class="submenu" id="studioSub">
+          <div class="menu-item submenu-item" data-view="music"><span class="ico">🎵</span><span class="label">Music AI</span></div>
+          <div class="menu-item submenu-item" data-view="imageai"><span class="ico">🖼️</span><span class="label">Image AI</span></div>
+          <div class="menu-item submenu-item" data-view="veo"><span class="ico">🎬</span><span class="label">VDO AI</span></div>
+          <div class="menu-item submenu-item" data-view="editor"><span class="ico">🎞️</span><span class="label">Video Editor AI</span></div>
+          <div class="menu-item submenu-item" data-view="model3d"><span class="ico">🧊</span><span class="label">3D Model AI</span></div>
+        </div>
+      </div>
       <div class="menu-item" data-view="bio"><span class="ico">🔗</span><span class="label">Bio Link Page</span></div>
       <div class="menu-group" id="adsGroup">
         <div class="menu-item ads-parent" id="adsParent" data-view="ads">
@@ -1391,9 +1399,9 @@
         </div>
       </section>
 
-      <!-- VEO AI (video) -->
+      <!-- VDO AI (video) -->
       <section class="view" id="view-veo">
-        <h2 style="color:#fff;margin:0 0 6px">🎬 VEO AI — มาร์เก็ตเพลสโมเดลวิดีโอ</h2>
+        <h2 style="color:#fff;margin:0 0 6px">🎬 VDO AI — มาร์เก็ตเพลสโมเดลวิดีโอ</h2>
         <p style="color:#94a3b8;font-size:13px;margin:0 0 14px">เลือกโมเดลแล้วกด Generate · ตัวที่ <b style="color:#34d399">✅ เชื่อมได้</b> ใช้คีย์ของคุณเองสร้างได้เลย · ตัว <b style="color:#fbbf24">🔒 ยังเชื่อมไม่ได้</b> มีเหตุผลกำกับ · วิดีโอใช้เวลา ~1-3 นาที (ระบบเช็กให้อัตโนมัติ)</p>
 
         <div id="veoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
@@ -1538,7 +1546,7 @@
             <label class="qbtn" style="font-weight:700;cursor:pointer">📁 อัปโหลด
               <input id="edUpload" type="file" accept="video/*,image/*" multiple style="display:none">
             </label>
-            <button class="qbtn" id="edPickVeo" style="font-weight:700;color:#a78bfa">🎬 ดึงจาก VEO AI</button>
+            <button class="qbtn" id="edPickVeo" style="font-weight:700;color:#a78bfa">🎬 ดึงจาก VDO AI</button>
           </div>
           <div id="edClips" style="display:flex;flex-direction:column;gap:6px"></div>
         </div>
@@ -1574,7 +1582,7 @@
               <select id="edVoLang" class="numfld" style="width:auto;margin:0">
                 <option value="th">ไทย</option><option value="en">อังกฤษ</option><option value="zh-CN">จีน</option><option value="ja">ญี่ปุ่น</option><option value="ko">เกาหลี</option>
               </select>
-              <span style="font-size:11px;color:#64748b">ตั้งคีย์เสียงที่เมนู VEO AI → 🔊 ตั้งเสียงพากย์</span>
+              <span style="font-size:11px;color:#64748b">ตั้งคีย์เสียงที่เมนู VDO AI → 🔊 ตั้งเสียงพากย์</span>
             </div>
           </div>
 
@@ -1590,7 +1598,7 @@
             <button class="send" id="edAiRender" style="padding:10px 18px">✨ ให้ AI ตัดต่อ + เรนเดอร์</button>
             <button class="qbtn" id="edRender" style="font-weight:700;background:#7c3aed;color:#fff;border-color:#7c3aed">🎬 เรนเดอร์ (trim+ซับ+พากย์)</button>
           </div>
-          <div style="font-size:11px;color:#64748b;margin-top:8px">⚠️ ต้องมีคีย์ Shotstack · คลิปจาก VEO AI ดึงให้อัตโนมัติ · trim/ซับ/เสียงพากย์ ใช้กับปุ่ม 🎬 เรนเดอร์ · เรนเดอร์ ~1-3 นาที</div>
+          <div style="font-size:11px;color:#64748b;margin-top:8px">⚠️ ต้องมีคีย์ Shotstack · คลิปจาก VDO AI ดึงให้อัตโนมัติ · trim/ซับ/เสียงพากย์ ใช้กับปุ่ม 🎬 เรนเดอร์ · เรนเดอร์ ~1-3 นาที</div>
         </div>
 
         <div class="panel"><h3>🎞️ วิดีโอที่ตัดต่อแล้ว</h3>
@@ -4184,7 +4192,7 @@ $("iaGo").addEventListener("click", async () => {
   else { toastNote("สร้างภาพสำเร็จ 🖼️","#22c55e"); $("iaPrompt").value=""; loadImageAI(); }
 });
 
-/* ---------- VEO AI (video marketplace) ---------- */
+/* ---------- VDO AI (video marketplace) ---------- */
 let VEO_PROVS = {};
 let _veoPollTimer = null;
 function veoStopPoll(){ if (_veoPollTimer){ clearInterval(_veoPollTimer); _veoPollTimer = null; } }
@@ -4416,7 +4424,7 @@ async function vsPollPending(){
     veoStopPoll(); _vsPendingId = null;
     $("vsPreview").innerHTML = `<div style="width:100%"><div style="color:#34d399;font-weight:800;margin-bottom:8px">✅ วิดีโอเสร็จแล้ว!</div><video src="${v.video_ref}" controls autoplay playsinline style="width:100%;max-height:400px;border-radius:12px;background:#000"></video><a class="qbtn" href="${v.video_ref}" download="goffice-veo.mp4" style="display:inline-block;margin-top:8px;font-weight:700">⬇️ ดาวน์โหลด</a></div>`;
     toastNote("✅ วิดีโอเสร็จแล้ว! เล่นได้เลย","#22c55e");
-    try { if (typeof logNotif==="function") logNotif("#22c55e","VEO AI","สร้างวิดีโอเสร็จแล้ว ✅"); } catch(e){}
+    try { if (typeof logNotif==="function") logNotif("#22c55e","VDO AI","สร้างวิดีโอเสร็จแล้ว ✅"); } catch(e){}
   } else if (v.status === "error"){
     veoStopPoll(); _vsPendingId = null;
     $("vsPreview").innerHTML = '<div style="text-align:center;color:#fca5a5;padding:24px">❌ สร้างไม่สำเร็จ — ลองใหม่ หรือเช็กคีย์/เครดิตของผู้ให้บริการ</div>';
@@ -4578,7 +4586,7 @@ function edRenderClips(){
           ${c.type==="video"?`<label>เสียงคลิป(0-1)<input type="number" class="ed-f numfld" data-i="${i}" data-k="volume" value="${c.volume!=null?c.volume:1}" min="0" max="1" step="0.1" style="margin:2px 0 0;padding:4px"></label>`:""}
         </div>
       </details>
-    </div>`).join("") : '<div style="color:#64748b;font-size:13px">ยังไม่มีคลิป — เพิ่ม วิดีโอ/รูป/ข้อความ หรือดึงจาก VEO AI</div>';
+    </div>`).join("") : '<div style="color:#64748b;font-size:13px">ยังไม่มีคลิป — เพิ่ม วิดีโอ/รูป/ข้อความ หรือดึงจาก VDO AI</div>';
   box.querySelectorAll(".ed-up").forEach(x=>x.onclick=()=>{const i=+x.dataset.i;[_edClips[i-1],_edClips[i]]=[_edClips[i],_edClips[i-1]];edRenderClips();});
   box.querySelectorAll(".ed-dn").forEach(x=>x.onclick=()=>{const i=+x.dataset.i;[_edClips[i+1],_edClips[i]]=[_edClips[i],_edClips[i+1]];edRenderClips();});
   box.querySelectorAll(".ed-rm").forEach(x=>x.onclick=()=>{_edClips.splice(+x.dataset.i,1);edRenderClips();});
@@ -4649,8 +4657,8 @@ $("edMusicUp") && $("edMusicUp").addEventListener("change",async e=>{
   catch(err){ toastNote("❌ "+err.message,"#ef4444"); }
 });
 $("edPickVeo") && $("edPickVeo").addEventListener("click",()=>{
-  if(!_edVeoClips.length){toastNote("ยังไม่มีคลิปใน VEO AI — สร้างก่อน","#f59e0b");return;}
-  $("genTitle").textContent="🎬 เลือกคลิปจาก VEO AI";
+  if(!_edVeoClips.length){toastNote("ยังไม่มีคลิปใน VDO AI — สร้างก่อน","#f59e0b");return;}
+  $("genTitle").textContent="🎬 เลือกคลิปจาก VDO AI";
   $("genBody").innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto;margin-bottom:12px">` +
     _edVeoClips.map((c,i)=>`<label for="veop${i}" style="display:flex;gap:10px;align-items:center;padding:8px;border:1px solid #e5e7eb;border-radius:10px;cursor:pointer;background:#fafafa">
       <input id="veop${i}" type="checkbox" class="veopick" value="${c.url}" data-label="${escapeHtml((c.prompt||'clip').slice(0,30))}" style="width:18px;height:18px;min-width:18px;margin:0;flex:0 0 auto;accent-color:#7c3aed">
@@ -5515,6 +5523,7 @@ function showView(v) {
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   document.querySelectorAll(".menu-item").forEach(m => m.classList.toggle("active", m.dataset.view===v));
   if (["ads","adlibrary","autopost"].includes(v)) $("adsGroup") && $("adsGroup").classList.add("open");
+  if (["music","imageai","veo","editor","model3d"].includes(v)) $("studioGroup") && $("studioGroup").classList.add("open");
   $("topTitle").textContent = { dashboard:"Dashboard", console:"CEO Console", jarvis:"Jarvis", agents:"Agents", agent:"รายงานเอเจนต์", tasks:"Tasks", connectors:"Connectors", social:"Social", inbox:"Social Inbox", automation:"Automation", tradebot:"บอทเทรด", content:"โรงงานคอนเทนต์", music:"Music AI", imageai:"Image AI", bio:"Bio Link Page", ads:"Ads Manager", projects:"โปรเจกต์", history:"History", tokens:"Token Usage", admin:"Admin Usage", n8n:"n8n Automations", settings:"Settings" }[v] || v;
   if (v === "console") { loadConsole(); refreshPause(); }
   if (v === "jarvis") loadJarvis();
@@ -5796,7 +5805,7 @@ async function alSearch(){
     alRenderImitate(out, rr);
   });
 }
-/* render imitate result with one-click buttons to Image AI / VEO AI */
+/* render imitate result with one-click buttons to Image AI / VDO AI */
 let _alLastImgPrompt = "", _alLastVidPrompt = "";
 function alRenderImitate(el, rr){
   if (rr.result){ el.innerHTML = mdLite(rr.result); return; }   // fallback raw text
@@ -5820,7 +5829,7 @@ function alMakeImage(prompt){
 }
 function alMakeVideo(prompt){
   showView("veo");
-  setTimeout(() => { if ($("veoPrompt")){ $("veoPrompt").value = prompt; $("veoPrompt").scrollIntoView({behavior:"smooth",block:"center"}); } toastNote("ใส่พรอมต์ใน VEO AI ให้แล้ว — กด 🎬 สร้างวิดีโอ ได้เลย","#22c55e"); }, 200);
+  setTimeout(() => { if ($("veoPrompt")){ $("veoPrompt").value = prompt; $("veoPrompt").scrollIntoView({behavior:"smooth",block:"center"}); } toastNote("ใส่พรอมต์ใน VDO AI ให้แล้ว — กด 🎬 สร้างวิดีโอ ได้เลย","#22c55e"); }, 200);
 }
 $("alGo").addEventListener("click", alSearch);
 $("alQuery").addEventListener("keydown", e => { if (e.key==="Enter") alSearch(); });
@@ -6604,10 +6613,15 @@ async function saveSettings(partial){ try { await postJSON("/api/settings", part
 
 /* ---------- wire up ---------- */
 $("menu").addEventListener("click", e => {
-  // clicking the caret only toggles the Ads dropdown (no navigation)
+  // clicking a caret only toggles its dropdown (no navigation)
   if (e.target.id === "adsCaret"){ e.stopPropagation(); $("adsGroup").classList.toggle("open"); return; }
+  if (e.target.id === "studioCaret"){ e.stopPropagation(); $("studioGroup").classList.toggle("open"); return; }
   const it=e.target.closest(".menu-item");
-  if (it){ if (it.id === "adsParent") $("adsGroup").classList.add("open"); showView(it.dataset.view); }
+  if (it){
+    if (it.id === "adsParent") $("adsGroup").classList.add("open");
+    if (it.id === "studioParent") $("studioGroup").classList.add("open");
+    showView(it.dataset.view);
+  }
 });
 // gear = dropdown (Admin Usage + Settings)
 $("gear").addEventListener("click", (e) => { e.stopPropagation(); $("gearMenu").hidden = !$("gearMenu").hidden; });
