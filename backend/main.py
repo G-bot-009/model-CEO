@@ -264,6 +264,13 @@ async def index(request: Request):
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
+@app.get("/tailwind.css")
+async def tailwind_css() -> FileResponse:
+    # precompiled static Tailwind (replaces the heavy runtime CDN compiler)
+    return FileResponse(FRONTEND_DIR / "tailwind.css", media_type="text/css",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/login")
 async def login_page() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "login.html")
