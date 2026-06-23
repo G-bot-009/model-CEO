@@ -1591,7 +1591,8 @@
             <div class="fld"><label style="font-size:12px;color:#94a3b8">คุณภาพ</label>
               <select id="edQuality" class="numfld" style="margin:4px 0 0"><option value="">มาตรฐาน</option><option value="low">ต่ำ (เร็ว/ถูก)</option><option value="medium">กลาง</option><option value="high">สูง</option></select></div>
           </div>
-          <input id="edBrief" class="numfld" style="width:100%;margin:10px 0 0" placeholder="โจทย์สำหรับ AI ตัดต่อ เช่น 'คลิปโปรโมทร้านกาแฟ สนุก จังหวะเร็ว มีคำบรรยาย'">
+          <input id="edBrief" class="numfld" style="width:100%;margin:10px 0 6px" placeholder="โจทย์สำหรับ AI ตัดต่อ เช่น 'คลิปโปรโมทร้านกาแฟ สนุก จังหวะเร็ว มีคำบรรยาย'">
+          <button class="send" id="edAiRender2" style="padding:9px 18px">✨ ให้ AI ตัดต่อตามโจทย์นี้ + เรนเดอร์</button>
 
           <div style="background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:12px;margin-top:12px">
             <div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:8px">🎙️ เสียงพากย์ทับวิดีโอ (ElevenLabs/Neural)</div>
@@ -4748,6 +4749,7 @@ async function edDoRender(useAi){
   toastNote("เริ่มเรนเดอร์แล้ว 🎬 รอ 1-3 นาที","#22c55e"); loadEditor();
 }
 $("edAiRender") && $("edAiRender").addEventListener("click",()=>edDoRender(true));
+$("edAiRender2") && $("edAiRender2").addEventListener("click",()=>edDoRender(true));
 $("edRender") && $("edRender").addEventListener("click",()=>edDoRender(false));
 
 /* ---------- 3D Model AI (Meshy) ---------- */
