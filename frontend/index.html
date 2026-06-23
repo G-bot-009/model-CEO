@@ -1573,8 +1573,11 @@
               <button class="qbtn ed-tb" id="edTbDel" title="ลบคลิป" style="color:#f87171" disabled>🗑️</button>
             </span>
           </div>
-          <div style="font-size:11px;color:#64748b;margin-bottom:6px">ลากเรียงลำดับ · ลากสื่อจากคลังมาวาง · คลิกคลิปเพื่อเลือก/แก้</div>
-          <div id="edClips" style="display:flex;gap:0;overflow-x:auto;min-height:104px;padding:8px;border:2px dashed #334155;border-radius:12px;align-items:stretch;background:#070b14"></div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:6px">ลากเรียงลำดับ · ลากสื่อจากคลังมาวาง · คลิกคลิปเพื่อเลือก/แก้ · ความกว้าง = ความยาวคลิป</div>
+          <div id="edTrack" style="overflow-x:auto;border:2px dashed #334155;border-radius:12px;background:#070b14;padding:8px 10px 12px">
+            <div id="edRuler" style="position:relative;height:16px;margin-bottom:5px;min-width:100%"></div>
+            <div id="edClips" style="position:relative;display:flex;gap:0;min-height:86px;align-items:stretch;min-width:100%"></div>
+          </div>
         </div>
 
         <div class="panel"><details><summary style="cursor:pointer;font-weight:800;color:#fff;list-style:none">⚙️ ตั้งค่าเพิ่มเติม (คีย์ / เพลง / พากย์ / ซับ / Output)</summary>
@@ -4570,6 +4573,7 @@ async function veoPollPending(){
 
 /* ---------- Video Editor AI (Shotstack) ---------- */
 let _edClips = [], _edPollTimer = null, _edVeoClips = [], _edMedia = [], _edSel = -1, _edMid = 0;
+const ED_PPS = 44;   // timeline scale: pixels per second (CapCut-style time ruler)
 const ED_TRANS = ["none","fade","slideLeft","slideRight","slideUp","slideDown","wipeLeft","wipeRight","zoom","carouselLeft","reveal"];
 const ED_EFFECTS = ["none","zoomIn","zoomOut","slideLeft","slideRight","slideUp","slideDown"];
 const ED_FILTERS = ["none","boost","contrast","darken","greyscale","lighten","muted","negative"];
@@ -4616,7 +4620,7 @@ function edTimelineAddByMid(mid){
 function edRenderClips(){
   const box = $("edClips");
   box.innerHTML = _edClips.length ? _edClips.map((c,i)=>{
-    const w = Math.max(90, Math.min(220, Math.round((c.length||5)*22)));  // width ~ duration (filmstrip)
+    const w = Math.max(28, Math.round((c.length||5)*ED_PPS));  // width = exact duration on the time scale
     const strip = c.type==="text"
       ? `<div style="height:70px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#cbd5e1;text-align:center;padding:4px;background:#1e1b4b">🔤 ${escapeHtml((c.text||'').slice(0,40))}</div>`
       : c.type==="image"
@@ -4646,6 +4650,37 @@ function edRenderClips(){
   box.ondragover=e=>e.preventDefault();
   box.ondrop=e=>{e.preventDefault();const mid=e.dataTransfer.getData("mid");const t=e.dataTransfer.getData("tidx");
     if(mid)edTimelineAddByMid(+mid); else if(t!==""){const from=+t;const it=_edClips.splice(from,1)[0];_edClips.push(it);edRenderClips();}};
+  // playhead (CapCut-style) — a vertical line that moves along the time scale
+  if (_edClips.length){
+    const ph=document.createElement("div"); ph.id="edPlayhead";
+    ph.style.cssText="position:absolute;top:0;bottom:0;width:2px;background:#f43f5e;box-shadow:0 0 6px rgba(244,63,94,.8);pointer-events:none;z-index:5;display:none";
+    box.appendChild(ph);
+    edRenderRuler();
+    edMovePlayhead(edClipStartTime(_edSel>=0?_edSel:0));
+  } else { edRenderRuler(); }
+}
+function edTotalDur(){ return _edClips.reduce((s,c)=>s+(c.length||(c.type==="video"?5:3)),0); }
+function edClipStartTime(i){ let t=0; for(let k=0;k<i&&k<_edClips.length;k++) t+=_edClips[k].length||(_edClips[k].type==="video"?5:3); return t; }
+function edRenderRuler(){
+  const r=$("edRuler"); if(!r) return;
+  const total=Math.max(edTotalDur(), 1);
+  const width=Math.round(total*ED_PPS);
+  // label spacing: aim for a tick label roughly every ~55px
+  const step=Math.max(1, Math.round(55/ED_PPS));   // seconds between labels
+  let html=`<div style="position:absolute;left:0;top:0;height:100%;width:${width}px;border-top:1px solid #1e293b"></div>`;
+  for(let s=0;s<=Math.ceil(total);s++){
+    const x=s*ED_PPS, major=(s%step===0);
+    html+=`<div style="position:absolute;left:${x}px;top:0;width:1px;height:${major?'10px':'5px'};background:${major?'#475569':'#1e293b'}"></div>`;
+    if(major){ const mm=String(Math.floor(s/60)).padStart(2,'0'), ss=String(s%60).padStart(2,'0');
+      html+=`<div style="position:absolute;left:${x+3}px;top:0;font-size:9px;color:#64748b;white-space:nowrap">${mm}:${ss}</div>`; }
+  }
+  r.style.width=width+"px"; r.innerHTML=html;
+}
+function edMovePlayhead(t){
+  const ph=$("edPlayhead"); if(!ph) return;
+  const x=Math.round((t||0)*ED_PPS);
+  ph.style.left=x+"px"; ph.style.display="block";
+  if(_edPv.playing){ const tr=$("edTrack"); if(tr && (x<tr.scrollLeft+40 || x>tr.scrollLeft+tr.clientWidth-40)) tr.scrollLeft=Math.max(0,x-tr.clientWidth/2); }
 }
 /* ----- sequential preview player (CapCut-style: each clip preloaded in its own stacked element) ----- */
 let _edPv = { playing:false, idx:0, timer:null, built:false, sig:"" };
@@ -4682,15 +4717,25 @@ function edStageEl(i){ const s=$("edPvStage"); return s?s.querySelector(`[data-c
 function edPvHideAll(){ const s=$("edPvStage"); if(!s)return; s.querySelectorAll("[data-ci]").forEach(el=>{ el.style.display="none"; if(el.tagName==="VIDEO"){try{el.pause();}catch(e){}} }); }
 function edPvStop(){
   _edPv.playing=false; if(_edPv.timer){clearTimeout(_edPv.timer);_edPv.timer=null;}
+  if(_edPv.phTimer){clearInterval(_edPv.phTimer);_edPv.phTimer=null;}
   const cur=edStageEl(_edPv.idx); if(cur&&cur.tagName==="VIDEO"){cur.ontimeupdate=null;cur.onended=null;cur.onerror=null;try{cur.pause();}catch(e){}}
   if($("edPvPlay"))$("edPvPlay").textContent="▶ เล่นทั้งหมด";
 }
-function edPvPlayFrom(s){ if(!_edClips.length)return; edSyncStage(); edPvStop(); _edPv.playing=true; if($("edPvPlay"))$("edPvPlay").textContent="⏸ หยุด"; edPvPlayClip(s||0); }
+function edTickPlayhead(){
+  const c=_edClips[_edPv.idx]; if(!c){return;}
+  let local=0;
+  if(c.type==="video"){ const el=edStageEl(_edPv.idx); local=el?Math.max(0,(el.currentTime||0)-(c.trim||0)):0; }
+  else { local=(performance.now()-(_edPv.clipT0||performance.now()))/1000; }
+  local=Math.min(local, c.length||(c.type==="video"?5:3));
+  edMovePlayhead(edClipStartTime(_edPv.idx)+local);
+}
+function edPvPlayFrom(s){ if(!_edClips.length)return; edSyncStage(); edPvStop(); _edPv.playing=true; if($("edPvPlay"))$("edPvPlay").textContent="⏸ หยุด";
+  _edPv.phTimer=setInterval(edTickPlayhead, 80); edPvPlayClip(s||0); }
 function edPvPlayClip(i){
   if(!_edPv.playing) return;
   if(_edPv.timer){clearTimeout(_edPv.timer);_edPv.timer=null;}
   if(i>=_edClips.length){ edPvStop(); if($("edPvInfo"))$("edPvInfo").textContent="จบแล้ว ✓"; return; }
-  _edPv.idx=i; _edSel=i; edRenderClips();
+  _edPv.idx=i; _edSel=i; _edPv.clipT0=performance.now(); edRenderClips();
   edPvHideAll();
   const c=_edClips[i], el=edStageEl(i);
   if($("edPvInfo"))$("edPvInfo").textContent=`กำลังเล่นคลิป ${i+1}/${_edClips.length}`;
