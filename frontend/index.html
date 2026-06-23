@@ -1523,39 +1523,57 @@
 
       <!-- VIDEO EDITOR AI -->
       <section class="view" id="view-editor">
-        <div class="panel" style="background:linear-gradient(135deg,#7c3aed,#db2777);border:none">
-          <h3 style="color:#fff;margin:0">🎞️ Video Editor AI — ตัดต่อวิดีโอด้วย AI (แบบ CapCut/Premiere)</h3>
-          <p style="color:#f5d0fe;font-size:13px;margin:8px 0 0">เอาคลิปมาต่อกัน + ใส่ทรานสิชัน/ข้อความ/เพลง → ให้ AI จัดไทม์ไลน์ให้ → เรนเดอร์เป็น MP4 (ผ่าน Shotstack)</p>
+        <div class="panel" style="background:linear-gradient(135deg,#7c3aed,#db2777);border:none;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <h3 style="color:#fff;margin:0">🎞️ Video Editor AI</h3>
+            <p style="color:#f5d0fe;font-size:12px;margin:4px 0 0">ลากคลิปจากคลังสื่อ → วางในไทม์ไลน์ → ตัดต่อ → เรนเดอร์ <span id="edKeyState" style="margin-left:6px"></span></p>
+          </div>
+          <select id="edAspect" class="numfld" style="width:auto;margin:0"><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></select>
+          <button class="qbtn" id="edKeyBtn" style="font-weight:700">🔑 คีย์</button>
+          <button class="qbtn" id="edAiRender" style="font-weight:700">✨ AI ตัดต่อ</button>
+          <button class="send" id="edRender" style="padding:9px 18px">🎬 เรนเดอร์</button>
         </div>
 
-        <div class="panel"><h3>🔑 คีย์ Shotstack
-            <span style="flex:1"></span><span id="edKeyState" style="font-size:12px"></span></h3>
-          <p style="color:#94a3b8;font-size:13px;margin:2px 0 8px">สมัครฟรีที่ <a href="https://dashboard.shotstack.io/register" target="_blank" rel="noopener" style="color:#a5b4fc">shotstack.io</a> → เอา API key มาใส่ · โหมด <b>stage</b> = ทดสอบฟรี (มีลายน้ำ) · <b>v1</b> = ใช้จริง</p>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <!-- studio: media library + preview -->
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:14px;align-items:start" id="edStudioGrid">
+          <div class="panel" style="margin:0">
+            <h3 style="font-size:15px">📚 คลังสื่อ</h3>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+              <label class="qbtn" style="font-weight:700;cursor:pointer;flex:1;text-align:center">📁 อัปโหลด<input id="edUpload" type="file" accept="video/*,image/*,audio/*" multiple style="display:none"></label>
+              <button class="qbtn" id="edPickVeo" style="font-weight:700;color:#a78bfa">🎬 VDO AI</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-bottom:8px">
+              <input id="edClipUrl" class="numfld" style="flex:1;margin:0;padding:7px 9px;font-size:12px" placeholder="วาง URL...">
+              <button class="qbtn" id="edAddUrl" style="font-weight:700;padding:6px 10px">➕</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-bottom:10px">
+              <button class="qbtn" id="edAddImg" style="flex:1;font-size:12px">🖼️ รูป URL</button>
+              <button class="qbtn" id="edAddText" style="flex:1;font-size:12px">🔤 ข้อความ</button>
+            </div>
+            <div id="edMedia" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:420px;overflow:auto"></div>
+            <div style="font-size:11px;color:#64748b;margin-top:8px">ลากการ์ด หรือกด ➕ เพื่อใส่ในไทม์ไลน์</div>
+          </div>
+          <div class="panel" style="margin:0">
+            <h3 style="font-size:15px">▶️ พรีวิว</h3>
+            <div id="edPreview" style="background:#000;border-radius:10px;min-height:240px;display:flex;align-items:center;justify-content:center;color:#64748b">เลือกคลิปในไทม์ไลน์เพื่อดูพรีวิว</div>
+            <div id="edProps" style="margin-top:10px"></div>
+          </div>
+        </div>
+
+        <!-- timeline -->
+        <div class="panel" id="edTimelinePanel">
+          <h3 style="font-size:15px">🎬 ไทม์ไลน์ <span style="font-size:11px;color:#64748b;font-weight:400">— ลากเรียงลำดับ / ลากสื่อจากคลังมาวาง / คลิกเพื่อแก้</span></h3>
+          <div id="edClips" style="display:flex;gap:8px;overflow-x:auto;min-height:96px;padding:8px;border:2px dashed #334155;border-radius:12px;align-items:stretch"></div>
+        </div>
+
+        <div class="panel"><details><summary style="cursor:pointer;font-weight:800;color:#fff;list-style:none">⚙️ ตั้งค่าเพิ่มเติม (คีย์ / เพลง / พากย์ / ซับ / Output)</summary>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+            <span style="font-size:12px;color:#94a3b8">โหมด Shotstack:</span>
             <select id="edEnv" class="numfld" style="width:auto;margin:0"><option value="stage">stage (ทดสอบฟรี)</option><option value="v1">v1 (ใช้จริง)</option></select>
-            <button class="qbtn" id="edKeyBtn" style="font-weight:700">🔑 ใส่/แก้คีย์</button>
+            <span style="font-size:11px;color:#64748b">สมัครคีย์ฟรีที่ <a href="https://dashboard.shotstack.io/register" target="_blank" rel="noopener" style="color:#a5b4fc">shotstack.io</a></span>
           </div>
-        </div>
-
-        <div class="panel"><h3>🎬 คลิปในไทม์ไลน์ (เรียงตามลำดับ)</h3>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-            <input id="edClipUrl" class="numfld" style="flex:1;min-width:200px;margin:0" placeholder="วาง URL วิดีโอ/รูป แล้วกดเพิ่ม">
-            <button class="qbtn" id="edAddUrl" style="font-weight:700">➕ วิดีโอ</button>
-            <button class="qbtn" id="edAddImg" style="font-weight:700">🖼️ รูป</button>
-            <button class="qbtn" id="edAddText" style="font-weight:700">🔤 ข้อความ</button>
-            <label class="qbtn" style="font-weight:700;cursor:pointer">📁 อัปโหลด
-              <input id="edUpload" type="file" accept="video/*,image/*" multiple style="display:none">
-            </label>
-            <button class="qbtn" id="edPickVeo" style="font-weight:700;color:#a78bfa">🎬 ดึงจาก VDO AI</button>
-          </div>
-          <div id="edClips" style="display:flex;flex-direction:column;gap:6px"></div>
-        </div>
-
-        <div class="panel"><h3>⚙️ ตั้งค่าตัดต่อ</h3>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div class="fld"><label style="font-size:12px;color:#94a3b8">อัตราส่วน</label>
-              <select id="edAspect" class="numfld" style="margin:4px 0 0"><option value="16:9">16:9 แนวนอน</option><option value="9:16">9:16 แนวตั้ง (Reels)</option><option value="1:1">1:1 จัตุรัส</option></select></div>
-            <div class="fld"><label style="font-size:12px;color:#94a3b8">ทรานสิชัน fade</label>
+            <div class="fld"><label style="font-size:12px;color:#94a3b8">ทรานสิชัน fade (อัตโนมัติ)</label>
               <select id="edTrans" class="numfld" style="margin:4px 0 0"><option value="1">เปิด</option><option value="0">ปิด</option></select></div>
             <div class="fld"><label style="font-size:12px;color:#94a3b8">ข้อความ/พาดหัว (ไม่บังคับ)</label>
               <input id="edTitle" class="numfld" style="margin:4px 0 0" placeholder="เช่น โปรโมชั่นพิเศษ"></div>
@@ -1594,12 +1612,8 @@
             <textarea id="edSubText" class="numfld" style="width:100%;min-height:50px;margin:8px 0 0" placeholder="ข้อความซับ (เว้นว่าง = ใช้บทพากย์ หรือให้ AI เขียนจากโจทย์)"></textarea>
           </div>
 
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-            <button class="send" id="edAiRender" style="padding:10px 18px">✨ ให้ AI ตัดต่อ + เรนเดอร์</button>
-            <button class="qbtn" id="edRender" style="font-weight:700;background:#7c3aed;color:#fff;border-color:#7c3aed">🎬 เรนเดอร์ (trim+ซับ+พากย์)</button>
-          </div>
-          <div style="font-size:11px;color:#64748b;margin-top:8px">⚠️ ต้องมีคีย์ Shotstack · คลิปจาก VDO AI ดึงให้อัตโนมัติ · trim/ซับ/เสียงพากย์ ใช้กับปุ่ม 🎬 เรนเดอร์ · เรนเดอร์ ~1-3 นาที</div>
-        </div>
+          <div style="font-size:11px;color:#64748b;margin-top:10px">⚠️ ต้องมีคีย์ Shotstack · ปุ่ม 🎬 เรนเดอร์ ใช้ trim/ซับ/พากย์ทั้งหมด · ✨ AI ตัดต่อ ให้ AI จัดไทม์ไลน์ · เรนเดอร์ ~1-3 นาที</div>
+        </details></div>
 
         <div class="panel"><h3>🎞️ วิดีโอที่ตัดต่อแล้ว</h3>
           <div id="edRenders" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px"></div>
@@ -4535,65 +4549,100 @@ async function veoPollPending(){
 }
 
 /* ---------- Video Editor AI (Shotstack) ---------- */
-let _edClips = [], _edPollTimer = null, _edVeoClips = [];
+let _edClips = [], _edPollTimer = null, _edVeoClips = [], _edMedia = [], _edSel = -1, _edMid = 0;
+const ED_TRANS = ["none","fade","slideLeft","slideRight","slideUp","slideDown","wipeLeft","wipeRight","zoom","carouselLeft","reveal"];
+const ED_EFFECTS = ["none","zoomIn","zoomOut","slideLeft","slideRight","slideUp","slideDown"];
+const ED_FILTERS = ["none","boost","contrast","darken","greyscale","lighten","muted","negative"];
+const ED_POS = ["center","top","bottom","left","right","topLeft","topRight","bottomLeft","bottomRight"];
+const ED_FITS = ["crop","cover","contain","none"];
+const edIcon = (t)=> t==="image"?"🖼️":(t==="text"?"🔤":(t==="audio"?"🎵":"🎬"));
 function edStopPoll(){ if (_edPollTimer){ clearInterval(_edPollTimer); _edPollTimer = null; } }
 async function loadEditor(){
   let d; try { d = await (await fetch("/api/editor/board")).json(); } catch(e){ return; }
   _edVeoClips = d.clips || [];
+  // merge VDO clips into the media library (avoid dup by url)
+  (d.clips||[]).forEach(c => { if (!_edMedia.some(m=>m.url===c.url)) _edMedia.push({id:++_edMid, type:"video", url:c.url, thumb:c.thumb, name:(c.prompt||"VDO").slice(0,24)}); });
   $("edEnv").value = d.env || "stage";
-  $("edKeyState").textContent = d.has ? "✅ มีคีย์แล้ว" : "⚠️ ยังไม่มีคีย์";
-  $("edKeyState").style.color = d.has ? "#22c55e" : "#f59e0b";
-  edRenderClips();
-  edRenderList(d.renders || []);
+  $("edKeyState").textContent = d.has ? "✅ มีคีย์" : "⚠️ ยังไม่มีคีย์";
+  $("edKeyState").style.color = d.has ? "#86efac" : "#fde047";
+  edRenderMedia(); edRenderClips(); edRenderList(d.renders || []);
   edStopPoll();
   if ((d.renders||[]).some(v => v.status === "pending")) _edPollTimer = setInterval(edPollPending, 12000);
 }
+function edAddMedia(item){ item.id=++_edMid; _edMedia.unshift(item); edRenderMedia(); }
+function edRenderMedia(){
+  const box = $("edMedia"); if (!box) return;
+  box.innerHTML = _edMedia.length ? _edMedia.map(m=>`
+    <div class="ed-media" draggable="true" data-mid="${m.id}" style="border:1px solid #1e293b;border-radius:8px;overflow:hidden;background:#0b1220;cursor:grab">
+      ${m.type==="audio" ? `<div style="height:60px;display:flex;align-items:center;justify-content:center;font-size:24px">🎵</div>`
+        : `<video src="${m.thumb||m.url}" muted style="width:100%;height:60px;object-fit:cover;background:#000"></video>`}
+      <div style="padding:5px;display:flex;justify-content:space-between;align-items:center;gap:4px">
+        <span style="font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escapeHtml(m.name||"")}</span>
+        <button class="qbtn ed-madd" data-mid="${m.id}" style="font-size:11px;padding:2px 7px">➕</button>
+      </div>
+    </div>`).join("") : '<div style="color:#64748b;font-size:12px;grid-column:1/-1">ยังไม่มีสื่อ — อัปโหลด/ดึงจาก VDO AI</div>';
+  box.querySelectorAll(".ed-media").forEach(el=>el.addEventListener("dragstart",e=>e.dataTransfer.setData("mid",el.dataset.mid)));
+  box.querySelectorAll(".ed-madd").forEach(x=>x.onclick=()=>edTimelineAddByMid(+x.dataset.mid));
+}
+function edTimelineAddByMid(mid){
+  const m=_edMedia.find(x=>x.id===mid); if(!m)return;
+  if (m.type==="audio"){ $("edMusic").value=m.url; toastNote("ตั้งเป็นเพลงประกอบแล้ว 🎵","#22c55e"); return; }
+  _edClips.push(m.type==="image"?{type:"image",url:m.url,label:m.name,length:3}:{type:"video",url:m.url,label:m.name,length:5,trim:0});
+  edRenderClips();
+}
 function edRenderClips(){
   const box = $("edClips");
-  const TRANS = ["none","fade","slideLeft","slideRight","slideUp","slideDown","wipeLeft","wipeRight","zoom","carouselLeft","reveal"];
-  const EFFECTS = ["none","zoomIn","zoomOut","slideLeft","slideRight","slideUp","slideDown"];
-  const FILTERS = ["none","boost","contrast","darken","greyscale","lighten","muted","negative"];
-  const POS = ["center","top","bottom","left","right","topLeft","topRight","bottomLeft","bottomRight"];
-  const FITS = ["crop","cover","contain","none"];
-  const opt = (arr,sel)=>arr.map(v=>`<option value="${v}" ${v===sel?'selected':''}>${v}</option>`).join("");
-  const icon = (t)=> t==="image"?"🖼️":(t==="text"?"🔤":"🎬");
-  box.innerHTML = _edClips.length ? _edClips.map((c,i) => `
-    <div class="wf-row" style="flex-direction:column;align-items:stretch;gap:6px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span style="color:#cbd5e1;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i+1}. ${icon(c.type)} ${escapeHtml(c.label||c.text||c.url||"")}</span>
-        <span style="display:flex;gap:4px">
-          <button class="qbtn ed-up" data-i="${i}" ${i===0?'disabled':''}>↑</button>
-          <button class="qbtn ed-dn" data-i="${i}" ${i===_edClips.length-1?'disabled':''}>↓</button>
-          <button class="qbtn ed-rm" data-i="${i}" style="color:#f87171">✕</button>
-        </span>
+  box.innerHTML = _edClips.length ? _edClips.map((c,i)=>`
+    <div class="ed-block" draggable="true" data-i="${i}" style="flex:0 0 120px;border:2px solid ${i===_edSel?'#7c3aed':'#1e293b'};border-radius:10px;overflow:hidden;background:#0b1220;cursor:grab;position:relative">
+      ${c.type==="text"?`<div style="height:64px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#cbd5e1;text-align:center;padding:4px">🔤 ${escapeHtml((c.text||'').slice(0,30))}</div>`
+        : c.type==="image"?`<div style="height:64px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#111">🖼️</div>`
+        : `<video src="${c.url}" muted style="width:100%;height:64px;object-fit:cover;background:#000"></video>`}
+      <div style="padding:4px 6px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:10px;color:#94a3b8">${i+1} · ${c.length||5}s</span>
+        <button class="qbtn ed-rm" data-i="${i}" style="font-size:10px;padding:1px 5px;color:#f87171">✕</button>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;font-size:12px;color:#94a3b8;flex-wrap:wrap">
-        ${c.type==="video"?`✂️ ตัดเริ่มที่ <input type="number" class="ed-f numfld" data-i="${i}" data-k="trim" value="${c.trim||0}" min="0" step="0.5" style="width:64px;margin:0;padding:4px 6px">`:""}
-        ยาว(วิ) <input type="number" class="ed-f numfld" data-i="${i}" data-k="length" value="${c.length||5}" min="1" step="0.5" style="width:64px;margin:0;padding:4px 6px">
-        ${c.type==="text"?`ข้อความ <input class="ed-f numfld" data-i="${i}" data-k="text" value="${escapeHtml(c.text||'')}" style="width:160px;margin:0;padding:4px 6px">`:""}
-      </div>
-      <details style="font-size:12px;color:#94a3b8">
-        <summary style="cursor:pointer;list-style:none">⚙️ ขั้นสูง (ทรานสิชัน/เอฟเฟกต์/ฟิลเตอร์/ตำแหน่ง)</summary>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;margin-top:6px">
-          <label>ทรานสิชันเข้า<select class="ed-f numfld" data-i="${i}" data-k="transition_in" style="margin:2px 0 0;padding:4px">${opt(TRANS,c.transition_in||"none")}</select></label>
-          <label>ทรานสิชันออก<select class="ed-f numfld" data-i="${i}" data-k="transition_out" style="margin:2px 0 0;padding:4px">${opt(TRANS,c.transition_out||"none")}</select></label>
-          <label>เอฟเฟกต์<select class="ed-f numfld" data-i="${i}" data-k="effect" style="margin:2px 0 0;padding:4px">${opt(EFFECTS,c.effect||"none")}</select></label>
-          <label>ฟิลเตอร์<select class="ed-f numfld" data-i="${i}" data-k="filter" style="margin:2px 0 0;padding:4px">${opt(FILTERS,c.filter||"none")}</select></label>
-          <label>ตำแหน่ง<select class="ed-f numfld" data-i="${i}" data-k="position" style="margin:2px 0 0;padding:4px">${opt(POS,c.position||"center")}</select></label>
-          ${c.type!=="text"?`<label>การพอดี(fit)<select class="ed-f numfld" data-i="${i}" data-k="fit" style="margin:2px 0 0;padding:4px">${opt(FITS,c.fit||"crop")}</select></label>`:""}
-          <label>ขนาด scale<input type="number" class="ed-f numfld" data-i="${i}" data-k="scale" value="${c.scale||1}" min="0.1" max="3" step="0.1" style="margin:2px 0 0;padding:4px"></label>
-          <label>ความทึบ opacity<input type="number" class="ed-f numfld" data-i="${i}" data-k="opacity" value="${c.opacity!=null?c.opacity:1}" min="0" max="1" step="0.1" style="margin:2px 0 0;padding:4px"></label>
-          ${c.type==="video"?`<label>เสียงคลิป(0-1)<input type="number" class="ed-f numfld" data-i="${i}" data-k="volume" value="${c.volume!=null?c.volume:1}" min="0" max="1" step="0.1" style="margin:2px 0 0;padding:4px"></label>`:""}
-        </div>
-      </details>
-    </div>`).join("") : '<div style="color:#64748b;font-size:13px">ยังไม่มีคลิป — เพิ่ม วิดีโอ/รูป/ข้อความ หรือดึงจาก VDO AI</div>';
-  box.querySelectorAll(".ed-up").forEach(x=>x.onclick=()=>{const i=+x.dataset.i;[_edClips[i-1],_edClips[i]]=[_edClips[i],_edClips[i-1]];edRenderClips();});
-  box.querySelectorAll(".ed-dn").forEach(x=>x.onclick=()=>{const i=+x.dataset.i;[_edClips[i+1],_edClips[i]]=[_edClips[i],_edClips[i+1]];edRenderClips();});
-  box.querySelectorAll(".ed-rm").forEach(x=>x.onclick=()=>{_edClips.splice(+x.dataset.i,1);edRenderClips();});
-  box.querySelectorAll(".ed-f").forEach(x=>x.onchange=()=>{
-    const i=+x.dataset.i, k=x.dataset.k, t=x.type;
-    _edClips[i][k] = (t==="number") ? (parseFloat(x.value)||0) : x.value;
+    </div>`).join("") : '<div style="color:#64748b;font-size:13px;margin:auto">ลากสื่อจากคลังมาวางที่นี่ หรือกด ➕ บนการ์ดสื่อ</div>';
+  box.querySelectorAll(".ed-block").forEach(el=>{
+    el.addEventListener("dragstart",e=>e.dataTransfer.setData("tidx",el.dataset.i));
+    el.addEventListener("dragover",e=>e.preventDefault());
+    el.addEventListener("drop",e=>{e.preventDefault();e.stopPropagation();const t=e.dataTransfer.getData("tidx");const mid=e.dataTransfer.getData("mid");const to=+el.dataset.i;
+      if(t!==""){const from=+t;const it=_edClips.splice(from,1)[0];_edClips.splice(to,0,it);_edSel=to;edRenderClips();}
+      else if(mid){edTimelineAddByMid(+mid);}});
+    el.addEventListener("click",e=>{ if(e.target.classList.contains("ed-rm"))return; _edSel=+el.dataset.i; edRenderClips(); edShowProps(_edSel); });
   });
+  box.querySelectorAll(".ed-rm").forEach(x=>x.onclick=(e)=>{e.stopPropagation();const i=+x.dataset.i;_edClips.splice(i,1);if(_edSel>=_edClips.length)_edSel=-1;edRenderClips();edShowProps(_edSel);});
+  if (_edSel>=0 && _edSel<_edClips.length) edShowProps(_edSel); else { if($("edProps"))$("edProps").innerHTML=""; if($("edPreview"))$("edPreview").innerHTML='<span style="color:#64748b">เลือกคลิปในไทม์ไลน์เพื่อดูพรีวิว</span>'; }
+  box.ondragover=e=>e.preventDefault();
+  box.ondrop=e=>{e.preventDefault();const mid=e.dataTransfer.getData("mid");const t=e.dataTransfer.getData("tidx");
+    if(mid)edTimelineAddByMid(+mid); else if(t!==""){const from=+t;const it=_edClips.splice(from,1)[0];_edClips.push(it);edRenderClips();}};
+}
+function edShowProps(i){
+  const c=_edClips[i]; if(!c){return;}
+  const pv=$("edPreview");
+  if(pv){
+    pv.innerHTML = c.type==="text"?`<div style="color:#fff;font-size:22px;text-align:center;padding:20px">🔤 ${escapeHtml(c.text||'')}</div>`
+      : c.type==="image"?`<div style="color:#94a3b8;padding:30px">🖼️ ${escapeHtml(c.label||c.url||'')}</div>`
+      : `<video src="${c.url}" controls playsinline style="max-width:100%;max-height:300px;border-radius:8px"></video>`;
+  }
+  const opt=(arr,sel)=>arr.map(v=>`<option value="${v}" ${v===sel?'selected':''}>${v}</option>`).join("");
+  let h=`<div style="font-weight:700;color:#fff;font-size:13px;margin-bottom:8px">⚙️ แก้คลิปที่ ${i+1} (${edIcon(c.type)})</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">`;
+  if(c.type==="text") h+=`<label style="font-size:12px;color:#94a3b8;grid-column:1/-1">ข้อความ<input class="ed-f numfld" data-i="${i}" data-k="text" value="${escapeHtml(c.text||'')}" style="margin:2px 0 0;padding:5px"></label>`;
+  if(c.type==="video") h+=`<label style="font-size:12px;color:#94a3b8">✂️ ตัดเริ่มที่(วิ)<input type="number" class="ed-f numfld" data-i="${i}" data-k="trim" value="${c.trim||0}" min="0" step="0.5" style="margin:2px 0 0;padding:5px"></label>`;
+  h+=`<label style="font-size:12px;color:#94a3b8">ยาว(วิ)<input type="number" class="ed-f numfld" data-i="${i}" data-k="length" value="${c.length||5}" min="1" step="0.5" style="margin:2px 0 0;padding:5px"></label>
+    <label style="font-size:12px;color:#94a3b8">ทรานสิชันเข้า<select class="ed-f numfld" data-i="${i}" data-k="transition_in" style="margin:2px 0 0;padding:5px">${opt(ED_TRANS,c.transition_in||"none")}</select></label>
+    <label style="font-size:12px;color:#94a3b8">ทรานสิชันออก<select class="ed-f numfld" data-i="${i}" data-k="transition_out" style="margin:2px 0 0;padding:5px">${opt(ED_TRANS,c.transition_out||"none")}</select></label>
+    <label style="font-size:12px;color:#94a3b8">เอฟเฟกต์<select class="ed-f numfld" data-i="${i}" data-k="effect" style="margin:2px 0 0;padding:5px">${opt(ED_EFFECTS,c.effect||"none")}</select></label>
+    <label style="font-size:12px;color:#94a3b8">ฟิลเตอร์<select class="ed-f numfld" data-i="${i}" data-k="filter" style="margin:2px 0 0;padding:5px">${opt(ED_FILTERS,c.filter||"none")}</select></label>
+    <label style="font-size:12px;color:#94a3b8">ตำแหน่ง<select class="ed-f numfld" data-i="${i}" data-k="position" style="margin:2px 0 0;padding:5px">${opt(ED_POS,c.position||"center")}</select></label>`;
+  if(c.type!=="text") h+=`<label style="font-size:12px;color:#94a3b8">fit<select class="ed-f numfld" data-i="${i}" data-k="fit" style="margin:2px 0 0;padding:5px">${opt(ED_FITS,c.fit||"crop")}</select></label>`;
+  h+=`<label style="font-size:12px;color:#94a3b8">scale<input type="number" class="ed-f numfld" data-i="${i}" data-k="scale" value="${c.scale||1}" min="0.1" max="3" step="0.1" style="margin:2px 0 0;padding:5px"></label>
+    <label style="font-size:12px;color:#94a3b8">opacity<input type="number" class="ed-f numfld" data-i="${i}" data-k="opacity" value="${c.opacity!=null?c.opacity:1}" min="0" max="1" step="0.1" style="margin:2px 0 0;padding:5px"></label>`;
+  if(c.type==="video") h+=`<label style="font-size:12px;color:#94a3b8">เสียง(0-1)<input type="number" class="ed-f numfld" data-i="${i}" data-k="volume" value="${c.volume!=null?c.volume:1}" min="0" max="1" step="0.1" style="margin:2px 0 0;padding:5px"></label>`;
+  h+=`</div>`;
+  const pr=$("edProps"); if(pr){ pr.innerHTML=h;
+    pr.querySelectorAll(".ed-f").forEach(x=>x.onchange=()=>{const k=x.dataset.k,t=x.type;_edClips[i][k]=(t==="number")?(parseFloat(x.value)||0):x.value;if(k==="length"||k==="text")edRenderClips();});
+  }
 }
 function edRenderList(rs){
   $("edRenders").innerHTML = rs.length ? rs.map(t=>{
@@ -4620,11 +4669,11 @@ async function edPollPending(){
 }
 $("edAddUrl") && $("edAddUrl").addEventListener("click",()=>{
   const u=$("edClipUrl").value.trim(); if(!u){toastNote("วาง URL ก่อน","#f59e0b");return;}
-  _edClips.push({type:"video",url:u,label:u.split("/").pop(),length:5,trim:0}); $("edClipUrl").value=""; edRenderClips();
+  edAddMedia({type:"video",url:u,thumb:u,name:u.split("/").pop()}); $("edClipUrl").value=""; toastNote("เพิ่มเข้าคลังสื่อแล้ว","#22c55e");
 });
 $("edAddImg") && $("edAddImg").addEventListener("click",()=>{
   const u=$("edClipUrl").value.trim(); if(!u){toastNote("วาง URL รูปก่อน","#f59e0b");return;}
-  _edClips.push({type:"image",url:u,label:u.split("/").pop(),length:3}); $("edClipUrl").value=""; edRenderClips();
+  edAddMedia({type:"image",url:u,thumb:"",name:u.split("/").pop()}); $("edClipUrl").value=""; toastNote("เพิ่มรูปเข้าคลังสื่อแล้ว","#22c55e");
 });
 $("edAddText") && $("edAddText").addEventListener("click",()=>{
   const t=prompt("พิมพ์ข้อความที่จะแสดง:"); if(!t)return;
@@ -4644,11 +4693,11 @@ $("edUpload") && $("edUpload").addEventListener("change",async e=>{
   for(const f of files){
     try{
       const url=await edUploadFile(f);
-      const isImg=f.type.startsWith("image/");
-      _edClips.push(isImg?{type:"image",url,label:f.name,length:3}:{type:"video",url,label:f.name,length:5,trim:0});
+      const t=f.type.startsWith("image/")?"image":(f.type.startsWith("audio/")?"audio":"video");
+      edAddMedia({type:t,url,thumb:t==="video"?url:"",name:f.name});
     }catch(err){ toastNote("❌ "+f.name+": "+err.message,"#ef4444"); }
   }
-  edRenderClips(); toastNote("อัปโหลดเสร็จ ✅","#22c55e");
+  toastNote("อัปโหลดเข้าคลังสื่อแล้ว ✅","#22c55e");
 });
 $("edMusicUp") && $("edMusicUp").addEventListener("change",async e=>{
   const f=e.target.files[0]; e.target.value=""; if(!f)return;
@@ -4666,7 +4715,7 @@ $("edPickVeo") && $("edPickVeo").addEventListener("click",()=>{
       <span style="font-size:13px;color:#374151;line-height:1.4;flex:1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${escapeHtml((c.prompt||'คลิป').slice(0,60))}</span>
     </label>`).join("") +
     `</div><button class="save" id="veopick_add" style="width:100%">➕ เพิ่มที่เลือก</button>`;
-  $("veopick_add").onclick=()=>{document.querySelectorAll(".veopick:checked").forEach(x=>_edClips.push({type:"video",url:x.value,label:x.dataset.label,length:5,trim:0}));closeModal("genModal");edRenderClips();};
+  $("veopick_add").onclick=()=>{document.querySelectorAll(".veopick:checked").forEach(x=>_edClips.push({type:"video",url:x.value,label:x.dataset.label,length:5,trim:0}));closeModal("genModal");_edSel=-1;edRenderClips();};
   openModal("genModal");
 });
 $("edKeyBtn") && $("edKeyBtn").addEventListener("click",()=>{
