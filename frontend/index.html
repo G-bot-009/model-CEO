@@ -3713,6 +3713,7 @@ function tbStartWalletTicker(){ tbStopWalletTicker(); _twTimer = setInterval(loa
 function tbStopWalletTicker(){ if (_twTimer){ clearInterval(_twTimer); _twTimer = null; } }
 function _money(n){ return "$"+(Number(n)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 async function loadTradeWallet(){
+  if (document.hidden) return;
   let w; try { w = await (await fetch("/api/trading/wallet")).json(); } catch(e){ return; }
   if (!$("twBal")) return;
   const equity = (w.equity!=null) ? w.equity : w.balance;
@@ -3886,6 +3887,7 @@ async function toggleBotMarks(id, ex, sym){
   _marksTimer = setInterval(refreshBotMarks, 8000);
 }
 async function refreshBotMarks(){
+  if (document.hidden) return;
   if (!_marks) return;
   const { id, ex, sym, series } = _marks;
   const iv = ($("tbChartInt") && $("tbChartInt").value) || "5";
@@ -4445,6 +4447,7 @@ function vsRenderingHtml(){
     <div style="font-size:12px;margin-top:4px">ผ่านไป ${sec} วินาที · ปกติ ~1-3 นาที (ไม่ต้องปิดหน้านี้ก็ได้)</div></div>`;
 }
 async function vsPollPending(){
+  if (document.hidden) return;
   if (!_vsPendingId){ veoStopPoll(); return; }
   $("vsPreview").innerHTML = vsRenderingHtml();   // live elapsed timer
   let r; try { r = await postJSON("/api/veo/poll", { id:_vsPendingId }); } catch(e){ return; }
@@ -4555,6 +4558,7 @@ function veoRenderList(vids){
   list.querySelectorAll(".veo-del").forEach(x => x.onclick = async () => { await postJSON("/api/veo/delete",{id:+x.dataset.id}); loadVeo(); });
 }
 async function veoPollPending(){
+  if (document.hidden) return;   // skip polling while tab is in the background
   let d; try { d = await (await fetch("/api/veo/catalog")).json(); } catch(e){ return; }
   const pend = (d.videos||[]).filter(v => v.status === "pending");
   if (!pend.length){ veoStopPoll(); veoRenderList(d.videos||[]); return; }
@@ -4734,6 +4738,7 @@ function edRenderList(rs){
   $("edRenders").querySelectorAll(".ed-del").forEach(x=>x.onclick=async()=>{await postJSON("/api/editor/delete",{id:+x.dataset.id});loadEditor();});
 }
 async function edPollPending(){
+  if (document.hidden) return;
   let d; try { d=await (await fetch("/api/editor/board")).json(); } catch(e){ return; }
   const pend=(d.renders||[]).filter(v=>v.status==="pending");
   if(!pend.length){ edStopPoll(); edRenderList(d.renders||[]); return; }
@@ -4925,6 +4930,7 @@ function tdRenderList(models){
   $("tdList").querySelectorAll(".td-refine").forEach(x=>x.onclick=async()=>{const r=await postJSON("/api/3d/refine",{id:+x.dataset.id});if(r.error){toastNote("❌ "+r.error,"#ef4444");return;}toastNote("เริ่มใส่เท็กซ์เจอร์แล้ว ✨","#22c55e");loadM3d();});
 }
 async function tdPollPending(){
+  if (document.hidden) return;
   let d; try { d=await (await fetch("/api/3d/board")).json(); } catch(e){ return; }
   const pend=(d.models||[]).filter(m=>m.status==="pending");
   if(!pend.length){ tdStopPoll(); tdRenderList(d.models||[]); return; }
@@ -5854,7 +5860,7 @@ async function loadChatBot(silent){
   if (r.warn){ $("cbStatus").textContent = "⚠️ " + r.warn; $("cbStatus").style.color = "#fca5a5"; }
   else { $("cbStatus").textContent = (r.assistant?"🤖 ผู้ช่วยเปิด · ":"⚠️ ผู้ช่วยปิด · ") + (r.chat_id ? ("Chat ID: "+r.chat_id) : "เชื่อมแล้ว"); $("cbStatus").style.color = r.assistant?"#34d399":"#fbbf24"; }
   // auto-refresh on by default
-  if ($("cbAuto").checked && !_cbTimer) _cbTimer = setInterval(() => loadChatBot(true), 10000);
+  if ($("cbAuto").checked && !_cbTimer) _cbTimer = setInterval(() => { if(!document.hidden) loadChatBot(true); }, 10000);
 }
 async function cbSend(){
   const t = $("cbInput").value.trim(); if (!t) return;
@@ -5887,7 +5893,7 @@ $("cbClear").addEventListener("click", async () => {
 });
 $("cbAuto").addEventListener("change", e => {
   cbStopAuto();
-  if (e.target.checked) _cbTimer = setInterval(() => loadChatBot(true), 10000);
+  if (e.target.checked) _cbTimer = setInterval(() => { if(!document.hidden) loadChatBot(true); }, 10000);
 });
 
 /* ---------- Ad Library (สอดส่องคู่แข่ง) ---------- */
@@ -7148,8 +7154,16 @@ document.querySelectorAll(".modebtn").forEach(b => b.addEventListener("click", (
 }));
 
 /* clock + scheduled auto-pause check */
-setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
+setInterval(() => { if(!document.hidden) $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
 setInterval(checkSchedule, 30000);
+// when the tab regains focus, refresh whatever live view is open so it catches up immediately
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  const av = (document.querySelector(".view.active")||{}).id || "";
+  $("clock").textContent = new Date().toLocaleTimeString();
+  if (av === "view-chatbot" && $("cbAuto") && $("cbAuto").checked) loadChatBot(true);
+  if (av === "view-tradebot") loadTradeWallet();
+});
 setTimeout(checkSchedule, 2500);
 
 loadAgents().then(() => { renderUsage(); renderNotifs(); connect(); applyCompany(); refreshPause(); });
