@@ -4794,28 +4794,58 @@ $("edKeyBtn") && $("edKeyBtn").addEventListener("click",()=>{
   openModal("genModal");
 });
 $("edEnv") && $("edEnv").addEventListener("change",()=>postJSON("/api/editor/key",{env:$("edEnv").value}));
-async function edDoRender(useAi){
+async function edDoRender(useAi, ov){
+  ov = ov || {};
   if(!_edClips.length){toastNote("เพิ่มคลิปก่อน","#f59e0b");return;}
   const btn=useAi?$("edAiRender"):$("edRender"),o=btn.textContent;btn.disabled=true;btn.textContent="⏳ กำลังส่ง…";
+  const aspect = ov.aspect ?? $("edAspect").value;
+  const title  = (ov.title!=null?ov.title:$("edTitle").value).trim();
   let r;
   if(useAi){
     const b=await postJSON("/api/editor/ai-build",{brief:$("edBrief").value.trim(),clips:_edClips});
     if(b.error){btn.disabled=false;btn.textContent=o;toastNote("❌ "+b.error,"#ef4444");return;}
-    r=await postJSON("/api/editor/render",{timeline:b.timeline,aspect:$("edAspect").value,title:$("edTitle").value.trim()});
+    r=await postJSON("/api/editor/render",{timeline:b.timeline,aspect,title,
+      format:ov.format,fps:ov.fps,quality:ov.quality,resolution:ov.resolution});
   } else {
-    r=await postJSON("/api/editor/render",{clips:_edClips,aspect:$("edAspect").value,title:$("edTitle").value.trim(),
+    r=await postJSON("/api/editor/render",{clips:_edClips,aspect,title,
       music:$("edMusic").value.trim(),music_volume:$("edMusicVol").value,transition:$("edTrans").value==="1",
       voiceover_script:$("edVo").value.trim(),voice_lang:$("edVoLang").value,
       subtitles:$("edSubs").checked,subtitle_text:$("edSubText").value.trim(),
-      format:$("edFormat").value,fps:$("edFps").value,quality:$("edQuality").value});
+      format:ov.format ?? $("edFormat").value, fps:ov.fps ?? $("edFps").value,
+      quality:ov.quality ?? $("edQuality").value, resolution:ov.resolution});
   }
   btn.disabled=false;btn.textContent=o;
   if(r.error){ if(r.out_of_credits){showCreditPopup(r.service,r.error);} else toastNote("❌ "+r.error,"#ef4444"); return; }
   toastNote("เริ่มเรนเดอร์แล้ว 🎬 รอ 1-3 นาที","#22c55e"); loadEditor();
 }
-$("edAiRender") && $("edAiRender").addEventListener("click",()=>edDoRender(true));
-$("edAiRender2") && $("edAiRender2").addEventListener("click",()=>edDoRender(true));
-$("edRender") && $("edRender").addEventListener("click",()=>edDoRender(false));
+function edOpenRenderModal(useAi){
+  if(!_edClips.length){toastNote("เพิ่มคลิปก่อน","#f59e0b");return;}
+  const now=new Date(); const def=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+  const first=_edClips.find(c=>c.type!=="text");
+  const cover=first&&first.type==="video"?`<video src="${first.url}" muted style="width:90px;border-radius:8px;background:#000;float:right"></video>`:"";
+  $("genTitle").textContent="🎬 ตั้งค่าการส่งออก";
+  $("genBody").innerHTML=`
+    ${cover}
+    <label>ชื่อไฟล์</label><input id="rx_name" value="${def}">
+    <label>อัตราส่วน</label><select id="rx_aspect"><option value="16:9">16:9 แนวนอน</option><option value="9:16">9:16 แนวตั้ง</option><option value="1:1">1:1 จัตุรัส</option></select>
+    <label>ความละเอียด</label><select id="rx_reso"><option value="">มาตรฐาน</option><option value="sd">SD</option><option value="hd">HD (720p)</option><option value="1080" selected>1080p (Full HD)</option></select>
+    <label>คุณภาพ</label><select id="rx_quality"><option value="">แนะนำ (มาตรฐาน)</option><option value="low">ต่ำ (เร็ว/ถูก)</option><option value="medium">กลาง</option><option value="high">สูง</option></select>
+    <label>อัตราเฟรม (FPS)</label><select id="rx_fps"><option value="">อัตโนมัติ</option><option value="24">24</option><option value="25">25</option><option value="30" selected>30</option></select>
+    <label>รูปแบบไฟล์</label><select id="rx_format"><option value="mp4">MP4</option><option value="webm">WebM</option><option value="gif">GIF</option></select>
+    <button class="save" id="rx_go" style="width:100%;margin-top:14px">🎬 เรนเดอร์</button>`;
+  $("rx_aspect").value=$("edAspect").value;
+  $("rx_go").onclick=()=>{
+    const ov={ aspect:$("rx_aspect").value, title:$("rx_name").value.trim(),
+      resolution:$("rx_reso").value, quality:$("rx_quality").value, fps:$("rx_fps").value, format:$("rx_format").value };
+    $("edAspect").value=ov.aspect;
+    closeModal("genModal");
+    edDoRender(!!useAi, ov);
+  };
+  openModal("genModal");
+}
+$("edAiRender") && $("edAiRender").addEventListener("click",()=>edOpenRenderModal(true));
+$("edAiRender2") && $("edAiRender2").addEventListener("click",()=>edOpenRenderModal(true));
+$("edRender") && $("edRender").addEventListener("click",()=>edOpenRenderModal(false));
 /* clip toolbar (acts on selected clip) */
 function edSelClip(){ return (_edSel>=0&&_edSel<_edClips.length)?_edClips[_edSel]:null; }
 $("edTbDup") && $("edTbDup").addEventListener("click",()=>{const c=edSelClip();if(!c)return;_edClips.splice(_edSel+1,0,{...c});_edSel++;edRenderClips();edRenderMedia();});
