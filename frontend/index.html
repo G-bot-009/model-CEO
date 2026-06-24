@@ -1393,10 +1393,13 @@
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
             <button class="qbtn" id="iaAttachBtn" style="font-size:13px">📎 แนบภาพเพื่อแก้ไข</button>
             <input type="file" id="iaAttachFile" accept="image/*" style="display:none">
-            <div id="iaAttachWrap" style="display:none;align-items:center;gap:8px">
-              <img id="iaAttachThumb" style="height:44px;width:44px;object-fit:cover;border-radius:8px;border:1px solid #334155">
-              <span id="iaAttachName" style="font-size:11px;color:#94a3b8;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-              <button class="qbtn" id="iaAttachClear" style="font-size:11px;padding:2px 7px;color:#f87171">✕ เอาออก</button>
+            <div id="iaAttachWrap" style="display:none;flex-direction:column;gap:6px">
+              <img id="iaAttachThumb" title="คลิกเพื่อดูภาพใหญ่" style="max-height:220px;max-width:100%;width:auto;object-fit:contain;border-radius:10px;border:1px solid #334155;background:#0b1220;cursor:zoom-in;display:block">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:11px;color:#6ee7b7">📎 ภาพต้นฉบับที่จะแก้</span>
+                <span id="iaAttachName" style="font-size:11px;color:#94a3b8;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+                <button class="qbtn" id="iaAttachClear" style="font-size:11px;padding:2px 7px;color:#f87171">✕ เอาออก</button>
+              </div>
             </div>
           </div>
           <button class="send" id="iaGo" style="padding:10px 20px">🖌️ สร้างภาพ</button>
@@ -4242,6 +4245,7 @@ function iaSetEditImg(dataUri, name){
   $("iaGo").textContent = has ? "✏️ แก้ไขภาพ" : "🖌️ สร้างภาพ";
 }
 $("iaAttachBtn").addEventListener("click", () => $("iaAttachFile").click());
+$("iaAttachThumb").addEventListener("click", () => { if(_iaEditImg) openLightbox(`<img src="${_iaEditImg}">`, "ภาพต้นฉบับที่จะแก้"); });
 $("iaAttachClear").addEventListener("click", () => { $("iaAttachFile").value=""; iaSetEditImg("",""); });
 $("iaAttachFile").addEventListener("change", e => {
   const f = e.target.files && e.target.files[0]; if(!f) return;
