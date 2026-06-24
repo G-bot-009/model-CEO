@@ -370,18 +370,32 @@ def init_master() -> None:
             );
             """
         )
+        # record of Terms-of-Service acceptance (version + when + from where)
+        ucols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+        for col in ("tos_version", "tos_accepted_at", "tos_ip"):
+            if col not in ucols:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
 
 
 def _hash_pw(pw: str) -> str:
     return hashlib.sha256(((pw or "") + "|goffice-user").encode()).hexdigest()
 
 
-def user_create(email: str, password: str, name: str = "") -> int:
+def user_create(email: str, password: str, name: str = "",
+                 tos_version: str = "", tos_ip: str = "") -> int:
     with _master_conn() as c:
         cur = c.execute(
-            "INSERT INTO users (email, pass_hash, name, created_at) VALUES (?,?,?,?)",
-            ((email or "").strip().lower(), _hash_pw(password), (name or "").strip(), _now()))
+            "INSERT INTO users (email, pass_hash, name, created_at, tos_version, tos_accepted_at, tos_ip) "
+            "VALUES (?,?,?,?,?,?,?)",
+            ((email or "").strip().lower(), _hash_pw(password), (name or "").strip(), _now(),
+             tos_version or None, _now() if tos_version else None, tos_ip or None))
         return int(cur.lastrowid)
+
+
+def user_accept_tos(uid: int, version: str, ip: str = "") -> None:
+    with _master_conn() as c:
+        c.execute("UPDATE users SET tos_version=?, tos_accepted_at=?, tos_ip=? WHERE id=?",
+                  (version, _now(), ip or None, int(uid)))
 
 
 def user_set_password(uid: int, password: str) -> None:

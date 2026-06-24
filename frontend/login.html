@@ -45,6 +45,12 @@
       <label class="block text-sm font-medium text-[#1C2E1E] mb-1">รหัสผ่าน</label>
       <input id="lg_pass" type="password" autocomplete="current-password" placeholder="••••••"
         class="w-full px-4 py-3 rounded-xl bg-white border border-[#E2E6E1] text-[#1C2E1E] mb-5 outline-none focus:border-[#1C2E1E] transition-colors" />
+      <label id="rowTos" for="lg_tos" style="display:none" class="flex items-start gap-2 mb-4 text-xs text-[#1C2E1E] cursor-pointer">
+        <input id="lg_tos" type="checkbox" class="mt-0.5 shrink-0" />
+        <span>ฉันยอมรับ <a href="/terms" target="_blank" rel="noopener" class="underline">ข้อกำหนดการใช้งาน</a>
+          และ <a href="/privacy" target="_blank" rel="noopener" class="underline">นโยบายความเป็นส่วนตัว</a>
+          — ใช้บริการอย่างถูกกฎหมาย ห้ามพนัน/ผิดกฎหมาย และรับผิดชอบเนื้อหาของตนเอง</span>
+      </label>
       <button type="submit"
         class="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-[#1C2E1E] text-white font-medium shadow-md hover:opacity-90 transition-opacity">
         <span id="lg_btn_label">เข้าสู่ระบบ</span>
@@ -92,6 +98,7 @@
     const off = "flex-1 py-2 rounded-full text-[#738273]";
     tabL.className = m==="login"?on:off; tabS.className = m==="signup"?on:off;
     document.getElementById("rowName").style.display = m==="signup"?"block":"none";
+    document.getElementById("rowTos").style.display = m==="signup"?"flex":"none";
     document.getElementById("lg_btn_label").textContent = m==="signup"?"สมัครสมาชิก":"เข้าสู่ระบบ";
     document.getElementById("lg_pass").autocomplete = m==="signup"?"new-password":"current-password";
     document.getElementById("lg_hint").textContent = m==="signup"
@@ -106,11 +113,15 @@
     const email = document.getElementById("lg_user").value.trim();
     const password = document.getElementById("lg_pass").value;
     const name = document.getElementById("lg_name").value.trim();
+    const acceptTos = document.getElementById("lg_tos").checked;
+    if (mode==="signup" && !acceptTos){
+      errEl.textContent = "กรุณายอมรับข้อกำหนดการใช้งานก่อนสมัคร"; errEl.style.display = "block"; return;
+    }
     const url = mode==="signup" ? "/api/signup" : "/api/login";
     try {
       const r = await fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, username: email, password, name })
+        body: JSON.stringify({ email, username: email, password, name, accept_tos: acceptTos })
       });
       const d = await r.json();
       if (r.ok && d.ok) { window.location.href = "/"; }
