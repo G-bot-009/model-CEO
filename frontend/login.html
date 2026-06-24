@@ -63,29 +63,38 @@
 </div>
 
 <script>
-  /* background video: desktop mouse-scrubbing + mobile autoplay */
+  /* background video: desktop = smooth mouse-position scrubbing (eased), mobile = autoplay */
   const video = document.getElementById("bgvid");
-  let prevX = null, targetTime = 0, seeking = false;
+  let targetTime = 0, curTime = 0, seeking = false, rafOn = false;
   function onMove(e){
-    if (window.innerWidth < 1024) return;
-    if (!video.duration) return;
-    if (prevX === null) { prevX = e.clientX; return; }
-    const delta = e.clientX - prevX; prevX = e.clientX;
-    targetTime += (delta / window.innerWidth) * 0.8 * video.duration;
-    targetTime = Math.max(0, Math.min(video.duration, targetTime));
-    if (!seeking) { seeking = true; try { video.currentTime = targetTime; } catch(_){} }
+    if (window.innerWidth < 1024 || !video.duration) return;
+    // map mouse X (absolute position) → timeline — predictable, no drift
+    const x = Math.max(0, Math.min(1, e.clientX / window.innerWidth));
+    targetTime = x * video.duration;
+    if (!rafOn){ rafOn = true; requestAnimationFrame(tick); }
+  }
+  function tick(){
+    if (!video.duration){ rafOn = false; return; }
+    curTime += (targetTime - curTime) * 0.12;          // ease toward target for a smooth glide
+    const done = Math.abs(targetTime - curTime) < 0.012;
+    if (done) curTime = targetTime;
+    if (!seeking){                                       // only issue a new seek once the last finished
+      seeking = true;
+      try { video.currentTime = curTime; } catch(_){}
+    }
+    if (!done) requestAnimationFrame(tick); else rafOn = false;
   }
   video.addEventListener("seeked", () => {
     seeking = false;
-    if (Math.abs(video.currentTime - targetTime) > 0.01) { try { video.currentTime = targetTime; seeking = true; } catch(_){} }
+    if (rafOn && Math.abs(targetTime - curTime) > 0.012){ requestAnimationFrame(tick); }
   });
   function setupPlayback(){
     if (window.innerWidth < 1024) { video.autoplay = true; video.muted = true; video.play().catch(()=>{}); }
-    else { try { video.pause(); video.currentTime = 0; } catch(_){} }
+    else { try { video.pause(); video.currentTime = 0; curTime = targetTime = 0; } catch(_){} }
   }
   video.addEventListener("loadedmetadata", setupPlayback);
   window.addEventListener("mousemove", onMove);
-  window.addEventListener("resize", () => { prevX = null; setupPlayback(); });
+  window.addEventListener("resize", setupPlayback);
 
   /* login / signup */
   const form = document.getElementById("loginForm");

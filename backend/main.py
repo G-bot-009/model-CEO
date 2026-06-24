@@ -331,9 +331,10 @@ async def index(request: Request):
 
 @app.get("/tailwind.css")
 async def tailwind_css() -> FileResponse:
-    # precompiled static Tailwind (replaces the heavy runtime CDN compiler)
+    # precompiled static Tailwind. Revalidate (ETag) so CSS updates show on
+    # refresh; unchanged loads still return a tiny 304.
     return FileResponse(FRONTEND_DIR / "tailwind.css", media_type="text/css",
-                        headers={"Cache-Control": "public, max-age=86400"})
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 @app.get("/login")
