@@ -1402,8 +1402,28 @@
               </div>
             </div>
           </div>
+          <div style="border:1px solid #1e293b;border-radius:12px;padding:12px;margin:4px 0 10px;background:#0b1220">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <b style="color:#e2e8f0;font-size:13px">⚙️ ขนาดภาพ (Output)</b>
+              <span style="flex:1"></span>
+              <div id="iaRatioPrev" style="width:46px;height:46px;border:1px solid #334155;border-radius:6px;background:#0f172a;display:flex;align-items:center;justify-content:center">
+                <div id="iaRatioBox" style="width:30px;height:30px;background:#22d3ee33;border:1.5px solid #22d3ee;border-radius:3px"></div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:5px">อัตราส่วน</div>
+            <div id="iaAspectRow" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px">
+              <label style="font-size:11px;color:#94a3b8">ความละเอียด
+                <select id="iaReso" class="numfld" style="margin-left:6px;padding:4px 8px;width:auto">
+                  <option value="1K" selected>1K</option>
+                  <option value="2K">2K</option>
+                </select>
+              </label>
+              <span style="font-size:12px;color:#cbd5e1">ขนาด: <b id="iaSizeOut" style="color:#fff">1024 × 1024 px</b></span>
+            </div>
+          </div>
           <button class="send" id="iaGo" style="padding:10px 20px">🖌️ สร้างภาพ</button>
-          <div id="iaGoNote" style="font-size:11px;color:#64748b;margin-top:8px">สร้างจริงต้องมีคีย์ + เครดิตของผู้ให้บริการ · ภาพขนาด 1024×1024 · แนบภาพเพื่อให้ AI แก้จากของเดิม (รองรับทั้ง Gemini / OpenAI / Stability)</div>
+          <div id="iaGoNote" style="font-size:11px;color:#64748b;margin-top:8px">สร้างจริงต้องมีคีย์ + เครดิตของผู้ให้บริการ · แนบภาพเพื่อให้ AI แก้จากของเดิม · ขนาดจริงขึ้นกับ provider (Stability/Gemini รองรับอัตราส่วนตรง · OpenAI ปรับเป็นแนวตั้ง/นอน/จัตุรัส)</div>
         </div>
 
         <div class="panel"><h3>🖼️ ภาพที่สร้างไว้</h3>
@@ -4254,11 +4274,41 @@ $("iaAttachFile").addEventListener("change", e => {
   rd.onload = () => iaSetEditImg(rd.result, f.name);
   rd.readAsDataURL(f);
 });
+/* ---------- Output size (aspect ratio + resolution) ---------- */
+const IA_RATIOS = [
+  {ar:"1:1",  hint:"จัตุรัส/ฟีด"}, {ar:"4:5", hint:"ฟีดแนวตั้ง"}, {ar:"9:16", hint:"สตอรี่/รีลส์"},
+  {ar:"16:9", hint:"แบนเนอร์/ปก"}, {ar:"3:2", hint:"ภาพถ่าย"}, {ar:"2:3", hint:"โปสเตอร์"},
+  {ar:"4:3", hint:""}, {ar:"3:4", hint:""}, {ar:"5:4", hint:""}, {ar:"21:9", hint:"ไวด์"},
+];
+let _iaAspect = "1:1";
+function iaRenderRatios(){
+  const row = $("iaAspectRow"); if(!row) return;
+  row.innerHTML = IA_RATIOS.map(r=>{
+    const on = r.ar===_iaAspect;
+    return `<button class="ia-ar" data-ar="${r.ar}" title="${r.hint}" style="font-size:12px;padding:5px 10px;border-radius:8px;cursor:pointer;border:1px solid ${on?'#22d3ee':'#334155'};background:${on?'#0e7490':'#0f172a'};color:${on?'#fff':'#cbd5e1'};font-weight:${on?'700':'500'}">${r.ar}</button>`;
+  }).join("");
+  row.querySelectorAll(".ia-ar").forEach(b=>b.onclick=()=>{ _iaAspect=b.dataset.ar; iaRenderRatios(); iaUpdateSize(); });
+}
+function iaUpdateSize(){
+  const [w,h] = _iaAspect.split(":").map(Number);
+  // preview box
+  const box=$("iaRatioBox");
+  if(box){ const max=38; let bw,bh; if(w>=h){ bw=max; bh=Math.round(max*h/w);} else { bh=max; bw=Math.round(max*w/h);} box.style.width=bw+"px"; box.style.height=bh+"px"; }
+  // output px: longest side = resolution base
+  const base = ($("iaReso") && $("iaReso").value==="2K") ? 2048 : 1024;
+  let ow,oh; if(w>=h){ ow=base; oh=Math.round(base*h/w);} else { oh=base; ow=Math.round(base*w/h);}
+  // round to multiple of 8 (nicer for models)
+  ow=Math.round(ow/8)*8; oh=Math.round(oh/8)*8;
+  if($("iaSizeOut")) $("iaSizeOut").textContent = `${ow} × ${oh} px`;
+}
+$("iaReso") && $("iaReso").addEventListener("change", iaUpdateSize);
+iaRenderRatios(); iaUpdateSize();
+
 $("iaGo").addEventListener("click", async () => {
   const prompt = $("iaPrompt").value.trim();
   if (!prompt){ toastNote(_iaEditImg?"บอกด้วยว่าจะแก้ภาพยังไง":"ใส่คำอธิบายภาพก่อน","#f59e0b"); return; }
   const b=$("iaGo"),o=b.textContent;b.disabled=true;b.textContent=_iaEditImg?"⏳ กำลังแก้ไขภาพ…":"⏳ กำลังสร้างภาพ…";
-  const r=await postJSON("/api/imageai/generate",{prompt, image:_iaEditImg});
+  const r=await postJSON("/api/imageai/generate",{prompt, image:_iaEditImg, aspect:_iaAspect, resolution:($("iaReso")?$("iaReso").value:"1K")});
   b.disabled=false;b.textContent=o;
   if(r.error) toastNote("❌ "+r.error,"#ef4444");
   else { toastNote(_iaEditImg?"แก้ไขภาพสำเร็จ ✏️":"สร้างภาพสำเร็จ 🖼️","#22c55e"); $("iaPrompt").value=""; $("iaAttachFile").value=""; iaSetEditImg("",""); loadImageAI(); }

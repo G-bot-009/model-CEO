@@ -2511,9 +2511,12 @@ async def imageai_generate(p: dict) -> dict:
     cfg = _media_cfg("image")
     if not cfg["key"]:
         return {"error": "ยังไม่ได้ใส่คีย์ Image AI — กด 🔑 ใส่คีย์ ก่อน"}
+    aspect = (p.get("aspect") or "").strip()
+    resolution = (p.get("resolution") or "1K").strip()
     try:
         im = await __import__("asyncio").to_thread(
-            media.generate_image, cfg["provider"], cfg["model"], cfg["key"], prompt, image)
+            media.generate_image, cfg["provider"], cfg["model"], cfg["key"], prompt, image,
+            aspect, resolution)
         b64 = (im.get("b64") or "").strip()
         if len(b64) < 100:
             return {"error": "ภาพที่ได้ว่างเปล่า — ลองใหม่หรือเปลี่ยน provider"}
