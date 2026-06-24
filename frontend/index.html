@@ -1388,10 +1388,19 @@
           </div>
         </div>
 
-        <div class="panel"><h3>🎨 สร้างภาพใหม่</h3>
-          <textarea id="iaPrompt" class="numfld" style="width:100%;min-height:70px;margin:0 0 8px" placeholder="อธิบายภาพที่อยากได้ เช่น 'โปสเตอร์โปรโมชั่นกาแฟเย็น สดใส มินิมอล' หรือ 'โลโก้แมวน่ารัก โทนพาสเทล'"></textarea>
+        <div class="panel"><h3>🎨 สร้างภาพใหม่ / แก้ไขภาพ</h3>
+          <textarea id="iaPrompt" class="numfld" style="width:100%;min-height:70px;margin:0 0 8px" placeholder="อธิบายภาพที่อยากได้ เช่น 'โปสเตอร์โปรโมชั่นกาแฟเย็น สดใส มินิมอล' — หรือถ้าแนบภาพ ให้บอกว่าจะแก้ยังไง เช่น 'เปลี่ยนพื้นหลังเป็นชายหาด ใส่ข้อความ SALE 50%'"></textarea>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <button class="qbtn" id="iaAttachBtn" style="font-size:13px">📎 แนบภาพเพื่อแก้ไข</button>
+            <input type="file" id="iaAttachFile" accept="image/*" style="display:none">
+            <div id="iaAttachWrap" style="display:none;align-items:center;gap:8px">
+              <img id="iaAttachThumb" style="height:44px;width:44px;object-fit:cover;border-radius:8px;border:1px solid #334155">
+              <span id="iaAttachName" style="font-size:11px;color:#94a3b8;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+              <button class="qbtn" id="iaAttachClear" style="font-size:11px;padding:2px 7px;color:#f87171">✕ เอาออก</button>
+            </div>
+          </div>
           <button class="send" id="iaGo" style="padding:10px 20px">🖌️ สร้างภาพ</button>
-          <div style="font-size:11px;color:#64748b;margin-top:8px">สร้างจริงต้องมีคีย์ + เครดิตของผู้ให้บริการ · ภาพขนาด 1024×1024</div>
+          <div id="iaGoNote" style="font-size:11px;color:#64748b;margin-top:8px">สร้างจริงต้องมีคีย์ + เครดิตของผู้ให้บริการ · ภาพขนาด 1024×1024 · แนบภาพเพื่อให้ AI แก้จากของเดิม (รองรับทั้ง Gemini / OpenAI / Stability)</div>
         </div>
 
         <div class="panel"><h3>🖼️ ภาพที่สร้างไว้</h3>
@@ -4180,12 +4189,14 @@ async function loadImageAI(){
         <div style="font-size:12px;color:#cbd5e1;line-height:1.4;max-height:34px;overflow:hidden">${escapeHtml(t.prompt||"")}</div>
         <div style="font-size:10px;color:#64748b;margin-top:3px">${escapeHtml(t.provider||"")} · ${(t.created_at||'').replace('T',' ').slice(5,16)}</div>
         <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="qbtn ia-edit" data-ref="${t.image_ref}" style="font-size:11px;padding:4px 8px">✏️ แก้ภาพนี้</button>
           <a class="qbtn" href="${t.image_ref}" download="goffice-image-${t.id}.png" style="font-size:11px;padding:4px 8px">⬇️</a>
           <button class="qbtn ia-del" data-id="${t.id}" style="font-size:11px;padding:4px 8px;color:#f87171">🗑️</button>
         </div>
       </div>
     </div>`).join("") : '<div style="color:#64748b">ยังไม่มีภาพ — พิมพ์คำอธิบายแล้วกด “สร้างภาพ”</div>';
   list.querySelectorAll(".ia-img").forEach(x => x.onclick = () => openLightbox(`<img src="${x.dataset.ref}">`, x.dataset.cap));
+  list.querySelectorAll(".ia-edit").forEach(x => x.onclick = () => { iaSetEditImg(x.dataset.ref,"ภาพที่เลือก"); $("iaPrompt").focus(); $("iaPrompt").scrollIntoView({behavior:"smooth",block:"center"}); toastNote("โหลดภาพมาแก้แล้ว — พิมพ์ว่าจะแก้ยังไง แล้วกด ✏️ แก้ไขภาพ","#22c55e"); });
   list.querySelectorAll(".ia-del").forEach(x => x.onclick = async () => { await postJSON("/api/imageai/delete",{id:+x.dataset.id}); loadImageAI(); });
 }
 function iaFillModels(selModel){
@@ -4221,14 +4232,32 @@ $("iaKeyBtn").addEventListener("click", () => {
   $("ia_clear").onclick = async () => { await postJSON("/api/imageai/key/clear",{provider:$("iaProvider").value}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadImageAI(); };
   openModal("genModal");
 });
+let _iaEditImg = "";   // data URI of the base image to edit (empty = generate fresh)
+function iaSetEditImg(dataUri, name){
+  _iaEditImg = dataUri || "";
+  const has = !!_iaEditImg;
+  $("iaAttachWrap").style.display = has ? "flex" : "none";
+  $("iaAttachBtn").style.display = has ? "none" : "";
+  if (has){ $("iaAttachThumb").src=_iaEditImg; $("iaAttachName").textContent=name||"ภาพแนบ"; }
+  $("iaGo").textContent = has ? "✏️ แก้ไขภาพ" : "🖌️ สร้างภาพ";
+}
+$("iaAttachBtn").addEventListener("click", () => $("iaAttachFile").click());
+$("iaAttachClear").addEventListener("click", () => { $("iaAttachFile").value=""; iaSetEditImg("",""); });
+$("iaAttachFile").addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  if (f.size > 8*1024*1024){ toastNote("ไฟล์ใหญ่เกิน 8MB","#f59e0b"); return; }
+  const rd = new FileReader();
+  rd.onload = () => iaSetEditImg(rd.result, f.name);
+  rd.readAsDataURL(f);
+});
 $("iaGo").addEventListener("click", async () => {
   const prompt = $("iaPrompt").value.trim();
-  if (!prompt){ toastNote("ใส่คำอธิบายภาพก่อน","#f59e0b"); return; }
-  const b=$("iaGo"),o=b.textContent;b.disabled=true;b.textContent="⏳ กำลังสร้างภาพ…";
-  const r=await postJSON("/api/imageai/generate",{prompt});
+  if (!prompt){ toastNote(_iaEditImg?"บอกด้วยว่าจะแก้ภาพยังไง":"ใส่คำอธิบายภาพก่อน","#f59e0b"); return; }
+  const b=$("iaGo"),o=b.textContent;b.disabled=true;b.textContent=_iaEditImg?"⏳ กำลังแก้ไขภาพ…":"⏳ กำลังสร้างภาพ…";
+  const r=await postJSON("/api/imageai/generate",{prompt, image:_iaEditImg});
   b.disabled=false;b.textContent=o;
   if(r.error) toastNote("❌ "+r.error,"#ef4444");
-  else { toastNote("สร้างภาพสำเร็จ 🖼️","#22c55e"); $("iaPrompt").value=""; loadImageAI(); }
+  else { toastNote(_iaEditImg?"แก้ไขภาพสำเร็จ ✏️":"สร้างภาพสำเร็จ 🖼️","#22c55e"); $("iaPrompt").value=""; $("iaAttachFile").value=""; iaSetEditImg("",""); loadImageAI(); }
 });
 
 /* ---------- VDO AI (video marketplace) ---------- */

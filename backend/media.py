@@ -80,32 +80,48 @@ def _post_raw(url, obj, headers=None, timeout=90) -> bytes:
 
 
 def _post_multipart(url, fields, headers=None, timeout=120) -> bytes:
+    """Text fields as str values; file parts as (filename, bytes, content_type) tuples."""
     boundary = "----GOffice" + secrets.token_hex(8)
     body = b""
     for k, v in fields.items():
-        body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").encode()
+        if isinstance(v, tuple):   # file part
+            fname, data, ctype = v
+            body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"; "
+                     f"filename=\"{fname}\"\r\nContent-Type: {ctype}\r\n\r\n").encode() + data + b"\r\n"
+        else:
+            body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").encode()
     body += (f"--{boundary}--\r\n").encode()
     h = {"Content-Type": f"multipart/form-data; boundary={boundary}", "User-Agent": _UA}
     if headers:
         h.update(headers)
     req = urllib.request.Request(url, data=body, headers=h, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    return _read(req, timeout)
 
 
 # ----------------------------------------------------------------- images ----
-def generate_image(provider: str, model: str, key: str, prompt: str) -> dict:
-    """Return {mime, b64}. Raises with a Thai message on missing key/failure."""
+def generate_image(provider: str, model: str, key: str, prompt: str, image: str = "") -> dict:
+    """Return {mime, b64}. When `image` (data URI) is given, edit it instead of
+    generating from scratch (image-to-image). Raises a Thai message on failure."""
     if not key:
         raise RuntimeError("ยังไม่ได้ใส่คีย์รูปภาพ")
     p = (provider or "gemini").lower()
+    has_img = bool(image)
     if p == "openai":
         m = model or "gpt-image-1"
-        body = {"model": m, "prompt": prompt, "size": "1024x1024", "n": 1}
-        if m.startswith("dall-e"):          # gpt-image-1 ไม่รับ response_format (คืน b64 อยู่แล้ว)
-            body["response_format"] = "b64_json"
-        d = _post_json("https://api.openai.com/v1/images/generations", body,
-                       headers={"Authorization": f"Bearer {key}"})
+        if has_img:                          # edit the supplied image via /images/edits
+            mime, b64in = _split_data_uri(image)
+            ext = "png" if "png" in mime else ("jpg" if "jp" in mime else "png")
+            raw = _post_multipart("https://api.openai.com/v1/images/edits",
+                                  {"model": "gpt-image-1", "prompt": prompt, "size": "1024x1024",
+                                   "image": (f"base.{ext}", base64.b64decode(b64in), mime)},
+                                  headers={"Authorization": f"Bearer {key}", "Accept": "application/json"})
+            d = json.loads(raw.decode())
+        else:
+            body = {"model": m, "prompt": prompt, "size": "1024x1024", "n": 1}
+            if m.startswith("dall-e"):        # gpt-image-1 ไม่รับ response_format (คืน b64 อยู่แล้ว)
+                body["response_format"] = "b64_json"
+            d = _post_json("https://api.openai.com/v1/images/generations", body,
+                           headers={"Authorization": f"Bearer {key}"})
         item = (d.get("data") or [{}])[0]
         b64 = item.get("b64_json") or ""
         if not b64:
@@ -113,13 +129,27 @@ def generate_image(provider: str, model: str, key: str, prompt: str) -> dict:
         return {"mime": "image/png", "b64": b64}
     if p == "stability":
         m = (model or "core")
-        url = "https://api.stability.ai/v2beta/stable-image/generate/" + ("sd3" if m.startswith("sd3") else "core")
-        raw = _post_multipart(url, {"prompt": prompt, "output_format": "png", **({"model": m} if m.startswith("sd3") else {})},
-                              headers={"Authorization": f"Bearer {key}", "Accept": "image/*"})
+        if has_img:                          # image-to-image via the sd3 endpoint
+            mime, b64in = _split_data_uri(image)
+            ext = "png" if "png" in mime else ("jpg" if "jp" in mime else "png")
+            raw = _post_multipart("https://api.stability.ai/v2beta/stable-image/generate/sd3",
+                                  {"prompt": prompt, "mode": "image-to-image", "strength": "0.65",
+                                   "output_format": "png",
+                                   "model": (m if m.startswith("sd3") else "sd3.5-large"),
+                                   "image": (f"base.{ext}", base64.b64decode(b64in), mime)},
+                                  headers={"Authorization": f"Bearer {key}", "Accept": "image/*"})
+        else:
+            url = "https://api.stability.ai/v2beta/stable-image/generate/" + ("sd3" if m.startswith("sd3") else "core")
+            raw = _post_multipart(url, {"prompt": prompt, "output_format": "png", **({"model": m} if m.startswith("sd3") else {})},
+                                  headers={"Authorization": f"Bearer {key}", "Accept": "image/*"})
         return {"mime": "image/png", "b64": base64.b64encode(raw).decode()}
-    # default: Gemini
+    # default: Gemini — editing = include the input image as an inline part
+    parts = [{"text": prompt}]
+    if has_img:
+        mime, b64in = _split_data_uri(image)
+        parts.append({"inlineData": {"mimeType": mime, "data": b64in}})
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model or 'gemini-2.5-flash-image'}:generateContent?key={key}"
-    d = _post_json(url, {"contents": [{"parts": [{"text": prompt}]}]})
+    d = _post_json(url, {"contents": [{"parts": parts}]})
     for part in d.get("candidates", [{}])[0].get("content", {}).get("parts", []):
         inline = part.get("inlineData") or part.get("inline_data")
         if inline and inline.get("data"):
