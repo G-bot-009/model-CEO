@@ -30,19 +30,28 @@
   <!-- login form — centered, over the character's chest -->
   <div class="relative z-10 min-h-screen flex items-start justify-center px-6" style="padding-top:42vh">
     <form id="loginForm" class="drop-in w-full max-w-sm bg-white/85 backdrop-blur-md rounded-2xl shadow-2xl shadow-black/20 p-6">
-      <label class="block text-sm font-medium text-[#1C2E1E] mb-1">Username</label>
-      <input id="lg_user" autocomplete="username" placeholder="admin"
+      <div class="flex gap-1 mb-4 p-1 rounded-full bg-[#EDEFEC] text-sm font-medium">
+        <button type="button" id="tabLogin" class="flex-1 py-2 rounded-full bg-white text-[#1C2E1E] shadow-sm">เข้าสู่ระบบ</button>
+        <button type="button" id="tabSignup" class="flex-1 py-2 rounded-full text-[#738273]">สมัครสมาชิก</button>
+      </div>
+      <div id="rowName" style="display:none">
+        <label class="block text-sm font-medium text-[#1C2E1E] mb-1">ชื่อ/ชื่อร้าน</label>
+        <input id="lg_name" autocomplete="name" placeholder="เช่น ร้านของฉัน"
+          class="w-full px-4 py-3 rounded-xl bg-white border border-[#E2E6E1] text-[#1C2E1E] mb-4 outline-none focus:border-[#1C2E1E] transition-colors" />
+      </div>
+      <label class="block text-sm font-medium text-[#1C2E1E] mb-1">อีเมล</label>
+      <input id="lg_user" autocomplete="username" placeholder="you@email.com"
         class="w-full px-4 py-3 rounded-xl bg-white border border-[#E2E6E1] text-[#1C2E1E] mb-4 outline-none focus:border-[#1C2E1E] transition-colors" />
-      <label class="block text-sm font-medium text-[#1C2E1E] mb-1">Password</label>
+      <label class="block text-sm font-medium text-[#1C2E1E] mb-1">รหัสผ่าน</label>
       <input id="lg_pass" type="password" autocomplete="current-password" placeholder="••••••"
         class="w-full px-4 py-3 rounded-xl bg-white border border-[#E2E6E1] text-[#1C2E1E] mb-5 outline-none focus:border-[#1C2E1E] transition-colors" />
       <button type="submit"
         class="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-[#1C2E1E] text-white font-medium shadow-md hover:opacity-90 transition-opacity">
-        เข้าสู่ระบบ
+        <span id="lg_btn_label">เข้าสู่ระบบ</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="w-4 h-4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
       </button>
       <p id="lg_err" class="text-sm text-red-600 mt-3 text-center" style="display:none"></p>
-      <p class="text-xs text-[#738273] mt-4 text-center">เปลี่ยนรหัสผ่านได้ที่ ตั้งค่า → บัญชีเข้าสู่ระบบ หลังล็อกอิน</p>
+      <p id="lg_hint" class="text-xs text-[#738273] mt-4 text-center">บัญชีของคุณแยกข้อมูล/คีย์/Facebook App เป็นของตัวเอง</p>
     </form>
   </div>
 </div>
@@ -72,22 +81,40 @@
   window.addEventListener("mousemove", onMove);
   window.addEventListener("resize", () => { prevX = null; setupPlayback(); });
 
-  /* login */
+  /* login / signup */
   const form = document.getElementById("loginForm");
   const errEl = document.getElementById("lg_err");
+  let mode = "login";
+  const tabL = document.getElementById("tabLogin"), tabS = document.getElementById("tabSignup");
+  function setMode(m){
+    mode = m; errEl.style.display = "none";
+    const on = "flex-1 py-2 rounded-full bg-white text-[#1C2E1E] shadow-sm";
+    const off = "flex-1 py-2 rounded-full text-[#738273]";
+    tabL.className = m==="login"?on:off; tabS.className = m==="signup"?on:off;
+    document.getElementById("rowName").style.display = m==="signup"?"block":"none";
+    document.getElementById("lg_btn_label").textContent = m==="signup"?"สมัครสมาชิก":"เข้าสู่ระบบ";
+    document.getElementById("lg_pass").autocomplete = m==="signup"?"new-password":"current-password";
+    document.getElementById("lg_hint").textContent = m==="signup"
+      ? "สมัครฟรี — บัญชีของคุณแยกข้อมูล/คีย์/Facebook App เป็นของตัวเอง"
+      : "บัญชีของคุณแยกข้อมูล/คีย์/Facebook App เป็นของตัวเอง";
+  }
+  tabL.addEventListener("click", () => setMode("login"));
+  tabS.addEventListener("click", () => setMode("signup"));
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     errEl.style.display = "none";
-    const username = document.getElementById("lg_user").value.trim();
+    const email = document.getElementById("lg_user").value.trim();
     const password = document.getElementById("lg_pass").value;
+    const name = document.getElementById("lg_name").value.trim();
+    const url = mode==="signup" ? "/api/signup" : "/api/login";
     try {
-      const r = await fetch("/api/login", {
+      const r = await fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ email, username: email, password, name })
       });
       const d = await r.json();
       if (r.ok && d.ok) { window.location.href = "/"; }
-      else { errEl.textContent = d.error || "เข้าสู่ระบบไม่สำเร็จ"; errEl.style.display = "block"; }
+      else { errEl.textContent = d.error || "ไม่สำเร็จ"; errEl.style.display = "block"; }
     } catch (_) { errEl.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้"; errEl.style.display = "block"; }
   });
 </script>

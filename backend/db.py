@@ -15,6 +15,9 @@ Schema:
 from __future__ import annotations
 
 import os
+import contextvars
+import secrets
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -22,11 +25,47 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 # DB path is overridable (e.g. a mounted volume in Docker) via AGENTS_DB.
+# This is the MASTER database (holds the users/sessions registry) and also
+# doubles as tenant #1 (the original admin) so existing data is preserved.
 DB_PATH = Path(os.getenv("AGENTS_DB") or (Path(__file__).resolve().parent.parent / "agents.db"))
+# Per-tenant DB files for everyone else live here.
+TENANTS_DIR = Path(os.getenv("TENANTS_DIR") or (DB_PATH.parent / "tenants"))
+
+# The current request's tenant (set by middleware). Defaults to tenant 1 (admin)
+# so background tasks / scripts without a request context keep working.
+_CUR_UID: "contextvars.ContextVar[int]" = contextvars.ContextVar("cur_uid", default=1)
+
+
+def set_current_uid(uid: Optional[int]) -> None:
+    _CUR_UID.set(int(uid or 1))
+
+
+def current_uid() -> int:
+    return _CUR_UID.get()
+
+
+def tenant_db_path(uid: Optional[int]) -> Path:
+    uid = int(uid or 1)
+    if uid == 1:
+        return DB_PATH                       # legacy admin keeps agents.db
+    TENANTS_DIR.mkdir(parents=True, exist_ok=True)
+    return TENANTS_DIR / f"tenant_{uid}.db"
 
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
+    conn = sqlite3.connect(tenant_db_path(_CUR_UID.get()), timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@contextmanager
+def _master_conn() -> Iterator[sqlite3.Connection]:
+    """Connection to the MASTER db (users/sessions registry) — tenant-independent."""
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     try:
@@ -294,6 +333,136 @@ def init() -> None:
                 c.execute(f"ALTER TABLE mcp_connections ADD COLUMN {col} TEXT")
         if "expires_at" not in ccols:
             c.execute("ALTER TABLE mcp_connections ADD COLUMN expires_at REAL")
+
+
+def init_tenant(uid: int) -> None:
+    """Create the full tenant schema for a specific user's database."""
+    tok = _CUR_UID.set(int(uid))
+    try:
+        init()
+    finally:
+        _CUR_UID.reset(tok)
+
+
+# --- Master registry: users / sessions / oauth-state ------------------------
+def init_master() -> None:
+    """Tables that live in the shared master DB (not per-tenant)."""
+    with _master_conn() as c:
+        c.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                email      TEXT UNIQUE NOT NULL,
+                pass_hash  TEXT NOT NULL,
+                name       TEXT,
+                status     TEXT DEFAULT 'active',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS app_sessions (
+                token      TEXT PRIMARY KEY,
+                user_id    INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS oauth_state (
+                state      TEXT PRIMARY KEY,
+                user_id    INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+
+
+def _hash_pw(pw: str) -> str:
+    return hashlib.sha256(((pw or "") + "|goffice-user").encode()).hexdigest()
+
+
+def user_create(email: str, password: str, name: str = "") -> int:
+    with _master_conn() as c:
+        cur = c.execute(
+            "INSERT INTO users (email, pass_hash, name, created_at) VALUES (?,?,?,?)",
+            ((email or "").strip().lower(), _hash_pw(password), (name or "").strip(), _now()))
+        return int(cur.lastrowid)
+
+
+def user_set_password(uid: int, password: str) -> None:
+    with _master_conn() as c:
+        c.execute("UPDATE users SET pass_hash=? WHERE id=?", (_hash_pw(password), int(uid)))
+
+
+def user_by_email(email: str) -> Optional[dict]:
+    with _master_conn() as c:
+        r = c.execute("SELECT * FROM users WHERE email=?", ((email or "").strip().lower(),)).fetchone()
+        return dict(r) if r else None
+
+
+def user_get(uid: int) -> Optional[dict]:
+    with _master_conn() as c:
+        r = c.execute("SELECT * FROM users WHERE id=?", (int(uid),)).fetchone()
+        return dict(r) if r else None
+
+
+def user_verify(email: str, password: str) -> Optional[int]:
+    u = user_by_email(email)
+    if u and u.get("status") != "disabled" and u["pass_hash"] == _hash_pw(password):
+        return int(u["id"])
+    return None
+
+
+def all_user_ids() -> list:
+    """Every tenant id (always includes 1, the legacy admin)."""
+    with _master_conn() as c:
+        rows = c.execute("SELECT id FROM users ORDER BY id").fetchall()
+    ids = [int(r["id"]) for r in rows]
+    if 1 not in ids:
+        ids = [1] + ids
+    return ids
+
+
+def ensure_admin_user(email: str, password: str) -> None:
+    """Make sure tenant #1 (the legacy admin) exists as a real user row."""
+    with _master_conn() as c:
+        r = c.execute("SELECT id FROM users WHERE id=1").fetchone()
+        if r:
+            return
+        c.execute("INSERT INTO users (id, email, pass_hash, name, created_at) VALUES (1,?,?,?,?)",
+                  ((email or "admin").strip().lower(), _hash_pw(password), "Admin", _now()))
+
+
+def session_new(uid: int) -> str:
+    tok = secrets.token_hex(24)
+    with _master_conn() as c:
+        c.execute("INSERT INTO app_sessions (token, user_id, created_at) VALUES (?,?,?)",
+                  (tok, int(uid), _now()))
+    return tok
+
+
+def session_uid(token: str) -> Optional[int]:
+    if not token:
+        return None
+    with _master_conn() as c:
+        r = c.execute("SELECT user_id FROM app_sessions WHERE token=?", (token,)).fetchone()
+        return int(r["user_id"]) if r else None
+
+
+def session_delete(token: str) -> None:
+    if not token:
+        return
+    with _master_conn() as c:
+        c.execute("DELETE FROM app_sessions WHERE token=?", (token,))
+
+
+def oauth_state_put(state: str, uid: int) -> None:
+    with _master_conn() as c:
+        c.execute("INSERT OR REPLACE INTO oauth_state (state, user_id, created_at) VALUES (?,?,?)",
+                  (state, int(uid), _now()))
+
+
+def oauth_state_uid(state: str) -> Optional[int]:
+    if not state:
+        return None
+    with _master_conn() as c:
+        r = c.execute("SELECT user_id FROM oauth_state WHERE state=?", (state,)).fetchone()
+        return int(r["user_id"]) if r else None
 
 
 def _now() -> str:

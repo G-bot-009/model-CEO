@@ -53,6 +53,67 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(title="Multi-Agent Agentic OS")
 
+# ---- Multi-tenant routing -------------------------------------------------
+# Paths that do NOT require a logged-in session. Anything else is gated.
+# (For public assets we fall back to tenant #1 — the legacy admin — for now.)
+_PUBLIC_PREFIXES = (
+    "/login", "/signup", "/api/login", "/api/signup", "/api/logout",
+    "/tailwind.css", "/favicon", "/privacy", "/terms",
+    "/oauth", "/oauth-ads",            # OAuth callbacks (tenant resolved via state)
+    "/api/files/", "/api/editor/clip/", "/api/tts",   # served to external fetchers
+    "/l/",                             # bio link redirects (public visitors)
+)
+
+
+def _path_is_public(path: str) -> bool:
+    if path == "/" :
+        return False
+    if path.startswith(_PUBLIC_PREFIXES):
+        return True
+    # public bio pages live at /{slug} (single segment, no /api etc.)
+    if "/" not in path.strip("/") and not path.startswith("/api"):
+        return True
+    return False
+
+
+class TenantMiddleware:
+    """Pure-ASGI middleware: resolve the current tenant from the session cookie
+    (or OAuth state on callbacks) and gate protected routes. Contextvars set here
+    propagate to the endpoint because we await the inner app in the same context."""
+
+    def __init__(self, app_):
+        self.app = app_
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        request = Request(scope)
+        path = scope.get("path", "/")
+        uid = None
+        try:
+            tok = request.cookies.get("mf_sess")
+            if tok:
+                uid = db.session_uid(tok)
+            if uid is None and request.cookies.get("mf_auth") == _auth_token():
+                uid = 1                                   # legacy admin cookie
+            if uid is None and path.startswith(("/oauth", "/oauth-ads")):
+                st = request.query_params.get("state")
+                if st:
+                    uid = db.oauth_state_uid(st)
+        except Exception:
+            uid = None
+        db.set_current_uid(uid or 1)
+        if uid is None and not _path_is_public(path):
+            if path.startswith("/api/"):
+                resp = JSONResponse({"error": "unauthorized"}, status_code=401)
+            else:
+                resp = RedirectResponse("/login")
+            return await resp(scope, receive, send)
+        return await self.app(scope, receive, send)
+
+
+app.add_middleware(TenantMiddleware)
+
 _client = anthropic.AsyncAnthropic()          # env default — never lost ("API ห้ามหาย")
 _client_cache: dict[str, anthropic.AsyncAnthropic] = {}
 
@@ -208,7 +269,9 @@ def _cache_key(agent: str, prompt: str) -> str:
 
 @app.on_event("startup")
 async def _startup() -> None:
-    db.init()
+    db.init_master()                            # users/sessions registry (shared)
+    db.init()                                   # tenant #1 schema (legacy admin = agents.db)
+    db.ensure_admin_user(LOGIN_USER, LOGIN_PASS)  # tenant #1 as a real user row
     _migrate_image_keys()                       # move old shared image key → per-provider slot
     set_model(db.get_settings().get("model"))  # apply saved model choice
     import asyncio
@@ -259,9 +322,7 @@ def _auth_token() -> str:
 
 @app.get("/")
 async def index(request: Request):
-    # gate the dashboard behind login (local single-user)
-    if request.cookies.get("mf_auth") != _auth_token():
-        return RedirectResponse("/login")
+    # auth is enforced by TenantMiddleware (redirects to /login when no session)
     # always revalidate so UI updates show up without a manual hard-refresh
     # (ETag still yields a tiny 304 when unchanged, so this stays cheap)
     return FileResponse(FRONTEND_DIR / "index.html",
@@ -280,25 +341,64 @@ async def login_page() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "login.html")
 
 
+_SESS_MAX_AGE = 60 * 60 * 24 * 30
+
+
+def _set_session_cookie(resp, uid: int):
+    tok = db.session_new(uid)
+    resp.set_cookie("mf_sess", tok, httponly=True, samesite="lax", max_age=_SESS_MAX_AGE, path="/")
+    if uid == 1:   # keep legacy admin cookie alive for backward compatibility
+        resp.set_cookie("mf_auth", _auth_token(), httponly=True, samesite="lax",
+                        max_age=_SESS_MAX_AGE, path="/")
+    return resp
+
+
+def _valid_email(e: str) -> bool:
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", (e or "").strip()))
+
+
+@app.post("/api/signup")
+async def api_signup(p: dict):
+    email = (p.get("email") or p.get("username") or "").strip().lower()
+    pwd = p.get("password") or ""
+    name = (p.get("name") or "").strip()
+    if not _valid_email(email):
+        return JSONResponse({"error": "อีเมลไม่ถูกต้อง"}, status_code=400)
+    if len(pwd) < 6:
+        return JSONResponse({"error": "รหัสผ่านอย่างน้อย 6 ตัวอักษร"}, status_code=400)
+    if db.user_by_email(email):
+        return JSONResponse({"error": "อีเมลนี้ถูกใช้แล้ว — ลองเข้าสู่ระบบ"}, status_code=409)
+    uid = db.user_create(email, pwd, name)
+    db.init_tenant(uid)                       # build this customer's own database
+    return _set_session_cookie(JSONResponse({"ok": True}), uid)
+
+
 @app.post("/api/login")
 async def api_login(p: dict):
-    if _check_login(p.get("username") or "", p.get("password") or ""):
-        resp = JSONResponse({"ok": True})
-        resp.set_cookie("mf_auth", _auth_token(), httponly=True, samesite="lax",
-                        max_age=60 * 60 * 24 * 30, path="/")
-        return resp
-    return JSONResponse({"error": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"}, status_code=401)
+    ident = (p.get("email") or p.get("username") or "").strip()
+    pwd = p.get("password") or ""
+    uid = db.user_verify(ident, pwd)          # registered customers (by email)
+    if not uid and _check_login(ident, pwd):  # legacy admin username/password
+        uid = 1
+    if uid:
+        return _set_session_cookie(JSONResponse({"ok": True}), uid)
+    return JSONResponse({"error": "อีเมล/รหัสผ่านไม่ถูกต้อง"}, status_code=401)
 
 
 @app.post("/api/logout")
-async def api_logout():
+async def api_logout(request: Request):
+    db.session_delete(request.cookies.get("mf_sess") or "")
     resp = JSONResponse({"ok": True})
+    resp.delete_cookie("mf_sess", path="/")
     resp.delete_cookie("mf_auth", path="/")
     return resp
 
 
 @app.get("/api/account")
 async def account_info() -> dict:
+    u = db.user_get(db.current_uid())
+    if u:
+        return {"username": u.get("email") or u.get("name") or "ผู้ใช้", "uid": u.get("id")}
     s = db.get_settings()
     return {"username": s.get("login_user") or LOGIN_USER}
 
@@ -423,6 +523,7 @@ async def oauth_start(platform: str, request: Request):
         params["code_challenge_method"] = "S256"
     params.update(cfg.get("extra", {}))
     _oauth_state[state] = (platform, verifier)
+    db.oauth_state_put(state, db.current_uid())   # so the callback resolves the right tenant
     return RedirectResponse(cfg["auth"] + "?" + urlencode(params))
 
 
@@ -5032,6 +5133,20 @@ async def bio_public(slug: str, request: Request):
 
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
+    # resolve the tenant for this connection (cookies are sent on the WS handshake)
+    uid = None
+    try:
+        tok = websocket.cookies.get("mf_sess")
+        if tok:
+            uid = db.session_uid(tok)
+        if uid is None and websocket.cookies.get("mf_auth") == _auth_token():
+            uid = 1
+    except Exception:
+        uid = None
+    if uid is None:
+        await websocket.close(code=4401)
+        return
+    db.set_current_uid(uid)
     await websocket.accept()
 
     async def send(event: dict) -> None:
