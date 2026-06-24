@@ -1922,6 +1922,17 @@ async def trading_bot_chat(bot_id: int, p: dict) -> dict:
 _SENDABLE = {"Slack", "Discord", "Telegram", "LINE OA", "Webhook → Make/Zapier"}
 
 
+def _media_key(kind: str, prov: str, s: dict | None = None) -> str:
+    """Per-provider API key for a media type, with legacy single-slot fallback."""
+    s = s if s is not None else db.get_settings()
+    key = s.get(f"media_{kind}_key_{prov}", "")
+    if not key:
+        legacy_prov = s.get(f"media_{kind}_provider")
+        if legacy_prov == prov or not legacy_prov:   # legacy key belongs to this provider
+            key = s.get(f"media_{kind}_key", "")
+    return key
+
+
 def _media_cfg(kind: str) -> dict:
     """Selected provider/model/key for a media type (image|video|voice)."""
     s = db.get_settings()
@@ -1933,7 +1944,7 @@ def _media_cfg(kind: str) -> dict:
             if p["id"] == prov and p["models"]:
                 model = p["models"][0]
                 break
-    return {"provider": prov, "model": model, "key": s.get(f"media_{kind}_key", "")}
+    return {"provider": prov, "model": model, "key": _media_key(kind, prov, s)}
 
 
 def _content_brief() -> str:
@@ -2318,9 +2329,11 @@ async def music_delete(p: dict) -> dict:
 # ============================== Image AI ====================================
 @app.get("/api/imageai/board")
 async def imageai_board() -> dict:
+    s = db.get_settings()
     c = _media_cfg("image")
+    provs = [{**p, "has": bool(_media_key("image", p["id"], s))} for p in media.PROVIDERS["image"]]
     return {
-        "providers": media.PROVIDERS["image"],
+        "providers": provs,
         "selection": {"provider": c["provider"], "model": c["model"],
                       "key": (c["key"][:4] + "…") if c["key"] else "", "has": bool(c["key"])},
         "images": db.image_list(),
@@ -2329,13 +2342,15 @@ async def imageai_board() -> dict:
 
 @app.post("/api/imageai/key")
 async def imageai_key_set(p: dict) -> dict:
+    prov = (p.get("provider") or "").strip()
     upd = {}
-    if p.get("provider"):
-        upd["media_image_provider"] = p["provider"].strip()
+    if prov:
+        upd["media_image_provider"] = prov
     if p.get("model") is not None:
         upd["media_image_model"] = (p.get("model") or "").strip()
     if p.get("key"):
-        upd["media_image_key"] = p["key"].strip()
+        target = prov or _media_cfg("image")["provider"]
+        upd[f"media_image_key_{target}"] = p["key"].strip()   # per-provider slot
     if upd:
         db.set_settings(upd)
     return {"ok": True}
@@ -2343,7 +2358,11 @@ async def imageai_key_set(p: dict) -> dict:
 
 @app.post("/api/imageai/key/clear")
 async def imageai_key_clear(p: dict) -> dict:
-    db.set_settings({"media_image_key": ""})
+    prov = (p.get("provider") or _media_cfg("image")["provider"]).strip()
+    upd = {f"media_image_key_{prov}": ""}
+    if db.get_settings().get("media_image_provider") == prov:
+        upd["media_image_key"] = ""   # also clear the legacy slot it was using
+    db.set_settings(upd)
     return {"ok": True}
 
 

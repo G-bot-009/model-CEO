@@ -4169,10 +4169,9 @@ async function loadImageAI(){
   let d; try { d = await (await fetch("/api/imageai/board")).json(); } catch(e){ return; }
   IA_PROVIDERS = d.providers || [];
   const sel = d.selection || {};
-  $("iaProvider").innerHTML = IA_PROVIDERS.map(p => `<option value="${p.id}" ${p.id===sel.provider?'selected':''}>${escapeHtml(p.name)}</option>`).join("");
+  $("iaProvider").innerHTML = IA_PROVIDERS.map(p => `<option value="${p.id}" ${p.id===sel.provider?'selected':''}>${escapeHtml(p.name)}${p.has?' ✓':''}</option>`).join("");
   iaFillModels(sel.model);
-  $("iaKeyState").textContent = sel.has ? "✅ มีคีย์แล้ว" : "⚠️ ยังไม่มีคีย์";
-  $("iaKeyState").style.color = sel.has ? "#22c55e" : "#f59e0b";
+  iaUpdateKeyState();
   const list = $("iaList");
   list.innerHTML = (d.images||[]).length ? d.images.map(t => `
     <div style="border:1px solid #1e293b;border-radius:10px;overflow:hidden;background:#0b1220">
@@ -4195,7 +4194,12 @@ function iaFillModels(selModel){
   const cur = IA_PROVIDERS.find(x => x.id === $("iaProvider").value);
   $("iaProvLabel").textContent = cur ? ("คีย์ขอที่ " + cur.name) : "";
 }
-$("iaProvider").addEventListener("change", () => { iaFillModels(); postJSON("/api/imageai/key",{provider:$("iaProvider").value, model:$("iaModel").value}); });
+function iaUpdateKeyState(){
+  const cur = IA_PROVIDERS.find(x => x.id === $("iaProvider").value);
+  const has = !!(cur && cur.has);
+  if($("iaKeyState")){ $("iaKeyState").textContent = has ? "✅ มีคีย์แล้ว" : "⚠️ ยังไม่มีคีย์"; $("iaKeyState").style.color = has ? "#22c55e" : "#f59e0b"; }
+}
+$("iaProvider").addEventListener("change", () => { iaFillModels(); iaUpdateKeyState(); postJSON("/api/imageai/key",{provider:$("iaProvider").value, model:$("iaModel").value}); });
 $("iaModel").addEventListener("change", () => postJSON("/api/imageai/key",{provider:$("iaProvider").value, model:$("iaModel").value}));
 $("iaKeyBtn").addEventListener("click", () => {
   const cur = IA_PROVIDERS.find(x => x.id === $("iaProvider").value) || {};
@@ -4214,7 +4218,7 @@ $("iaKeyBtn").addEventListener("click", () => {
     await postJSON("/api/imageai/key", { provider:$("iaProvider").value, model:$("iaModel").value, key });
     closeModal("genModal"); toastNote("บันทึกคีย์ Image AI แล้ว ✅","#22c55e"); loadImageAI();
   };
-  $("ia_clear").onclick = async () => { await postJSON("/api/imageai/key/clear",{}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadImageAI(); };
+  $("ia_clear").onclick = async () => { await postJSON("/api/imageai/key/clear",{provider:$("iaProvider").value}); closeModal("genModal"); toastNote("ลบคีย์แล้ว","#f59e0b"); loadImageAI(); };
   openModal("genModal");
 });
 $("iaGo").addEventListener("click", async () => {
