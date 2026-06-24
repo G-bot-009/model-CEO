@@ -209,6 +209,7 @@ def _cache_key(agent: str, prompt: str) -> str:
 @app.on_event("startup")
 async def _startup() -> None:
     db.init()
+    _migrate_image_keys()                       # move old shared image key → per-provider slot
     set_model(db.get_settings().get("model"))  # apply saved model choice
     import asyncio
     asyncio.create_task(_trading_loop())        # ticks active trading bots
@@ -1923,14 +1924,33 @@ _SENDABLE = {"Slack", "Discord", "Telegram", "LINE OA", "Webhook → Make/Zapier
 
 
 def _media_key(kind: str, prov: str, s: dict | None = None) -> str:
-    """Per-provider API key for a media type, with legacy single-slot fallback."""
+    """Per-provider API key for a media type."""
     s = s if s is not None else db.get_settings()
     key = s.get(f"media_{kind}_key_{prov}", "")
-    if not key:
-        legacy_prov = s.get(f"media_{kind}_provider")
-        if legacy_prov == prov or not legacy_prov:   # legacy key belongs to this provider
-            key = s.get(f"media_{kind}_key", "")
-    return key
+    if key:
+        return key
+    # Image AI uses strict per-provider keys: never borrow the legacy shared slot,
+    # so a provider only reads as "has key" when its own key was saved.
+    if kind == "image":
+        return ""
+    # video/voice keep the legacy single-slot behaviour (one provider in use)
+    legacy_prov = s.get(f"media_{kind}_provider")
+    if legacy_prov == prov or not legacy_prov:
+        return s.get(f"media_{kind}_key", "")
+    return ""
+
+
+def _migrate_image_keys() -> None:
+    """One-time: move the old shared image key into its provider-specific slot."""
+    s = db.get_settings()
+    if s.get("media_image_keys_migrated"):
+        return
+    legacy = s.get("media_image_key", "")
+    if legacy:
+        prov = s.get("media_image_provider") or media.PROVIDERS["image"][0]["id"]
+        if not s.get(f"media_image_key_{prov}"):
+            db.set_settings({f"media_image_key_{prov}": legacy})
+    db.set_settings({"media_image_key": "", "media_image_keys_migrated": "1"})
 
 
 def _media_cfg(kind: str) -> dict:
